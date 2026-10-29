@@ -37,37 +37,43 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/icon-venv"
           "$RUNNER_TEMP/icon-venv/bin/python" -m pip install --upgrade pip Pillow
 
-      - name: Sync final icon layers from master when staged, otherwise use committed source layers
+      - name: Sync final icon layers and recover missing generation inputs
         run: |
           set -euo pipefail
+          mkdir -p icon-source tools
           git fetch --no-tags --depth=1 origin master
 
-          # The root PNGs are temporary staging files. Import them when all
-          # three are present; after cleanup, keep using the committed copies
-          # under icon-source instead of failing the release build.
-          source_paths=(
-            final-icons-background.png
-            final-icons-foreground.png
-            final-icons-monochrome.png
-          )
+          # The root PNGs are temporary staging files. Import them only when
+          # all three are present; otherwise use the committed source layers.
+          source_paths=(final-icons-background.png final-icons-foreground.png final-icons-monochrome.png)
           present=0
           for path in "${source_paths[@]}"; do
             if git cat-file -e "FETCH_HEAD:${path}" 2>/dev/null; then
               present=$((present + 1))
             fi
           done
-
           if [[ "$present" -eq 3 ]]; then
             git show FETCH_HEAD:final-icons-background.png > icon-source/background.png
             git show FETCH_HEAD:final-icons-foreground.png > icon-source/foreground.png
             git show FETCH_HEAD:final-icons-monochrome.png > icon-source/monochrome.png
             echo "Imported all three staged icon layers from master."
           elif [[ "$present" -eq 0 ]]; then
-            echo "No root staging PNGs remain; using committed icon-source layers."
+            echo "No root staging PNGs remain; using committed icon-source layers when available."
           else
             echo "Incomplete icon staging set on master ($present of 3 files); refusing to build with mixed artwork." >&2
             exit 1
           fi
+
+          # Restore the missing assets and generator from the source branch
+          # when this repository copy does not already contain them.
+          if [[ ! -s icon-source/background.png || ! -s icon-source/foreground.png || ! -s icon-source/monochrome.png || ! -s tools/generate_adaptive_icon.py ]]; then
+            git fetch --no-tags --depth=1 https://github.com/hidinginthefireplace/The-Simpsons-Hit-and-Run-Android.git final-baseline-switch-layout-readme
+            git show FETCH_HEAD:icon-source/background.png > icon-source/background.png
+            git show FETCH_HEAD:icon-source/foreground.png > icon-source/foreground.png
+            git show FETCH_HEAD:icon-source/monochrome.png > icon-source/monochrome.png
+            git show FETCH_HEAD:tools/generate_adaptive_icon.py > tools/generate_adaptive_icon.py
+          fi
+
           "$RUNNER_TEMP/icon-venv/bin/python" - <<'PY'
           from pathlib import Path
           from PIL import Image
