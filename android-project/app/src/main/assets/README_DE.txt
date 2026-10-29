@@ -2,11 +2,11 @@ The Simpsons Hit & Run - Revamped! (Android)
 https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped
 --------------------------------------------
 
-Ein verbesserter Android-Port von The Simpsons: Hit & Run, der darauf abzielt, das Originalspiel mit verbesserter Grafik, erweiterter Anpassung, Touchscreen-Unterstützung, Unterstützung für Android TV-Geräte sowie verschiedenen Fehlerbehebungen und Qualitätsverbesserungen (Quality of Life) auf Android-Geräte zu bringen.
+Ein verbesserter Android-Port von The Simpsons: Hit & Run, der darauf abzielt, das Originalspiel mit verbesserter Grafik, erweiterter Anpassung, Touchscreen-Unterstützung, Unterstützung für Android TV-Geräte sowie verschiedenen Fehlerbehebungen und Verbesserung der Benutzerfreundlichkeit auf Android-Geräte zu bringen.
 
-Wichtig: Sie müssen Ihre eigene PC-Version des Spiels und die erforderlichen Spieldaten bereitstellen. Aus Urheberrechtsgründen sind die ursprünglichen Spieldaten nicht in diesem Projekt enthalten.
+Wichtig: Sie müssen Ihre eigene PC-Version des Spiels und die erforderlichen Spieldaten bereitstellen. Aus Urheberrechtsgründen sind die originalen Spieldaten nicht in diesem Projekt enthalten.
 
-Die Hauptvision dieses Projekts besteht darin, das Originalspiel und seine ursprünglichen Spieldateien an die Grenzen zu bringen und gleichzeitig optimiert zu bleiben, um diesen legendären Simpsons-Klassiker zu modernisieren.
+Die Hauptvision dieses Projekts ist es, das Originalspiel und seine originalen Spieldateien an ihre Grenzen zu bringen und gleichzeitig optimiert zu bleiben, um dieses legendäre Simpsons-Spiel zu modernisieren.
 
 Diese Version basiert auf dem hervorragenden Fork von Carlox33 des ursprünglichen Switch- und Vita-Ports von ZenoArrows. Ein besonderer Dank geht an alle Beteiligten, die diesen Port möglich gemacht haben!
 
@@ -14,16 +14,24 @@ Diese Version basiert auf dem hervorragenden Fork von Carlox33 des ursprünglich
 ⚡ Empfohlene Spezifikationen
 --------------------------------------------
 
-(Cel Shading AN)
+(Standardeinstellungen / Cel Shading EIN)
 
-Tegra X1 oder Helio G99 (1080p / 60 FPS)
-Snapdragon 8 Gen 1   (2160p / 120 FPS)
+Tegra X1 oder Helio G99 [3/4 GB RAM]   (1080p / 60 FPS) 
+Snapdragon 8 Gen 1/2    [8 GB RAM]     (2160p / 120 FPS)
+
+(Alle Verbesserungen AUS)
+
+Beliebiger älterer Low/Mid-Spec SOC [2 GB RAM] (720p / 60 FPS)
+
+Die Standardeinstellungen sind so angepasst, dass sie auf den meisten modernen Smartphones gut funktionieren.
+
+Bitte beachten: Bewegungsunschärfe (Motion Blur) und CRT-Filter können sehr GPU-intensiv sein und sind daher standardmäßig deaktiviert.
 
 
 📦 Installation
 --------------------------------------------
 
-Wählen Sie bei Aufforderung den entsprechenden Speicherort für die Spieldaten oder lassen Sie den Port die verfügbaren Daten automatisch erkennen.
+Wählen Sie bei Aufforderung den entsprechenden Speicherort der Spieldaten aus oder lassen Sie den Port verfügbare Daten automatisch erkennen.
 
 Alle Spieldaten müssen aus der ursprünglichen PC-Installation stammen und bestehen aus Folgendem:
 
@@ -32,9 +40,9 @@ Ordner "movies"
 Ordner "scripts"
 Ordner "sound"
 
-Sowie allen anderen .rcf-Dateien, die sich im Haupt-Installationsordner befinden, einschließlich der Sprachdatei dialog.rcf.
+Sowie allen anderen .rcf-Dateien, die sich im Hauptinstallationsordner befinden, einschließlich der Sprachdatei dialog.rcf.
 
-Unterstützte Spieldaten-Speicherorte sind wie folgt:
+Unterstützte Speicherorte für Spieldaten sind:
 
 Android\data\com.sevarg.simpsons\files
 Gemeinsamer interner Speicher\Simpsons
@@ -46,18 +54,18 @@ Externer Speicher\Simpsons
 
 Unterstützung für Englisch, Français, Deutsch und Español.
 
-Wenn die PC-Spieldaten aus einer europäischen Version stammen, können Sie jede beliebige Sprache auswählen, und die Texte im Spiel werden ebenfalls unterstützt. Die europäische Version enthält Textdaten und Videos im Spiel für alle 4 Sprachen. (Dies umfasst auch Großbritannien und Irland)
+Wenn die PC-Spieldaten von einer europäischen Version stammen, können Sie jede beliebige Sprache auswählen, und der Text im Spiel wird ebenfalls unterstützt. Die europäische Version enthält In-Game-Textdaten und Videos für alle 4 Sprachen. (Dies schließt Großbritannien und Irland ein)
 
-Wenn die Daten aus der nordamerikanischen Version stammen, wird die Sprache aus Kompatibilitätsgründen immer auf Englisch zurückgesetzt.
+Wenn die Daten von der nordamerikanischen Version stammen, wird die Sprache aus Kompatibilitätsgründen immer auf Englisch zurückgesetzt.
 
-Was die Sprachausgabe im Spiel betrifft, hängt sie vom Land ab und die Sprach-Dialogdateien lauten wie folgt:
+Was die Dialoge im Spiel betrifft, hängt dies vom Land ab. Die Sprachdialogdateien sind wie folgt aufgebaut:
 
-Englisch (dialog.rcf)  Großbritannien, Irland, USA, Kanada, Niederlande, International
+Englisch (dialog.rcf)  UK, Irland, USA, Kanada, Niederlande, International
 Französisch (dialogf.rcf) Frankreich
 Deutsch  (dialogg.rcf) Deutschland
 Spanisch (dialogs.rcf) Spanien
 
-Sie können Ihre gewünschte Sprache beim Starten des Spiels auswählen. Wenn Sie nicht über die entsprechende dialog.rcf-Sprachdatei verfügen, aber dialog.rcf vorhanden ist, wird die Sprachausgabe im Spiel automatisch auf Englisch zurückgesetzt. Wenn keine Dialogdatei gefunden wird, kann das Spiel nicht geladen werden; dies dient dazu, Abstürze während des Spiels zu vermeiden.
+Sie können Ihre gewünschte Sprache beim Starten des Spiels auswählen. Wenn Sie nicht über die entsprechende Sprachdatei dialog.rcf verfügen und die Standard-dialog.rcf vorhanden ist, wird der Spieldialog automatisch auf Englisch zurückgesetzt. Wenn keine Dialogdatei gefunden wird, wird das Spiel nicht geladen, um Abstürze während des Spiels zu vermeiden.
 
 Kopieren Sie sorgfältig alle Ihre Dateien aus dem PC-Installationsordner.
 
@@ -67,76 +75,76 @@ Kopieren Sie sorgfältig alle Ihre Dateien aus dem PC-Installationsordner.
 
 Kompatibilität mit Xbox One/Series, DualShock 4/DualSense, Switch 1/2, 8bitdo und verschiedenen anderen kompatiblen Bluetooth-Controllern.
 
-Tastenaktionen sind in dieser Reihenfolge aufgeführt: Xbox > PlayStation > Switch
-Zu Fuß / Fahren Steuerungen sind durch "/" getrennt
+Tastenaktionen sind in dieser Reihenfolge aufgelistet: Xbox > PlayStation > Switch
+Zu Fuß / Fahren ist jeweils durch "/" getrennt
 
-Start-Taste - Pause-Menü
-Obere Aktionstaste — Interagieren / Mit Auto interagieren - △ Y X 
+Start-Taste — Pause-Menü
+Obere Aktionstaste — Interagieren / In Auto einsteigen - △ Y X 
 Linke Aktionstaste — Angriff / Handbremse - □ X Y
-Rechte Aktionstaste — Sprinten umschalten / Rückwärtsfahren - ○ B A
+Rechte Aktionstaste — Sprintfunktion umschalten / Rückwärts - ○ B A
 Untere Aktionstaste — Springen oder Bestätigen / Beschleunigen - ✕ A B
-Steuerkreuz - Menünavigation und Bewegung/Lenken
-Linker Stick - Menünavigation und Bewegung/Lenken
-Rechter Stick - Kamerasteuerung
-Linker Schulterbutton (L1) - Kamera-Zoom umschalten
-Linker Trigger (L2) - Heranzoomen / Rückwärtsfahren (Analog)
-Rechter Schulterbutton (R1) - Kamera zentrieren / Hupe
-Rechter Trigger (R2) - Herauszoomen / Beschleunigen (Analog)
-Linker Stick Klick (L3) - Sprinten umschalten
+Steuerkreuz — Menünavigation und Bewegung/Lenken
+Linker Stick — Menünavigation und Bewegung/Lenken
+Rechter Stick — Kamerasteuerung
+L1 (Schultertaste links) — Kamerazoom umschalten
+L2 (Trigger links) — Heranzoomen / Rückwärts (Analog)
+R1 (Schultertaste rechts) — Kamera zentrieren / Hupe
+R2 (Trigger rechts) — Herauszoomen / Beschleunigen (Analog)
+L3 (Linken Stick drücken) — Sprintfunktion umschalten
 
-Weitere Verbesserungen:
+Verbesserung der Steuerung:
+
+Integriertes Touchscreen-HUD und Steuerung mit Anpassungsoptionen für Position, Größe und Deckkraft der Touch-Tasten.
+
+Die gesamte Vorarbeit wurde von Carlox33 geleistet. Bitte besuchen Sie das Repository für weitere Details:
+https://github.com/Carlox33/The-Simpsons-Hit-and-Run-Android/blob/master/TOUCH_CONTROLS.md
 
 Verbessertes Kamerasystem mit schnellerer Reaktion und mehr Kamerafreiheit.
-
-Integriertes Touchscreen-HUD und Steuerungen mit Anpassungsoptionen für Platzierung, Größe und Deckkraft der Touch-Tasten.
-
-In-Game-Zugriff auf die Touchscreen-Anpassung über das Optionsmenü.
-
 Verbesserte Reaktionsfähigkeit/präzisere Steuerung zu Fuß.
 
 
-✨ Qualitätsverbesserungen (Quality of Life)
+✨ Lebensqualität-Verbesserungen (QoL)
 --------------------------------------------
 
-In-Game-Schalter für Grafik- und Controller-Einstellungen.
+Optionen im Spiel für Grafik- und Controller-Einstellungen.
 
-Kompatibilität für Android TV-Geräte mit ordnungsgemäßer Controller-Sortierung und Unterstützung für doppeltes Zurückdrücken (Getestet auf NVidia Shield TV).
+Kompatibilität für Android TV-Geräte mit korrekter Controller-Sortierung und Unterstützung für doppeltes Zurückdrücken (Getestet auf NVidia Shield TV).
 
-Flexible Auswahl des Spieldaten-Speicherorts mit Unterstützung für verfügbare interne, gemeinsame und externe Speicherorte.
+Flexible Auswahl des Speicherorts für Spieldaten mit Unterstützung für internen, gemeinsamen und externen Speicher.
 
-Spieldaten-Erkennung beim ersten Start zur Vereinfachung der Inbetriebnahme, wenn die erforderlichen Dateien bereits vorhanden sind.
+Erkennung der Spieldaten beim ersten Start, um die Einrichtung zu vereinfachen, wenn die erforderlichen Dateien bereits vorhanden sind.
 
 In-Game-Cheat-Menü hinzugefügt.
 
 
-🎨 Grafik- & Visuelle Verbesserungen
+🎨 Grafik- und visuelle Verbesserungen
 --------------------------------------------
 
 Hinzugefügte Grafikoptionen:
 
-Konfigurierbarer Cel-Shading-Effekt für einen ästhetisch ansprechenderen visuellen Stil, der dem ursprünglichen Cartoon-Stil der Simpsons sehr nahe kommt.
+Einstellbarer Cel-Shading-Effekt für einen ästhetisch ansprechenderen visuellen Stil, der dem originalen Zeichentrickstil der Simpsons sehr nahe kommt.
 
 Im Spiel auswählbare Rendering-Auflösungen: 480p, 720p, 1080p, 1440p und 2160p.
 
-Konfigurierbare anisotrope Texturfilterung von 2× bis 16× zur Verbesserung der Texturschärfe bei entfernten und schrägen Blickwinkeln.
+Einstellbare anisotrope Texturfilterung von 2× bis 16×, die die Texturschärfe bei entfernten und schrägen Blickwinkeln verbessert.
 
-Einstellbare Bildschärfung mit konfigurierbarer Stärke und Option zum Aktivieren/Deaktivieren.
+Anpassbare Bildschärfe mit konfigurierbarer Stärke und einer Ein/Aus-Option.
 
-Leichtes bikubisches Upscaling für die niedrig aufgelösten 3D-Renderszenen des Spiels.
+Leichtes bikubisches Hochskalieren für die niedrig auflösenden 3D-Cutscenes des Spiels.
 
-Konfigurierbarer Bloom-Effekt zur Verbesserung der Darstellung von Lichtern und Spezialeffekten.
+Konfigurierbarer Bloom-Effekt zur Verbesserung des Erscheinungsbilds von Lichtern und Spezialeffekten.
 
-Verbesserte Sonnenlicht-Blendeffekte und ausgewogenere Beleuchtung.
+Verbesserte Sonnenblendung und ausgewogenere Beleuchtung.
 
 Experimentelle animierte Wolkenschatten-Effekte für Außenbereiche bei Tageslicht.
 
-Optionale Randbeleuchtung (Rim lighting) für Charakter- und Fahrzeugkanten.
+Optionale Randbeleuchtung (Rim Lighting) für Kanten von Charakteren und Fahrzeugen.
 
 CRT-Filter: Ein optionaler Effekt im CRT-Geom-Stil, der das Erscheinungsbild eines Fernsehers aus den 1990er Jahren imitiert.
 
-Bewegungsunschärfe (Motion blur): Ein kamerabezogener Effekt, der auf Fahrzeugbewegung, Rücklicht-Spuren und den unteren Bildschirmbereich fokussiert ist.
+Bewegungsunschärfe (Motion Blur): Ein kamerabezogener Effekt, der sich auf Fahrzeugbewegungen, Rücklichtstreuung und den unteren Bildschirmbereich konzentriert.
 
-Erhöhte Sichtweite der Umgebung, sodass mehr von der Spielwelt sichtbar bleibt, zusammen mit erhöhten Darstellungsdistanzen für Fußgänger und Fahrzeuge sowie flüssigeren Animationen entfernter Fußgänger.
+Erhöhte Sichtweite (Draw Distance), sodass mehr von der Spielwelt sichtbar bleibt, mit größeren Darstellungsdistanzen für Fußgänger und Fahrzeuge sowie flüssigeren Animationen für entfernte Fußgänger.
 
 
 🛠️ Standard-Grafikkonfiguration
@@ -146,18 +154,18 @@ Auflösung
 1080p
 
 Cel Shading
-An
+Ein
 
 Anisotrope Filterung
 2×
 
 Bloom
-An
+Ein
 
 Wolkenschatten
-An
+Ein
 
-Bildschärfung
+Schärfe
 40%
 
 CRT-Filter
@@ -184,8 +192,8 @@ Wolkenschatten-Rendering.
 🔬 Zukünftige Funktionen
 --------------------------------------------
 
-Verfeinerung der Kompatibilität für weitere Sprachen.
+Verfeinerung der Kompatibilität für andere Sprachen.
 
-Erforschung einer möglichen Kompatibilität mit Spieldaten der PS2-, GameCube- und Xbox-Releases.
+Erforschung einer möglichen Kompatibilität mit Spieldaten von PS2-, GameCube- und Xbox-Versionen.
 
-Automatische Extraktion von Spieldaten aus Disc-Image-Dateien.
+Automatisches Entpacken von Spieldaten aus Disc-Image-Dateien.

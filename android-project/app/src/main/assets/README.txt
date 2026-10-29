@@ -14,10 +14,18 @@ This version is based on the excellent Carlox33's fork of ZenoArrows's original 
 ⚡Recommended Specs
 --------------------------------------------
 
-(Cel Shading ON)
+(Stock Settings / Cel Shading ON)
 
-Tegra X1 or Helio G99 (1080p / 60FPS)
-Snapdragon 8 Gen 1   (2160p / 120FPS)
+Tegra X1 or Helio G99 [3/4GB RAM]   (1080p / 60FPS) 
+Snapdragon 8 Gen 1/2    [8GB RAM]   (2160p / 120FPS)
+
+(All Enhancements OFF)
+
+Any older low/mid spec SOC [2GB RAM] (720p / 60FPS)
+
+Stock settings are fine tuned to work nicely on most modern smartphones.
+
+Please note: Motion Blur and CRT Filter can be quite GPU intensive, so they are toggled off by default.
 
 
 📦 Installation
@@ -84,14 +92,13 @@ Right shoulder (R1) - Centre camera / Car horn
 Right trigger (R2) - Zoom out / Accelerate (Analog)
 Left stick click (L3) - Toggle sprint
 
-Other Improvements:
-
-Improved camera system with faster response and more camera freedom.
+Control Improvements:
 
 Integrated touchscreen HUD and controls with customization options for touch-button placement, size and opacity.
 
-In-game access to touchscreen customization from the Options menus.
+All the hard work was done by Carlox33, so please check out their repository for more details: https://github.com/Carlox33/The-Simpsons-Hit-and-Run-Android/blob/master/TOUCH_CONTROLS.md
 
+Improved camera system with faster response and more camera freedom.
 Improved responsiveness/tighter controls when on foot.
 
 
