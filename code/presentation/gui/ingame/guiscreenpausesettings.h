@@ -1,0 +1,160 @@
+//===========================================================================
+// Copyright (C) 2000 Radical Entertainment Ltd.  All rights reserved.
+//
+// Component:   CGuiScreenPauseSettings
+//
+// Description: 
+//              
+//
+// Authors:     Tony Chu
+//
+// Revisions		Date			Author	    Revision
+//                  2002/07/04      TChu        Created for SRR2
+//
+//===========================================================================
+
+#ifndef GUISCREENPAUSESETTINGS_H
+#define GUISCREENPAUSESETTINGS_H
+
+//===========================================================================
+// Nested Includes
+//===========================================================================
+#include <presentation/gui/guiscreen.h>
+
+#include <camera/supercam.h>
+#include <cheats/cheatinputsystem.h>
+
+//===========================================================================
+// Forward References
+//===========================================================================
+class CGuiMenu;
+
+namespace Scrooby
+{
+    class Screen;
+    class Group;
+};
+
+//===========================================================================
+// Interface Definitions
+//===========================================================================
+class CGuiScreenPauseSettings : public CGuiScreen,
+                                public ICheatEnteredCallback
+{
+public:
+    CGuiScreenPauseSettings( Scrooby::Screen* pScreen, CGuiEntity* pParent );
+    virtual ~CGuiScreenPauseSettings();
+
+	virtual void HandleMessage( eGuiMessage message, 
+			                    unsigned int param1 = 0,
+								unsigned int param2 = 0 );
+
+    virtual CGuiMenu* HasMenu() { return m_pMenu; }
+    virtual void OnCheatEntered( eCheatID cheatID, bool isEnabled );
+
+protected:
+    void InitIntro();
+	void InitRunning();
+	void InitOutro();
+
+private:
+    void UpdateCameraSelections();
+    
+    enum ePauseSettingsMenuItem
+    {
+        MENU_ITEM_CAMERA,
+        MENU_ITEM_JUMP_CAMERAS,
+#if defined(RAD_ANDROID)
+        MENU_ITEM_INTERSECT_NAV_SYSTEM,
+        MENU_ITEM_RADAR,
+        MENU_ITEM_INVERT_CAM_CONTROL,
+        MENU_ITEM_VIBRATION,
+#else
+#if !defined(RAD_PC)
+        MENU_ITEM_INVERT_CAM_CONTROL,
+#endif
+        MENU_ITEM_INTERSECT_NAV_SYSTEM,
+        MENU_ITEM_RADAR,
+#if !defined(RAD_PC)
+        MENU_ITEM_VIBRATION,
+#endif
+#endif
+        MENU_ITEM_TUTORIAL,
+
+        NUM_PAUSE_SETTINGS_MENU_ITEMS
+    };
+
+   #if defined(RAD_ANDROID)
+    bool m_graphicsSettingsMode = false;
+    bool m_cheatsSettingsMode = false;
+    bool m_moreGraphicsSettingsMode = false;
+    bool m_moreCheatsSettingsMode = false;
+    bool m_configuringAndroidSubmenu = false;
+
+    void ConfigureAndroidGraphicsMenu();
+    void ConfigureAndroidMoreGraphicsMenu();
+    void ConfigureAndroidCheatsMenu();
+    void ConfigureAndroidMoreCheatsMenu();
+    void RestoreAndroidSettingsMenu();
+    void LeaveAndroidGraphicsMenu( bool backSoundAlreadyPlayed );
+    void LeaveAndroidCheatsMenu( bool backSoundAlreadyPlayed );
+
+    bool mHasInvertCamControl=false;
+    bool mHasGamepadVibration=false;
+
+    Scrooby::Text* m_pOriginalResolutionValue = NULL;
+    Scrooby::Text* m_pSettingsDrivingCameraValue = NULL;
+    Scrooby::Text* m_pGraphicsResolutionValue = NULL;
+    Scrooby::Text* m_pOriginalFPSValue = NULL;
+    Scrooby::Text* m_pGraphicsFPSValue = NULL;
+    Scrooby::Text* m_pOriginalSharpeningValue = NULL;
+    Scrooby::Text* m_pGraphicsSharpeningValue = NULL;
+    Scrooby::Text* m_pMoreGraphicsSharpeningValue = NULL;
+    Scrooby::Text* m_pOriginalRadarValue = NULL;
+
+    int mMenuItemToGuiMenuIndex[ NUM_PAUSE_SETTINGS_MENU_ITEMS ];
+    int mGuiMenuIndexToMenuItem[ NUM_PAUSE_SETTINGS_MENU_ITEMS ];
+    int mNumActiveMenuItems=0;
+
+    bool AddPauseSettingsMenuItemIfAvailable
+    (
+        Scrooby::Page* pPage,
+        const char* item,
+        int logicalMenuItem
+    );
+
+    bool AddGeneratedAndroidToggleMenuItem
+    (
+        Scrooby::Group* pMenuGroup,
+        Scrooby::Page* pPage,
+        int logicalMenuItem
+    );
+
+    bool IsAndroidOptionalMenuItem( int logicalMenuItem ) const;
+    bool HasMenuItem( int logicalMenuItem ) const;
+
+    int GetGuiMenuIndexFromMenuItem( int logicalMenuItem ) const;
+    int GetMenuItemFromGuiMenuIndex( int guiMenuIndex ) const;
+#endif
+    CGuiMenu* m_pMenu;
+
+    enum eCameraSelectionMode
+    {
+        CAMERA_SELECTION_NOT_AVAILABLE = -1,
+
+        CAMERA_SELECTION_FOR_DRIVING,
+        CAMERA_SELECTION_FOR_WALKING,
+
+        NUM_CAMERA_SELECTION_MODES
+    };
+
+    
+
+    eCameraSelectionMode m_currentCameraSelectionMode;
+
+    SuperCam::Type* m_cameraSelections[ NUM_CAMERA_SELECTION_MODES ];
+    int m_numCameraSelections[ NUM_CAMERA_SELECTION_MODES ];
+
+};
+
+#endif // GUISCREENPAUSEOPTIONS_H
