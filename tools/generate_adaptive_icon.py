@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate crisp Android launcher icon layers from the original artwork."""
 from pathlib import Path
+import shutil
 from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,9 @@ def main() -> None:
     # established 77.5% artwork scale and apply mild edge sharpening after
     # resizing to counteract downsampling softness.
     background = open_source_layer(SOURCE / "background.png", "background.png")
+    # The adaptive-icon XML uses this drawable. Copy the latest source layer byte-for-byte
+    # so the APK cannot retain a stale background; do not scale or recompress it.
+    shutil.copyfile(SOURCE / "background.png", DRAWABLE / "ic_launcher_background.png")
     foreground_source = open_source_layer(SOURCE / "foreground.png", "foreground.png")
     monochrome_source = open_source_layer(SOURCE / "monochrome.png", "monochrome.png")
     foreground = scale_foreground_layer(foreground_source, "foreground.png")
