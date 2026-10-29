@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - migration/latest-tested-working-code
   workflow_dispatch:
 
 permissions:
