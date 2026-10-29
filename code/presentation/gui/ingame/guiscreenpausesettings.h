@@ -32,6 +32,7 @@ class CGuiMenu;
 namespace Scrooby
 {
     class Screen;
+    class Group;
 };
 
 //===========================================================================
@@ -63,24 +64,53 @@ private:
     {
         MENU_ITEM_CAMERA,
         MENU_ITEM_JUMP_CAMERAS,
-    #if !defined(RAD_PC) //&& !defined(RAD_ANDROID)// he encontrado que como estamos usando en android los assets de pc, pues claro no encontramos esta opcion es lógico
-        MENU_ITEM_INVERT_CAM_CONTROL,
-    #endif
+#if defined(RAD_ANDROID)
         MENU_ITEM_INTERSECT_NAV_SYSTEM,
         MENU_ITEM_RADAR,
-    #if !defined(RAD_PC) //&& !defined(RAD_ANDROID) // temporalmente desactivado la opcion del menu vibracion en android
+        MENU_ITEM_INVERT_CAM_CONTROL,
         MENU_ITEM_VIBRATION,
-    #endif
-        #if !defined(RAD_ANDROID)
+#else
+#if !defined(RAD_PC)
+        MENU_ITEM_INVERT_CAM_CONTROL,
+#endif
+        MENU_ITEM_INTERSECT_NAV_SYSTEM,
+        MENU_ITEM_RADAR,
+#if !defined(RAD_PC)
+        MENU_ITEM_VIBRATION,
+#endif
+#endif
         MENU_ITEM_TUTORIAL,
-        #endif
 
         NUM_PAUSE_SETTINGS_MENU_ITEMS
     };
 
    #if defined(RAD_ANDROID)
+    bool m_graphicsSettingsMode = false;
+    bool m_cheatsSettingsMode = false;
+    bool m_moreGraphicsSettingsMode = false;
+    bool m_moreCheatsSettingsMode = false;
+    bool m_configuringAndroidSubmenu = false;
+
+    void ConfigureAndroidGraphicsMenu();
+    void ConfigureAndroidMoreGraphicsMenu();
+    void ConfigureAndroidCheatsMenu();
+    void ConfigureAndroidMoreCheatsMenu();
+    void RestoreAndroidSettingsMenu();
+    void LeaveAndroidGraphicsMenu( bool backSoundAlreadyPlayed );
+    void LeaveAndroidCheatsMenu( bool backSoundAlreadyPlayed );
+
     bool mHasInvertCamControl=false;
     bool mHasGamepadVibration=false;
+
+    Scrooby::Text* m_pOriginalResolutionValue = NULL;
+    Scrooby::Text* m_pSettingsDrivingCameraValue = NULL;
+    Scrooby::Text* m_pGraphicsResolutionValue = NULL;
+    Scrooby::Text* m_pOriginalFPSValue = NULL;
+    Scrooby::Text* m_pGraphicsFPSValue = NULL;
+    Scrooby::Text* m_pOriginalSharpeningValue = NULL;
+    Scrooby::Text* m_pGraphicsSharpeningValue = NULL;
+    Scrooby::Text* m_pMoreGraphicsSharpeningValue = NULL;
+    Scrooby::Text* m_pOriginalRadarValue = NULL;
 
     int mMenuItemToGuiMenuIndex[ NUM_PAUSE_SETTINGS_MENU_ITEMS ];
     int mGuiMenuIndexToMenuItem[ NUM_PAUSE_SETTINGS_MENU_ITEMS ];
@@ -90,6 +120,13 @@ private:
     (
         Scrooby::Page* pPage,
         const char* item,
+        int logicalMenuItem
+    );
+
+    bool AddGeneratedAndroidToggleMenuItem
+    (
+        Scrooby::Group* pMenuGroup,
+        Scrooby::Page* pPage,
         int logicalMenuItem
     );
 

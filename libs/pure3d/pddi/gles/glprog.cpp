@@ -33,20 +33,87 @@ CGcontext pglProgram::context = nullptr;
 CGprofile pglProgram::vertexProfile, pglProgram::fragmentProfile;
 #endif
 
+
+#if !defined(RAD_CG)
+#ifdef RAD_ANDROID
+#include <unordered_map>
+#include <cstring>
+#include <cstdint>
+#include <functional>
+namespace
+{
+struct SHARUniformCacheKey
+{
+    const pglProgram* owner; GLint location;
+    bool operator==(const SHARUniformCacheKey& other) const { return owner == other.owner && location == other.location; }
+};
+struct SHARUniformCacheKeyHash
+{
+    size_t operator()(const SHARUniformCacheKey& key) const
+    {
+        const size_t a=std::hash<const void*>()(key.owner), b=std::hash<int>()((int)key.location);
+        return a ^ (b+(a<<6)+(a>>2));
+    }
+};
+struct SHARUniformCacheValue { GLenum type; size_t size; unsigned char bytes[64]; bool valid; };
+static std::unordered_map<SHARUniformCacheKey,SHARUniformCacheValue,SHARUniformCacheKeyHash> gSHARUniformCache;
+static bool SHARShouldUploadUniform(const pglProgram* owner,GLint location,GLenum type,const void* data,size_t size)
+{
+    if(location<0) return false;
+    if(size>64) return true;
+    SHARUniformCacheKey key={owner,location};
+    SHARUniformCacheValue& cached=gSHARUniformCache[key];
+    if(cached.valid&&cached.type==type&&cached.size==size&&memcmp(cached.bytes,data,size)==0) return false;
+    cached.type=type; cached.size=size; memcpy(cached.bytes,data,size); cached.valid=true;
+    return true;
+}
+static void SHARClearUniformCacheForProgram(const pglProgram* owner)
+{
+    for(auto it=gSHARUniformCache.begin();it!=gSHARUniformCache.end();)
+        if(it->first.owner==owner) it=gSHARUniformCache.erase(it); else ++it;
+}
+}
+void InvalidateSHARUniformCaches() { gSHARUniformCache.clear(); }
+static inline void SHARUniform1i(const pglProgram* o,GLint l,GLint v)
+{ if(!SHARShouldUploadUniform(o,l,GL_INT,&v,sizeof(v)))return; glUniform1i(l,v); }
+static inline void SHARUniform1f(const pglProgram* o,GLint l,GLfloat v)
+{ if(!SHARShouldUploadUniform(o,l,GL_FLOAT,&v,sizeof(v)))return; glUniform1f(l,v); }
+static inline void SHARUniform3f(const pglProgram* o,GLint l,GLfloat x,GLfloat y,GLfloat z)
+{ const GLfloat v[3]={x,y,z}; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC3,v,sizeof(v)))return; glUniform3f(l,x,y,z); }
+static inline void SHARUniform4f(const pglProgram* o,GLint l,GLfloat x,GLfloat y,GLfloat z,GLfloat w)
+{ const GLfloat v[4]={x,y,z,w}; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC4,v,sizeof(v)))return; glUniform4f(l,x,y,z,w); }
+static inline void SHARUniform4fv(const pglProgram* o,GLint l,GLsizei n,const GLfloat* v)
+{ const size_t sz=sizeof(GLfloat)*4*(size_t)n; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC4,v,sz))return; glUniform4fv(l,n,v); }
+static inline void SHARUniformMatrix4fv(const pglProgram* o,GLint l,GLsizei n,GLboolean t,const GLfloat* v)
+{ const size_t sz=sizeof(GLfloat)*16*(size_t)n; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_MAT4,v,sz))return; glUniformMatrix4fv(l,n,t,v); }
+#else
+static inline void SHARUniform1i(const pglProgram*,GLint l,GLint v){glUniform1i(l,v);}
+static inline void SHARUniform1f(const pglProgram*,GLint l,GLfloat v){glUniform1f(l,v);}
+static inline void SHARUniform3f(const pglProgram*,GLint l,GLfloat x,GLfloat y,GLfloat z){glUniform3f(l,x,y,z);}
+static inline void SHARUniform4f(const pglProgram*,GLint l,GLfloat x,GLfloat y,GLfloat z,GLfloat w){glUniform4f(l,x,y,z,w);}
+static inline void SHARUniform4fv(const pglProgram*,GLint l,GLsizei n,const GLfloat* v){glUniform4fv(l,n,v);}
+static inline void SHARUniformMatrix4fv(const pglProgram*,GLint l,GLsizei n,GLboolean t,const GLfloat* v){glUniformMatrix4fv(l,n,t,v);}
+#endif
+#endif
+
 #ifdef RAD_CG
-static inline void UniformColour(CGparameter param, pddiColour c)
+static inline void UniformColour(const pglProgram*, CGparameter param, pddiColour c)
 {
     cgSetParameter4f(param, float(c.Red()) / 255, float(c.Green()) / 255, float(c.Blue()) / 255, float(c.Alpha()) / 255);
 }
 #else
-static inline void UniformColour(GLint loc, pddiColour c)
+static inline void UniformColour(const pglProgram* owner, GLint loc, pddiColour c)
 {
-    glUniform4f(loc, float(c.Red()) / 255, float(c.Green()) / 255, float(c.Blue()) / 255, float(c.Alpha()) / 255);
+    SHARUniform4f(owner, loc, float(c.Red()) / 255, float(c.Green()) / 255,
+                  float(c.Blue()) / 255, float(c.Alpha()) / 255);
 }
 #endif
 
 pglProgram::pglProgram()
 {
+#ifdef RAD_ANDROID
+    SHARClearUniformCacheForProgram(this);
+#endif
 #ifdef RAD_CG
     program = nullptr;
     projection = modelview = normalmatrix = alpharef = sampler = acs = nullptr;
@@ -56,6 +123,13 @@ pglProgram::pglProgram()
 
     #ifdef RAD_ANDROID
     lit = -1;
+    toonEnabled = -1;
+    toonObjectEnabled = -1;
+    toonRimEnabled = -1;
+    toonOutlinePass = -1;
+    toonOutlineWidth = -1;
+    nightObjectBrightness = -1;
+    nightObjectSaturation = -1;
     #endif
 
 #endif
@@ -63,6 +137,9 @@ pglProgram::pglProgram()
 
 pglProgram::~pglProgram()
 {
+#ifdef RAD_ANDROID
+    SHARClearUniformCacheForProgram(this);
+#endif
 #ifdef RAD_CG
     if (program)
         cgDestroyProgram(program);
@@ -80,7 +157,7 @@ void pglProgram::SetProjectionMatrix(const pddiMatrix* matrix)
     checkForCgError();
 #else
     if (projection >= 0)
-        glUniformMatrix4fv(projection, 1, GL_FALSE, matrix->m[0]);
+        SHARUniformMatrix4fv(this, projection, 1, GL_FALSE, matrix->m[0]);
 #endif
 }
 
@@ -101,13 +178,13 @@ void pglProgram::SetModelViewMatrix(const pddiMatrix* matrix)
     checkForCgError();
 #else
     if (modelview >= 0)
-        glUniformMatrix4fv(modelview, 1, GL_FALSE, matrix->m[0]);
+        SHARUniformMatrix4fv(this, modelview, 1, GL_FALSE, matrix->m[0]);
     if (normalmatrix >= 0)
     {
         pddiMatrix inverse;
         inverse.Invert(*matrix);
         inverse.Transpose();
-        glUniformMatrix4fv(normalmatrix, 1, GL_FALSE, inverse.m[0]);
+        SHARUniformMatrix4fv(this, normalmatrix, 1, GL_FALSE, inverse.m[0]);
     }
 #endif
 }
@@ -117,18 +194,18 @@ void pglProgram::SetTextureEnvironment(const pglTextureEnv* texEnv)
 #ifdef RAD_CG
     if (texEnv->lit)
     {
-        UniformColour(acm, texEnv->ambient);
-        UniformColour(ecm, texEnv->emissive);
-        UniformColour(dcm, texEnv->diffuse);
-        UniformColour(scm, texEnv->specular);
+        UniformColour(this, acm, texEnv->ambient);
+        UniformColour(this, ecm, texEnv->emissive);
+        UniformColour(this, dcm, texEnv->diffuse);
+        UniformColour(this, scm, texEnv->specular);
         cgSetParameter1f(srm, texEnv->shininess);
     }
     else
     {
-        UniformColour(acm, pddiColour(-1));
-        UniformColour(ecm, pddiColour(-1));
-        UniformColour(dcm, pddiColour(-1));
-        UniformColour(scm, pddiColour(-1));
+        UniformColour(this, acm, pddiColour(-1));
+        UniformColour(this, ecm, pddiColour(-1));
+        UniformColour(this, dcm, pddiColour(-1));
+        UniformColour(this, scm, pddiColour(-1));
         cgSetParameter1f(srm, 0.0f);
     }
     checkForCgError();
@@ -142,36 +219,36 @@ void pglProgram::SetTextureEnvironment(const pglTextureEnv* texEnv)
     checkForCgError();
 #else
     if (sampler >= 0)
-        glUniform1i(sampler, 0);
+        SHARUniform1i(this, sampler, 0);
 
 
     #ifdef RAD_ANDROID
     if (lit >= 0)
-        glUniform1i(lit, texEnv->lit ? 1 : 0);
+        SHARUniform1i(this, lit, texEnv->lit ? 1 : 0);
     #endif
 
     if (texEnv->lit)
     {
-        UniformColour(acm, texEnv->ambient);
-        UniformColour(ecm, texEnv->emissive);
-        UniformColour(dcm, texEnv->diffuse);
-        UniformColour(scm, texEnv->specular);
-        glUniform1f(srm, texEnv->shininess);
+        UniformColour(this, acm, texEnv->ambient);
+        UniformColour(this, ecm, texEnv->emissive);
+        UniformColour(this, dcm, texEnv->diffuse);
+        UniformColour(this, scm, texEnv->specular);
+        SHARUniform1f(this, srm, texEnv->shininess);
     }
     else
     {
-        UniformColour(acm, pddiColour(-1));
-        UniformColour(ecm, pddiColour(-1));
-        UniformColour(dcm, pddiColour(-1));
-        UniformColour(scm, pddiColour(-1));
-        glUniform1f(srm, 0.0f);
+        UniformColour(this, acm, pddiColour(-1));
+        UniformColour(this, ecm, pddiColour(-1));
+        UniformColour(this, dcm, pddiColour(-1));
+        UniformColour(this, scm, pddiColour(-1));
+        SHARUniform1f(this, srm, 0.0f);
     }
 
     if (texEnv->alphaTest && alpharef >= 0)
     {
         PDDIASSERT(texEnv->alphaCompareMode == PDDI_COMPARE_GREATER ||
             texEnv->alphaCompareMode == PDDI_COMPARE_GREATEREQUAL);
-        glUniform1f(alpharef, texEnv->alphaTest ? texEnv->alphaRef : 0.0f);
+        SHARUniform1f(this, alpharef, texEnv->alphaTest ? texEnv->alphaRef : 0.0f);
     }
 #endif
 }
@@ -208,22 +285,52 @@ void pglProgram::SetLightState(int handle, const pddiLight* lightState)
     {
         cgSetParameter1i(lights[handle].enabled, lightState->enabled ? 1 : 0);
         cgSetParameter4fv(lights[handle].position, dir);
-        UniformColour(lights[handle].colour, lightState->colour);
+        UniformColour(this, lights[handle].colour, lightState->colour);
         cgSetParameter3f(lights[handle].attenuation, lightState->attenA, lightState->attenB, lightState->attenC);
     }
     checkForCgError();
 #else
-    glUniform1i(lights[handle].enabled, lightState->enabled ? 1 : 0);
-    glUniform4fv(lights[handle].position, 1, dir);
-    UniformColour(lights[handle].colour, lightState->colour);
-    glUniform3f(lights[handle].attenuation, lightState->attenA, lightState->attenB, lightState->attenC);
+    SHARUniform1i(this, lights[handle].enabled, lightState->enabled ? 1 : 0);
+    SHARUniform4fv(this, lights[handle].position, 1, dir);
+    UniformColour(this, lights[handle].colour, lightState->colour);
+    SHARUniform3f(this, lights[handle].attenuation, lightState->attenA, lightState->attenB, lightState->attenC);
 #endif
 }
+
+void pglProgram::SetCelShadingEnabled(bool enabled)
+{
+#ifdef RAD_ANDROID
+    if (toonEnabled >= 0)
+        SHARUniform1i(this, toonEnabled, enabled ? 1 : 0);
+#else
+    (void)enabled;
+#endif
+}
+
+#ifdef RAD_ANDROID
+void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled)
+{
+    if (toonEnabled >= 0)
+        SHARUniform1i(this, toonEnabled, enabled ? 1 : 0);
+    if (toonObjectEnabled >= 0)
+        SHARUniform1i(this, toonObjectEnabled, objectEnabled ? 1 : 0);
+    if (toonRimEnabled >= 0)
+        SHARUniform1i(this, toonRimEnabled, rimLightingEnabled ? 1 : 0);
+    if (toonOutlinePass >= 0)
+        SHARUniform1i(this, toonOutlinePass, outlinePass ? 1 : 0);
+    if (toonOutlineWidth >= 0)
+        SHARUniform1f(this, toonOutlineWidth, 0.009f);
+    if (nightObjectBrightness >= 0)
+        SHARUniform1f(this, nightObjectBrightness, objectBrightness);
+    if (nightObjectSaturation >= 0)
+        SHARUniform1f(this, nightObjectSaturation, objectSaturation);
+}
+#endif
 
 void pglProgram::SetAmbientLight(pddiColour ambient)
 {
     if (acs)
-        UniformColour(acs, ambient);
+        UniformColour(this, acs, ambient);
 }
 
 #ifdef RAD_CG
@@ -319,6 +426,13 @@ bool pglProgram::LinkProgram(GLuint vertexShader, GLuint fragmentShader)
 
     #ifdef RAD_ANDROID
     lit = glGetUniformLocation(program, "lit");
+    toonEnabled = glGetUniformLocation(program, "toonEnabled");
+    toonObjectEnabled = glGetUniformLocation(program, "toonObjectEnabled");
+    toonRimEnabled = glGetUniformLocation(program, "toonRimEnabled");
+    toonOutlinePass = glGetUniformLocation(program, "toonOutlinePass");
+    toonOutlineWidth = glGetUniformLocation(program, "toonOutlineWidth");
+    nightObjectBrightness = glGetUniformLocation(program, "nightObjectBrightness");
+    nightObjectSaturation = glGetUniformLocation(program, "nightObjectSaturation");
     #endif
 
 #ifndef RAD_VITAGL

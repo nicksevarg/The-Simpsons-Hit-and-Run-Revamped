@@ -11,8 +11,143 @@
 #include <math.h>
 #include <pddi/base/debug.hpp>
 #include <radmemory.hpp>
+#if defined(RAD_ANDROID)
+#include <SDL.h>
+#include <SDL_system.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#endif
 
 #include <microprofile.h>
+
+#if defined(RAD_ANDROID)
+static const int SHAR_ANISOTROPIC_FILTER_LEVELS[5] = { 2, 4, 8, 12, 16 };
+static int gSHARAnisotropicFilteringSelection = 0; // 2x on new installs
+static bool gSHARAnisotropicFilteringConfigurationLoaded = false;
+static bool gSHARAnisotropyCapabilityChecked = false;
+static bool gSHARAnisotropySupported = false;
+static GLfloat gSHARMaximumAnisotropy = 1.0f;
+static const GLenum SHAR_GL_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FE;
+static const GLenum SHAR_GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FF;
+
+static bool BuildSHARAnisotropicConfigurationPath( char* path, size_t pathSize )
+{
+    const char* basePath = SDL_AndroidGetApplicationExternalFilesPath();
+    if( basePath == NULL || basePath[0] == '\0' )
+        return false;
+    char directory[512];
+    const int length = snprintf(directory, sizeof(directory), "%s/Graphics", basePath);
+    if( length < 0 || length >= static_cast<int>(sizeof(directory)) )
+        return false;
+    struct stat info;
+    if( mkdir(directory, 0777) != 0 && errno != EEXIST )
+        return false;
+    if( stat(directory, &info) != 0 || !S_ISDIR(info.st_mode) )
+        return false;
+    const int pathLength = snprintf(path, pathSize, "%s/Simpsons_anisotropic_filtering.txt", directory);
+    return pathLength >= 0 && pathLength < static_cast<int>(pathSize);
+}
+
+static void WriteSHARAnisotropicFilteringConfiguration()
+{
+    char path[512];
+    if( !BuildSHARAnisotropicConfigurationPath(path, sizeof(path)) )
+        return;
+
+    FILE* file = fopen(path, "w");
+    if( file == NULL )
+        return;
+
+    fprintf(file, "# Simpsons Hit & Run - Revamped! [AF Settings]\n");
+    fprintf(file, "# Improves the quality of textures at distant oblique angles.\n");
+    fprintf(file, "# Change with 2x/4x/8x/12x/16x values.\n");
+    fprintf(file, "# You can also use the in-game settings toggle.\n");
+    fprintf(file, "# Changes to this file will be reflected upon restart.\n");
+    fprintf(file, "\n");
+    fprintf(file, "anisotropy=%dx\n", SHAR_ANISOTROPIC_FILTER_LEVELS[gSHARAnisotropicFilteringSelection]);
+    fclose(file);
+}
+static void LoadSHARAnisotropicFilteringConfiguration()
+{
+    if( gSHARAnisotropicFilteringConfigurationLoaded )
+        return;
+    gSHARAnisotropicFilteringConfigurationLoaded = true;
+    char path[512];
+    if( !BuildSHARAnisotropicConfigurationPath(path, sizeof(path)) )
+        return;
+    FILE* file = fopen(path, "r");
+    if( file == NULL )
+    {
+        WriteSHARAnisotropicFilteringConfiguration();
+        return;
+    }
+    char line[256];
+    while( fgets(line, sizeof(line), file) != NULL )
+    {
+        char* value = strstr(line, "anisotropy=");
+        if( value == NULL )
+            continue;
+        value += strlen("anisotropy=");
+        const int requested = static_cast<int>(strtol(value, NULL, 10));
+        for( int i = 0; i < 5; ++i )
+        {
+            if( requested == SHAR_ANISOTROPIC_FILTER_LEVELS[i] )
+            {
+                gSHARAnisotropicFilteringSelection = i;
+                break;
+            }
+        }
+        break;
+    }
+    fclose(file);
+}
+
+int GetSHARAnisotropicFilteringSelection()
+{
+    LoadSHARAnisotropicFilteringConfiguration();
+    return gSHARAnisotropicFilteringSelection;
+}
+
+void SetSHARAnisotropicFilteringSelection( int selection )
+{
+    LoadSHARAnisotropicFilteringConfiguration();
+    if( selection < 0 ) selection = 0;
+    if( selection > 4 ) selection = 4;
+    if( gSHARAnisotropicFilteringSelection == selection )
+        return;
+    gSHARAnisotropicFilteringSelection = selection;
+    WriteSHARAnisotropicFilteringConfiguration();
+}
+
+static void ApplySHARAnisotropicFilteringToBoundTexture( int selection )
+{
+    if( !gSHARAnisotropyCapabilityChecked )
+    {
+        gSHARAnisotropyCapabilityChecked = true;
+        if( SDL_GL_ExtensionSupported("GL_EXT_texture_filter_anisotropic") )
+        {
+            GLfloat maximum = 1.0f;
+            glGetFloatv(SHAR_GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maximum);
+            if( maximum >= 1.0f )
+            {
+                gSHARMaximumAnisotropy = maximum;
+                gSHARAnisotropySupported = true;
+            }
+        }
+    }
+    if( !gSHARAnisotropySupported )
+        return;
+    if( selection < 0 ) selection = 0;
+    if( selection > 4 ) selection = 4;
+    GLfloat requested = static_cast<GLfloat>(SHAR_ANISOTROPIC_FILTER_LEVELS[selection]);
+    if( requested > gSHARMaximumAnisotropy )
+        requested = gSHARMaximumAnisotropy;
+    glTexParameterf(GL_TEXTURE_2D, SHAR_GL_TEXTURE_MAX_ANISOTROPY_EXT, requested);
+}
+#endif
 
 static inline GLenum PickPixelFormat(pddiPixelFormat format)
 {
@@ -87,18 +222,94 @@ void pglTexture::SetGLState(void)
     {
         contextID = context->contextID;
         gltexture = 0;
+        valid = false;
+        samplerParamsValid = false;
+#if defined(RAD_ANDROID)
+        mipmapsAvailable = false;
+        mipmapGenerationAttempted = false;
+        anisotropySelectionApplied = -1;
+#endif
     }
 
     MICROPROFILE_SCOPEI("PDDI", "pglTexture::SetGLState", MP_RED);
 
     if(!valid)
     {
+        samplerParamsValid = false;
         glDeleteTextures(1, &gltexture);
         glGenTextures(1,&gltexture);
         glBindTexture(GL_TEXTURE_2D, gltexture);
 
-//      if(nMipMap == 0)
-        if (type == PDDI_TEXTYPE_DXT1 || type == PDDI_TEXTYPE_DXT3 || type == PDDI_TEXTYPE_DXT5)
+#if defined(RAD_ANDROID)
+        // Use authored mip levels only when they form a complete square chain.
+        // Lock() cannot safely expose levels beyond a non-square texture's
+        // shorter dimension, so generate those chains from level 0 on demand.
+        mipmapsAvailable = false;
+        mipmapGenerationAttempted = false;
+        const bool hasCompleteSourceMipChain =
+            (log2X == log2Y && nMipMap >= log2X);
+        const int lastSourceMipLevel = hasCompleteSourceMipChain ? log2X : 0;
+
+        for (int mipLevel = 0; mipLevel <= lastSourceMipLevel; ++mipLevel)
+        {
+            const int mipWidth = xSize >> mipLevel;
+            const int mipHeight = ySize >> mipLevel;
+
+            if (type == PDDI_TEXTYPE_DXT1 || type == PDDI_TEXTYPE_DXT3 ||
+                type == PDDI_TEXTYPE_DXT5)
+            {
+#ifdef RAD_VITAGL
+                const unsigned int blocksize = lock.format == PDDI_PIXEL_DXT1 ? 8 : 16;
+                const GLenum internalFormat = lock.format == PDDI_PIXEL_DXT5
+                    ? GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+                    : lock.format == PDDI_PIXEL_DXT3
+                        ? GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
+                        : GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+                const unsigned int blocksWide = (mipWidth + 3) / 4;
+                const unsigned int blocksHigh = (mipHeight + 3) / 4;
+                glCompressedTexImage2D(GL_TEXTURE_2D, mipLevel, internalFormat,
+                    mipWidth, mipHeight, 0, blocksWide * blocksHigh * blocksize,
+                    (GLvoid*)bits[mipLevel]);
+#else
+                const size_t imageBytes =
+                    (size_t)mipWidth * (size_t)mipHeight * 4;
+                unsigned char* image = new unsigned char[imageBytes];
+                if (type == PDDI_TEXTYPE_DXT1)
+                    BlockDecompressImageBC1(mipWidth, mipHeight,
+                        (const uint8_t*)bits[mipLevel], image);
+                else if (type == PDDI_TEXTYPE_DXT3)
+                    BlockDecompressImageBC2(mipWidth, mipHeight,
+                        (const uint8_t*)bits[mipLevel], image);
+                else
+                    BlockDecompressImageBC3(mipWidth, mipHeight,
+                        (const uint8_t*)bits[mipLevel], image);
+                glTexImage2D(GL_TEXTURE_2D, mipLevel, PickPixelFormat(lock.format),
+                    mipWidth, mipHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
+                delete [] image;
+#endif
+            }
+#ifdef RAD_VITAGL
+            else if (type == PDDI_TEXTYPE_YUV)
+            {
+                glCompressedTexImage2D(GL_TEXTURE_2D, mipLevel, VGL_YUV420P_BT601,
+                    mipWidth, mipHeight, 0,
+                    (mipWidth * mipHeight * 3) / 2, (GLvoid*)bits[mipLevel]);
+            }
+#endif
+            else
+            {
+                glTexImage2D(GL_TEXTURE_2D, mipLevel, PickPixelFormat(lock.format),
+                    mipWidth, mipHeight, 0,
+                    lock.native ? GL_BGRA_EXT : GL_RGBA, GL_UNSIGNED_BYTE,
+                    (GLvoid*)bits[mipLevel]);
+            }
+        }
+
+        mipmapsAvailable = hasCompleteSourceMipChain;
+        mipmapGenerationAttempted = hasCompleteSourceMipChain;
+#else
+        if (type == PDDI_TEXTYPE_DXT1 || type == PDDI_TEXTYPE_DXT3 ||
+            type == PDDI_TEXTYPE_DXT5)
         {
 #ifdef RAD_VITAGL
             unsigned int blocksize = lock.format == PDDI_PIXEL_DXT1 ? 8 : 16;
@@ -108,7 +319,6 @@ void pglTexture::SetGLState(void)
                 ySize, 0, ceil(xSize/4.0)*ceil(ySize/4.0)*blocksize, (GLvoid*)bits[0]);
 #else
             unsigned char* image = new unsigned char[xSize * ySize * 4];
-            unsigned int blocksize = lock.format == PDDI_PIXEL_DXT1 ? 8 : 16;
             if (type == PDDI_TEXTYPE_DXT1)
                 BlockDecompressImageBC1(xSize, ySize, (const uint8_t*)bits[0], image);
             else if (type == PDDI_TEXTYPE_DXT3)
@@ -134,51 +344,7 @@ void pglTexture::SetGLState(void)
                 ySize, 0, lock.native ? GL_BGRA_EXT : GL_RGBA, GL_UNSIGNED_BYTE,
                 (GLvoid *)bits[0]);
         }
-        /*
-        else
-        {
-
-            int tmpMipMap = nMipMap;
-            tmpMipMap--;
-            if(tmpMipMap < 0)
-                tmpMipMap = 0;
-
-            int i = 0;
-            int width = xSize;
-            int height = ySize;
-            bool bottomed = false;
-            bool done = false;
-
-            while(!done)
-            {
-                char* data = bits[i];
-                if(i > tmpMipMap)
-                    data = bits[tmpMipMap];
-
-                glTexImage2D(GL_TEXTURE_2D, i, GL_RGBA8, xSize >> i,
-                    ySize >> i, 0, lock.native ? GL_BGRA_EXT : GL_RGBA, GL_UNSIGNED_BYTE,
-                    (GLvoid *)data);
-
-                done = (width == 1) || (height == 1);
-
-                width >>= 1;
-                if(width < 1) 
-                {
-                    width = 1;
-                    bottomed = true;
-                }
-
-                height >>= 1;
-                if(height < 1) 
-                {
-                    height = 1;
-                    bottomed = true;
-                }
-
-                i++;
-            }
-        }
-        */
+#endif
 
         valid = true;
     }
@@ -186,6 +352,16 @@ void pglTexture::SetGLState(void)
     {
         glBindTexture(GL_TEXTURE_2D, gltexture);
     }
+
+#if defined(RAD_ANDROID)
+    const int anisotropySelection = GetSHARAnisotropicFilteringSelection();
+    if( anisotropySelectionApplied != anisotropySelection )
+    {
+        // Only touch the texture parameter when the user has changed the level.
+        anisotropySelectionApplied = anisotropySelection;
+        ApplySHARAnisotropicFilteringToBoundTexture(anisotropySelection);
+    }
+#endif
 }
 
 int fastlog2(int x)
@@ -296,6 +472,12 @@ pglTexture::pglTexture(pglContext* c)
     gltexture = 0;
     priority = 15;
     valid = false;
+    samplerParamsValid = false;
+#if defined(RAD_ANDROID)
+    anisotropySelectionApplied = -1;
+    mipmapsAvailable = false;
+    mipmapGenerationAttempted = false;
+#endif
 }
 
 pglTexture::~pglTexture()
@@ -385,6 +567,41 @@ int pglTexture::GetPriority(void)
 }
 
 // paging control
+
+void pglTexture::SetSamplerParameters(unsigned int magFilter,unsigned int minFilter,
+                                      unsigned int wrapS,unsigned int wrapT)
+{
+#if defined(RAD_ANDROID)
+    const bool requestsMipmaps =
+        minFilter == GL_NEAREST_MIPMAP_NEAREST ||
+        minFilter == GL_LINEAR_MIPMAP_NEAREST ||
+        minFilter == GL_LINEAR_MIPMAP_LINEAR;
+
+    // Avoid allocating mip levels for textures whose materials never request
+    // mipmapped filtering. Generate a complete chain once, on the first request.
+    if (requestsMipmaps && !mipmapsAvailable && !mipmapGenerationAttempted)
+    {
+        mipmapGenerationAttempted = true;
+        glGenerateMipmap(GL_TEXTURE_2D);
+        mipmapsAvailable = (glGetError() == GL_NO_ERROR);
+    }
+
+    // If a driver rejects generation for this texture, keep it complete and
+    // sample its base level instead of leaving a mipmapped-incomplete texture.
+    if (requestsMipmaps && !mipmapsAvailable)
+    {
+        minFilter = minFilter == GL_NEAREST_MIPMAP_NEAREST ? GL_NEAREST : GL_LINEAR;
+    }
+#endif
+
+    if(!samplerParamsValid||samplerMagFilter!=magFilter) glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,magFilter);
+    if(!samplerParamsValid||samplerMinFilter!=minFilter) glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,minFilter);
+    if(!samplerParamsValid||samplerWrapS!=wrapS) glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,wrapS);
+    if(!samplerParamsValid||samplerWrapT!=wrapT) glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,wrapT);
+    samplerMagFilter=magFilter; samplerMinFilter=minFilter; samplerWrapS=wrapS; samplerWrapT=wrapT;
+    samplerParamsValid=true;
+}
+
 void pglTexture::Prefetch(void)
 {
 }

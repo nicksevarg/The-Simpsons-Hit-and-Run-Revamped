@@ -64,6 +64,11 @@
 bool gDaSoundStats = false;
 bool gTuneSound = false;
 
+#ifdef RAD_ANDROID
+// Implemented by the SDL drive in the global namespace.
+bool radSdlDriveFileExists(const char* fileName);
+#endif
+
 namespace Sound {
 
 const short MAX_BTREE_NODES = 5100;
@@ -185,6 +190,71 @@ static const char s_SpanishDialogue[] = "dialogs.rcf";
 static const char s_ItalianDialogue[] = "dialogi.rcf";
 
 #endif
+
+#ifdef RAD_ANDROID
+// The official Android game-data set uses the dialogue archives for localized
+// voices; localized .spt files are not required for choosing an audio language.
+static bool IsDialogueArchiveAvailable(DialogueLanguage language)
+{
+    switch (language)
+    {
+        case DIALOGUE_LANGUAGE_ENGLISH:
+            return ::radSdlDriveFileExists(s_EnglishDialogue);
+        case DIALOGUE_LANGUAGE_FRENCH:
+            return ::radSdlDriveFileExists(s_FrenchDialogue);
+        case DIALOGUE_LANGUAGE_GERMAN:
+            return ::radSdlDriveFileExists(s_GermanDialogue);
+        case DIALOGUE_LANGUAGE_SPANISH:
+            return ::radSdlDriveFileExists(s_SpanishDialogue);
+        default:
+            return false;
+    }
+}
+
+static DialogueLanguage ResolveAvailableDialogueLanguage(DialogueLanguage requested)
+{
+    if (IsDialogueArchiveAvailable(requested))
+    {
+        return requested;
+    }
+    if (IsDialogueArchiveAvailable(DIALOGUE_LANGUAGE_ENGLISH))
+    {
+        return DIALOGUE_LANGUAGE_ENGLISH;
+    }
+    if (IsDialogueArchiveAvailable(DIALOGUE_LANGUAGE_FRENCH))
+    {
+        return DIALOGUE_LANGUAGE_FRENCH;
+    }
+    if (IsDialogueArchiveAvailable(DIALOGUE_LANGUAGE_GERMAN))
+    {
+        return DIALOGUE_LANGUAGE_GERMAN;
+    }
+    if (IsDialogueArchiveAvailable(DIALOGUE_LANGUAGE_SPANISH))
+    {
+        return DIALOGUE_LANGUAGE_SPANISH;
+    }
+
+    // StorageActivity prevents startup when no supported archive exists.
+    return DIALOGUE_LANGUAGE_ENGLISH;
+}
+
+static const char* DialogueArchiveForLanguage(DialogueLanguage language)
+{
+    switch (language)
+    {
+        case DIALOGUE_LANGUAGE_FRENCH:
+            return s_FrenchDialogue;
+        case DIALOGUE_LANGUAGE_GERMAN:
+            return s_GermanDialogue;
+        case DIALOGUE_LANGUAGE_SPANISH:
+            return s_SpanishDialogue;
+        case DIALOGUE_LANGUAGE_ENGLISH:
+        default:
+            return s_EnglishDialogue;
+    }
+}
+#endif
+
 
 //
 // Cement libraries associated with the Dark Angel sound system
@@ -814,6 +884,13 @@ void daSoundRenderingManager::SetLanguage( Scrooby::XLLanguage language )
             break;
     }
 
+#ifdef RAD_ANDROID
+    // Select the requested language only when its .rcf archive is present.
+    // Missing locales fall back to English, then to another available archive.
+    m_currentLanguage = ResolveAvailableDialogueLanguage(m_currentLanguage);
+    cementFileName = DialogueArchiveForLanguage(m_currentLanguage);
+#endif
+
     if( m_currentLanguage == oldLanguage )
     {
         //
@@ -844,6 +921,15 @@ void daSoundRenderingManager::SetLanguage( Scrooby::XLLanguage language )
 //=============================================================================
 void daSoundRenderingManager::QueueRadscriptFileLoads()
 {
+#ifdef RAD_ANDROID
+    // Recheck the selected archive before loading audio resources. Do not test
+    // language-specific .spt files: they are not part of the official data set.
+    if (!IsDialogueArchiveAvailable(m_currentLanguage))
+    {
+        SetLanguage(Scrooby::XL_ENGLISH);
+    }
+#endif
+
 #ifdef AUDIO_ENABLE_SCRIPTING
     HeapMgr()->PushHeap( GMA_AUDIO_PERSISTENT );
 
@@ -866,6 +952,11 @@ void daSoundRenderingManager::QueueRadscriptFileLoads()
         //
         if( i == DIALOGUE_SCRIPT_POSITION )
         {
+#ifdef RAD_ANDROID
+            // Localized voice clips come from the selected .rcf archive.
+            // Use common scripts rather than requesting absent localized .spt files.
+            scriptName = s_DaSoundScripts[i].m_Filename;
+#else
             switch( m_currentLanguage )
             {
                 case DIALOGUE_LANGUAGE_ENGLISH:
@@ -889,9 +980,16 @@ void daSoundRenderingManager::QueueRadscriptFileLoads()
                     scriptName = s_DaSoundScripts[i].m_Filename;
                     break;
             }
+        
+#endif
         }
         else if( i == NIS_SCRIPT_POSITION )
         {
+#ifdef RAD_ANDROID
+            // Localized voice clips come from the selected .rcf archive.
+            // Use common scripts rather than requesting absent localized .spt files.
+            scriptName = s_DaSoundScripts[i].m_Filename;
+#else
             switch( m_currentLanguage )
             {
                 case DIALOGUE_LANGUAGE_ENGLISH:
@@ -915,9 +1013,16 @@ void daSoundRenderingManager::QueueRadscriptFileLoads()
                     scriptName = s_DaSoundScripts[i].m_Filename;
                     break;
             }
+        
+#endif
         }
         else if( i == INTERACTIVE_PROPS_SCRIPT_POSITION )
         {
+#ifdef RAD_ANDROID
+            // Localized voice clips come from the selected .rcf archive.
+            // Use common scripts rather than requesting absent localized .spt files.
+            scriptName = s_DaSoundScripts[i].m_Filename;
+#else
             switch( m_currentLanguage )
             {
                 case DIALOGUE_LANGUAGE_ENGLISH:
@@ -941,6 +1046,8 @@ void daSoundRenderingManager::QueueRadscriptFileLoads()
                     scriptName = s_DaSoundScripts[i].m_Filename;
                     break;
             }
+        
+#endif
         }
         else
         {

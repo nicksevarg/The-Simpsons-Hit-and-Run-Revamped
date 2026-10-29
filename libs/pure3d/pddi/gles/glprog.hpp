@@ -36,6 +36,10 @@ public:
     void SetTextureEnvironment(const pglTextureEnv* texEnv);
     void SetLightState(int handle, const pddiLight* lightState);
     void SetAmbientLight(pddiColour ambient);
+    void SetCelShadingEnabled(bool enabled);
+#ifdef RAD_ANDROID
+    void SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled);
+#endif
 
     inline bool SupportsLighting() { return acs >= 0; }
     inline bool SupportsTextures() { return sampler >= 0; }
@@ -70,8 +74,19 @@ protected:
     #ifdef RAD_ANDROID
     // Ubicación del uniform "lit" del vertex shader.
     GLint lit;
+    GLint toonEnabled;
+    GLint toonObjectEnabled;
+    GLint toonRimEnabled;
+    GLint toonOutlinePass;
+    GLint toonOutlineWidth;
+    GLint nightObjectBrightness;
+    GLint nightObjectSaturation;
     #endif
 #endif
 };
+
+#ifdef RAD_ANDROID
+void InvalidateSHARUniformCaches();
+#endif
 
 #endif

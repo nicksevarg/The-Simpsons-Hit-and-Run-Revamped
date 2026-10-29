@@ -65,6 +65,7 @@
 
 #include <render/RenderManager/RenderManager.h>
 #include <render/RenderManager/RenderLayer.h>
+#include <render/Enums/RenderEnums.h>
 
 #include <worldsim/character/footprint/footprintmanager.h>
 #include <worldsim/worldphysicsmanager.h>
@@ -94,6 +95,9 @@
 #include <input/inputmanager.h>
 #include <p3d/light.hpp>
 #include <p3d/view.hpp>
+#ifdef RAD_ANDROID
+#include <pddi/gles/shartransparencydepthwrite.hpp>
+#endif
 
 //******************************************************************************
 //
@@ -103,6 +107,57 @@
 
 // Static pointer to instance of singleton.
 GameplayContext* GameplayContext::spInstance = NULL;
+
+#if defined(RAD_ANDROID)
+// Called by the GLES renderer so experimental cloud shadows never bleed into
+// interiors or other levels. Keep the world effect enabled behind the pause UI.
+bool IsSHARWorldCloudShadowLevelAllowed()
+{
+    GameFlow* gameFlow = GetGameFlow();
+    if (gameFlow == NULL)
+    {
+        return false;
+    }
+
+    const ContextEnum currentContext = gameFlow->GetCurrentContext();
+    if (currentContext != CONTEXT_GAMEPLAY && currentContext != CONTEXT_PAUSE)
+    {
+        return false;
+    }
+
+    GameplayManager* gameplayManager = GetGameplayManager();
+    InteriorManager* interiorManager = GetInteriorManager();
+    if (gameplayManager == NULL || interiorManager == NULL || interiorManager->IsInside() ||
+        gameplayManager->GetGameType() != GameplayManager::GT_NORMAL)
+    {
+        return false;
+    }
+
+    // Use the raw loaded level. GetCurrentLevelIndex() aliases B00/B01 etc. to L1/L2.
+    const RenderEnums::LevelEnum level = gameplayManager->GetCurrentRawLevelIndex();
+    return level == RenderEnums::L1 || level == RenderEnums::L2 || level == RenderEnums::L3;
+}
+
+// Apply the permanent depth-write fix only during normal exterior gameplay on Levels 1-6.
+// GameplayContext lifecycle calls keep menus/non-gameplay contexts disabled;
+// the per-frame update below also follows live interior entry/exit state.
+void ApplySHARExteriorTransparencyDepthWritePolicyForCurrentState()
+{
+    GameplayManager* gameplayManager = GetGameplayManager();
+    InteriorManager* interiorManager = GetInteriorManager();
+    const RenderEnums::LevelEnum level = gameplayManager != NULL
+        ? gameplayManager->GetCurrentRawLevelIndex()
+        : RenderEnums::numLevels;
+
+    const bool enabled = gameplayManager != NULL &&
+        interiorManager != NULL &&
+        !interiorManager->IsInside() &&
+        gameplayManager->GetGameType() == GameplayManager::GT_NORMAL &&
+        level >= RenderEnums::L1 && level <= RenderEnums::L6;
+    SetSHARExteriorTransparencyDepthWriteFixActive(enabled);
+}
+
+#endif
 
 //******************************************************************************
 //
@@ -199,6 +254,10 @@ void GameplayContext::OnStart( ContextEnum previousContext )
     // Common to all playing contexts.
     //
     PlayingContext::OnStart( previousContext );
+
+#ifdef RAD_ANDROID
+    ApplySHARExteriorTransparencyDepthWritePolicyForCurrentState();
+#endif
 
     MEMTRACK_PUSH_FLAG( "Gameplay" );
     // do gameplay initializations only if previous context was loading context
@@ -404,6 +463,10 @@ void GameplayContext::OnStart( ContextEnum previousContext )
 //=============================================================================
 void GameplayContext::OnStop( ContextEnum nextContext )
 {
+#ifdef RAD_ANDROID
+    // Disable the exterior depth-write override when leaving gameplay.
+    SetSHARExteriorTransparencyDepthWriteFixActive(false);
+#endif
     GetPresentationManager()->OnGameplayStop();
 
     // turn off controller rumble, to comply w/ TCR/TRC standards
@@ -560,6 +623,11 @@ void GameplayContext::OnUpdate( unsigned int elapsedTime )
     // Common to all playing contexts.
     //
     PlayingContext::OnUpdate( elapsedTime );
+#ifdef RAD_ANDROID
+    // InteriorManager::IsInside() includes pending entries, so this follows live
+    // exterior/interior transitions without leaving the override active indoors.
+    ApplySHARExteriorTransparencyDepthWritePolicyForCurrentState();
+#endif
 #ifdef DEBUGWATCH
     mDebugOnUpdateDT = radTimeGetMicroseconds()-mDebugOnUpdateDT;
 #endif
@@ -597,6 +665,9 @@ void GameplayContext::OnResume()
     // Common to all playing contexts.
     //
     PlayingContext::OnResume();
+#ifdef RAD_ANDROID
+    ApplySHARExteriorTransparencyDepthWritePolicyForCurrentState();
+#endif
 }
 
 //=============================================================================

@@ -58,20 +58,24 @@ public:
 
     void SetLanguage( char language );
     void SetLanguage( unsigned int index );
+    bool HasLanguageID( char languageID ) const;
 
     virtual bool IsDrawable() { return false; }
 
     static unsigned int GetLanguageIndex();
     static char GetCurrentLanguageID();
+    static void SetCurrentLanguageID( char languageID );
 
 protected:
     // Protect this so they have to use the Release call
     virtual ~FeTextBible();
 
     static const int MAX_NUM_LANGUAGES = 16;
-    static char m_languageIDs[ MAX_NUM_LANGUAGES ];
+    char m_languageIDs[ MAX_NUM_LANGUAGES ];
+    static char m_currentLanguageID;
     static unsigned int m_index;
     rVector<FeLanguage*> m_languages;
+    FeLanguage* m_englishFallback;
     UnicodeString* m_tempString;
 
 //=============================================================================
@@ -90,7 +94,7 @@ inline unsigned int FeTextBible::GetLanguageIndex()
 
 inline char FeTextBible::GetCurrentLanguageID()
 {
-    return m_languageIDs[ m_index ];
+    return m_currentLanguageID;
 }
 
 #endif

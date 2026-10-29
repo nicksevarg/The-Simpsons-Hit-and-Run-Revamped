@@ -21,6 +21,66 @@
 // Project Includes
 //========================================
 #include <presentation/nisplayer.h>
+#ifdef RAD_ANDROID
+void SetSHARGagCharacterCelPassActive(bool enabled);
+void SetSHARObjectDimming(float brightness, float saturation);
+
+#include <contexts/contextenum.h>
+#include <gameflow/gameflow.h>
+#include <interiors/interiormanager.h>
+#include <mission/gameplaymanager.h>
+#include <render/Enums/RenderEnums.h>
+
+// Match CharacterRenderable's established Level 3-7 brightness/saturation,
+// but only apply it to interior gag scene graphs in normal gameplay.
+static bool ShouldApplySHARInteriorGagDimming()
+{
+    GameFlow* gameFlow = GetGameFlow();
+    GameplayManager* gameplay = GetGameplayManager();
+    InteriorManager* interior = GetInteriorManager();
+    if (gameFlow == NULL ||
+        (gameFlow->GetCurrentContext() != CONTEXT_GAMEPLAY &&
+         gameFlow->GetCurrentContext() != CONTEXT_PAUSE) ||
+        gameplay == NULL || interior == NULL || !interior->IsInside() ||
+        gameplay->GetGameType() != GameplayManager::GT_NORMAL)
+    {
+        return false;
+    }
+
+    const RenderEnums::LevelEnum level = gameplay->GetCurrentRawLevelIndex();
+    return level >= RenderEnums::L3 && level <= RenderEnums::L7;
+}
+
+static void SetSHARInteriorGagDimmingForCurrentLevel()
+{
+    float brightness = 1.0f;
+    float saturation = 1.0f;
+    GameplayManager* gameplay = GetGameplayManager();
+    if (gameplay != NULL)
+    {
+        switch (gameplay->GetCurrentLevelIndex())
+        {
+            case RenderEnums::L3:
+                brightness = 0.90f;
+                saturation = 0.85f;
+                break;
+            case RenderEnums::L4:
+            case RenderEnums::L5:
+            case RenderEnums::L6:
+                brightness = 0.82f;
+                saturation = 0.75f;
+                break;
+            case RenderEnums::L7:
+                brightness = 0.78f;
+                saturation = 0.58f;
+                break;
+            default:
+                break;
+        }
+    }
+    SetSHARObjectDimming(brightness, saturation);
+}
+#endif
 #include <loading/filehandlerenum.h>
 #include <loading/loadingmanager.h>
 
@@ -136,7 +196,33 @@ void NISPlayer::DoRender()
     SimpleAnimationPlayer::DoRender();
     
     if(mpSceneGraph)
+    {
+#ifdef RAD_ANDROID
+        // Interior gag scenes should use the same level-specific night tone as
+        // regular characters and vehicles. The shared shader dimming also
+        // covers static props/assets in this scene graph.
+        const bool applyInteriorGagDimming = ShouldApplySHARInteriorGagDimming();
+        if (applyInteriorGagDimming)
+        {
+            SetSHARInteriorGagDimmingForCurrentLevel();
+        }
+
+        // Enable character-only cel-pass handling for this presentation scene.
+        // The skinned-mesh layer filters the actual tPolySkin draws, so static
+        // props and effects are not needlessly rendered twice.
+        SetSHARGagCharacterCelPassActive(true);
         mpSceneGraph->Display();
+        SetSHARGagCharacterCelPassActive(false);
+
+        // Avoid leaking this scene's lighting adjustment into later rendering.
+        if (applyInteriorGagDimming)
+        {
+            SetSHARObjectDimming(1.0f, 1.0f);
+        }
+#else
+        mpSceneGraph->Display();
+#endif
+    }
 }
 
 //=============================================================================

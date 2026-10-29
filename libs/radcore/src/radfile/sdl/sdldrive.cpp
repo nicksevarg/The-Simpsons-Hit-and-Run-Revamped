@@ -52,6 +52,10 @@
 #endif
 
 #ifdef RAD_ANDROID
+// Mirror the actual root used by radSdlDrive::BuildFileSpec. This lets Android
+// probe optional files without submitting a RAD request or invoking its error handler.
+static char s_AndroidDrivePath[radFileFilenameMax + 1] = { 0 };
+
 static void LogPathStatus(const char* label, const char* path)
 {
     struct stat st;
@@ -364,6 +368,10 @@ radSdlDrive::radSdlDrive(const char* pdrivespec, radMemoryAllocator alloc)
 #endif
 
 #ifdef RAD_ANDROID
+    // Cache the resolved drive root for direct, non-RAD existence probes.
+    strncpy(s_AndroidDrivePath, m_DrivePath, sizeof(s_AndroidDrivePath) - 1);
+    s_AndroidDrivePath[sizeof(s_AndroidDrivePath) - 1] = '\0';
+
     // CAMBIO AQUÍ: logs para verificar que ya apunta donde toca
     //LOGI("radSdlDrive ctor: ext='%s'", ext ? ext : "(null)");
     //LOGI("radSdlDrive ctor: m_DriveName='%s'", m_DriveName);
@@ -457,6 +465,64 @@ radDrive::CompletionStatus radSdlDrive::Initialize( void )
 //=============================================================================
 // Function:    radSdlDrive::OpenFile
 //=============================================================================
+#ifdef RAD_ANDROID
+// Save slots are application-owned settings/data, not game assets.
+// Keep them in the primary Android app external-files directory even when
+// the selected game-data directory is on USB.
+static bool IsAndroidSaveFile( const char* fileName )
+{
+    if ( fileName == NULL )
+    {
+        return false;
+    }
+
+    if ( fileName[ 0 ] != 'S' ||
+         fileName[ 1 ] != 'a' ||
+         fileName[ 2 ] != 'v' ||
+         fileName[ 3 ] != 'e' )
+    {
+        return false;
+    }
+
+    // The game uses Save1, Save2 and Save3.
+    return ( fileName[ 4 ] >= '1' && fileName[ 4 ] <= '3' &&
+             fileName[ 5 ] == '\0' );
+}
+
+static bool BuildAndroidSaveFileSpec( const char* fileName,
+                                      char* fullName,
+                                      unsigned int size )
+{
+    if ( !IsAndroidSaveFile( fileName ) ||
+         fullName == NULL ||
+         size == 0 )
+    {
+        return false;
+    }
+
+    const char* storagePath =
+        SDL_AndroidGetApplicationExternalFilesPath();
+
+    if ( storagePath == NULL || storagePath[ 0 ] == '\0' )
+    {
+        return false;
+    }
+
+    snprintf(
+        fullName,
+        size,
+        "%s/%s",
+        storagePath,
+        fileName
+    );
+
+    return true;
+}
+#endif
+
+//=============================================================================
+// Function:    radSdlDrive::OpenFile
+//=============================================================================
 
 radDrive::CompletionStatus radSdlDrive::OpenFile
 ( 
@@ -471,7 +537,18 @@ radDrive::CompletionStatus radSdlDrive::OpenFile
     // Build the full filename
     //
     char fullName[ radFileFilenameMax + 1 ];
+
+#if defined(RAD_ANDROID)
+    if ( !BuildAndroidSaveFileSpec(
+            fileName,
+            fullName,
+            radFileFilenameMax + 1 ) )
+    {
+        BuildFileSpec( fileName, fullName, radFileFilenameMax + 1 );
+    }
+#else
     BuildFileSpec( fileName, fullName, radFileFilenameMax + 1 );
+#endif
 
     //
     // Translate flags to SDL
@@ -844,7 +921,18 @@ radDrive::CompletionStatus radSdlDrive::DestroyFile( const char* filename )
     // Build the full filename
     //
     char fullSpec[ radFileFilenameMax + 1 ];
+
+#if defined(RAD_ANDROID)
+    if ( !BuildAndroidSaveFileSpec(
+            filename,
+            fullSpec,
+            radFileFilenameMax + 1 ) )
+    {
+        BuildFileSpec( filename, fullSpec, radFileFilenameMax + 1 );
+    }
+#else
     BuildFileSpec( filename, fullSpec, radFileFilenameMax + 1 );
+#endif
 
     if ( SDL_RemovePath( fullSpec ) )
     {
@@ -918,6 +1006,36 @@ void radSdlDrive::BuildFileSpec( const char* fileName, char* fullName, unsigned 
     strncpy( fullName, path.c_str(), size - 1 );
     fullName[ size - 1 ] = '\0';
 }
+
+#ifdef RAD_ANDROID
+// Direct filesystem check for optional Android game-data files. This deliberately
+// avoids radFileOpenSync: missing files must not enter the RAD drive retry handler.
+bool radSdlDriveFileExists(const char* fileName)
+{
+    if (fileName == NULL || fileName[0] == '\0' || s_AndroidDrivePath[0] == '\0')
+    {
+        return false;
+    }
+
+    std::string path(s_AndroidDrivePath);
+    path += fileName;
+    std::replace(path.begin(), path.end(), '\\', '/');
+
+    // radSdlDrive::BuildFileSpec truncates to radFileFilenameMax characters.
+    if (path.length() > radFileFilenameMax)
+    {
+        path.resize(radFileFilenameMax);
+    }
+
+    struct stat fileInfo;
+    if (stat(path.c_str(), &fileInfo) != 0 || !S_ISREG(fileInfo.st_mode))
+    {
+        return false;
+    }
+
+    return access(path.c_str(), R_OK) == 0;
+}
+#endif
 
 #if SDL_MAJOR_VERSION > 2
 //=============================================================================

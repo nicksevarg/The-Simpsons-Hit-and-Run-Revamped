@@ -17,6 +17,48 @@
 
 using namespace RadicalMathLibrary;
 
+namespace
+{
+
+// This special-case is limited to the gas04 joint in PTRN_animsigns.
+static bool IsL1Gas04SignJoint(const tAnimation* animation, const tPose::Joint* joint)
+{
+    return animation != NULL &&
+           joint != NULL &&
+           animation->GetUID() == tEntity::MakeUID("PTRN_animsigns") &&
+           joint->uid == tEntity::MakeUID("gas04");
+}
+
+// Permanently apply gas04's tested relative spin in the reverse direction,
+// while preserving the authored heading. The caller separately applies gas04's
+// translation channel so its motion counteracts the offset joint pivot.
+static void ApplyGas04PermanentRotation(const tRotationChannel* rotation,
+                                        float frame,
+                                        const Matrix& restPose,
+                                        Matrix* objectMatrix)
+{
+    if (rotation == NULL || objectMatrix == NULL)
+    {
+        return;
+    }
+
+    Quaternion qReference, qCurrent, qInverseReference, qDelta, qRest, qOutput;
+    rotation->GetQuaternion(0.0f, &qReference);
+    rotation->GetQuaternion(frame, &qCurrent);
+    qInverseReference = qReference;
+    qInverseReference.Inverse();
+    qDelta.Mult(qCurrent, qInverseReference);
+    qDelta.Normalize();
+    qDelta.Inverse();
+
+    qRest.BuildFromMatrix(restPose);
+    qRest.Normalize();
+    qOutput.Mult(qDelta, qRest);
+    qOutput.Normalize();
+    qOutput.ConvertToMatrix(objectMatrix);
+}
+} // namespace
+
 //*********************************************************
 // Class tPoseAnimationController
 //*********************************************************
@@ -81,9 +123,25 @@ void tPoseAnimationController::UpdateNoBlending()
         {
             translation = animGroup->GetVectorChannel(Pure3DAnimationChannels::Pose::TRANSLATION_TRAN);
             rotation = animGroup->GetRotationChannel(Pure3DAnimationChannels::Pose::ROTATION_ROT);
-        }     
+        }
 
         tSkeleton::Joint* skeletonJoint = pose->GetSkeleton()->GetJoint(i);
+
+        if (IsL1Gas04SignJoint(anim, joint))
+        {
+            // Permanent fix: keep gas04's own animated translation, but reverse
+            // its relative spin to cancel the offset pivot motion. This is scoped
+            // only to gas04 in PTRN_animsigns; gas03 remains on its normal path.
+            joint->objectMatrix = skeletonJoint->restPose;
+            ApplyGas04PermanentRotation(rotation, frame, skeletonJoint->restPose,
+                                        &joint->objectMatrix);
+            if (translation != NULL)
+            {
+                translation->GetValue(frame, &joint->objectMatrix.Row(3));
+            }
+            continue;
+        }
+
         if(skeletonJoint->preserveBoneLengths)
         {
             // Stuff the bonelengths into the pose
@@ -147,7 +205,20 @@ void tPoseAnimationController::UpdateWithBlending()
         // Ask the skeleton if it needs to preserve it's bonelength
         // to allow for shared animations across different Hierarchies.
         tSkeleton::Joint* skeletonJoint = pose->GetSkeleton()->GetJoint(i);
-        if(skeletonJoint->preserveBoneLengths)
+
+        // For gas04 in PTRN_animsigns, always honour its translation channel;
+        // the track is required to cancel the offset pivot while the sign spins.
+        bool isL1Gas04 = false;
+        for (int activeIndex = 0; activeIndex < nAnim; ++activeIndex)
+        {
+            if (IsL1Gas04SignJoint(playInfo[activeIndex].GetAnimation(), joint))
+            {
+                isL1Gas04 = true;
+                break;
+            }
+        }
+
+        if(skeletonJoint->preserveBoneLengths && !isL1Gas04)
         {
             // Stuff the bonelengths into the pose
             joint->objectMatrix.FillTranslate( skeletonJoint->restPose.Row(3) );
@@ -210,6 +281,34 @@ void tPoseAnimationController::UpdateWithBlending()
     {
         tPose::Joint* joint = pose->GetJoint(i);
         P3DASSERT(joint);
+
+        const tAnimation* gas04Animation = NULL;
+        int gas04AnimationIndex = -1;
+        for (int activeIndex = 0; activeIndex < nAnim; ++activeIndex)
+        {
+            if (IsL1Gas04SignJoint(playInfo[activeIndex].GetAnimation(), joint))
+            {
+                gas04Animation = playInfo[activeIndex].GetAnimation();
+                gas04AnimationIndex = activeIndex;
+                break;
+            }
+        }
+        if (gas04Animation != NULL)
+        {
+            tSkeleton::Joint* gas04SkeletonJoint = pose->GetSkeleton()->GetJoint(i);
+            const tAnimationGroup* gas04Group = gas04Animation->GetGroupByUID(joint->uid);
+            const tRotationChannel* gas04Rotation = gas04Group
+                ? gas04Group->GetRotationChannel(Pure3DAnimationChannels::Pose::ROTATION_ROT)
+                : NULL;
+
+            // The translation pass above has already applied gas04's channel.
+            // Replace only its rotation matrix; its animated translation remains.
+            ApplyGas04PermanentRotation(gas04Rotation,
+                                        playInfo[gas04AnimationIndex].GetCurrentFrame(),
+                                        gas04SkeletonJoint->restPose,
+                                        &joint->objectMatrix);
+            continue;
+        }
 
         Quaternion qBlend(0.0f, 0.0f, 0.0f, 1.0f);
 

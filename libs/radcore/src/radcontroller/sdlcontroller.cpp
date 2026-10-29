@@ -39,6 +39,7 @@
 #if defined(RAD_ANDROID)
 #include <SDL_system.h>
 #include <jni.h>
+
 #endif
 
 
@@ -171,7 +172,7 @@ extern "C" void radControllerSDLSetAndroidRumblePolicyCallback(
 }
 
 typedef void (*AndroidGamepadCandidateConnectedCallback)(int instanceId);
-typedef void (*AndroidGamepadInputCallback)(int instanceId, float magnitude);
+typedef void (*AndroidGamepadInputCallback)(int instanceId, int inputIndex, float value);
 typedef void (*AndroidGamepadDisconnectedCallback)(int instanceId);
 
 static AndroidGamepadCandidateConnectedCallback
@@ -244,6 +245,14 @@ static int AndroidGetGamepadInstanceId( SDL_Gamepad* pController )
     return static_cast<int>( SDL_GetJoystickID( pJoystick ) );
 }
 #endif
+
+static void AndroidNotifyPhysicalGamepadInputPoint( int instanceId, int inputIndex, float value )
+{
+    if ( instanceId >= 0 && inputIndex >= 0 && sAndroidGamepadInputCallback != NULL )
+    {
+        sAndroidGamepadInputCallback( instanceId, inputIndex, value );
+    }
+}
 
 static void AndroidNotifyPhysicalGamepadCandidateConnected
 (
@@ -334,7 +343,7 @@ static void AndroidNotifyPhysicalGamepadInputFromPoint
 
     if ( magnitude > 0.0f )
     {
-        sAndroidGamepadInputCallback( instanceId, magnitude );
+        AndroidNotifyPhysicalGamepadInputPoint( instanceId, -1, magnitude );
     }
 }
 
@@ -431,6 +440,105 @@ static void AndroidJavaStopRumbleFallback()
     }
 
     env->DeleteLocalRef(cls);
+}
+#endif
+
+#if defined(RAD_ANDROID) && SDL_MAJOR_VERSION < 3
+/*
+ * Some Android gamepads (notably hardware controllers exposed by older
+ * Android/Shield builds) are reported by SDL as joysticks but do not have a
+ * GameController database entry. The Android SDL joystick backend already
+ * exposes its buttons using the standard SDL controller button indices and
+ * its axes in the standard left/right stick + trigger order.
+ *
+ * Install a per-device fallback mapping before the controller system performs
+ * its initial SDL_GameController enumeration.
+ */
+static void EnsureAndroidGameControllerMapping( int joystickIndex )
+{
+    SDL_JoystickGUID guid = SDL_JoystickGetDeviceGUID( joystickIndex );
+
+    char guidString[ 33 ];
+    SDL_JoystickGetGUIDString( guid, guidString, sizeof( guidString ) );
+
+    const char* deviceName = SDL_JoystickNameForIndex( joystickIndex );
+    const SDL_bool alreadyMapped = SDL_IsGameController( joystickIndex );
+
+    if ( alreadyMapped )
+    {
+        return;
+    }
+
+    /*
+     * Android can enumerate built-in hardware sensors as SDL joysticks.
+     * Do not manufacture a gamepad mapping for those non-controller devices.
+     */
+    if ( deviceName != NULL && SDL_strstr( deviceName, "Accelerometer" ) != NULL )
+    {
+        return;
+    }
+
+    char mapping[ 512 ];
+    snprintf(
+        mapping,
+        sizeof( mapping ),
+        "%s,Android Generic Gamepad,a:b0,b:b1,x:b2,y:b3,"
+        "back:b4,guide:b5,start:b6,leftstick:b7,rightstick:b8,"
+        "leftshoulder:b9,rightshoulder:b10,dpup:b11,dpdown:b12,"
+        "dpleft:b13,dpright:b14,leftx:a0,lefty:a1,rightx:a2,"
+        "righty:a3,lefttrigger:a4,righttrigger:a5",
+        guidString
+    );
+
+    SDL_GameControllerAddMapping( mapping );
+}
+
+/*
+ * Android reports some Nintendo Switch controllers using their printed face
+ * button labels, while this game expects the traditional Xbox-style positional
+ * layout. Identify Switch-family devices per controller so we only adjust the
+ * four face buttons for those devices.
+ */
+static bool AndroidIsNintendoSwitchController( SDL_GameController* pController )
+{
+    if ( pController == NULL )
+    {
+        return false;
+    }
+
+    const Uint16 vendor = SDL_GameControllerGetVendor( pController );
+    if ( vendor == 0x057E ) // Nintendo Co., Ltd.
+    {
+        return true;
+    }
+
+    const char* controllerName = SDL_GameControllerName( pController );
+    SDL_Joystick* pJoystick = SDL_GameControllerGetJoystick( pController );
+    const char* joystickName = pJoystick != NULL ? SDL_JoystickName( pJoystick ) : NULL;
+
+    const char* names[] = { controllerName, joystickName };
+    for ( unsigned int i = 0; i < sizeof( names ) / sizeof( names[ 0 ] ); ++i )
+    {
+        const char* name = names[ i ];
+        if (
+            name != NULL &&
+            (
+                SDL_strstr( name, "Nintendo" ) != NULL ||
+                SDL_strstr( name, "nintendo" ) != NULL ||
+                SDL_strstr( name, "Switch" ) != NULL ||
+                SDL_strstr( name, "switch" ) != NULL ||
+                SDL_strstr( name, "Joy-Con" ) != NULL ||
+                SDL_strstr( name, "Joy Con" ) != NULL ||
+                SDL_strstr( name, "joy-con" ) != NULL ||
+                SDL_strstr( name, "joy con" ) != NULL
+            )
+        )
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 #endif
 //============================================================================
@@ -571,10 +679,38 @@ class radControllerInputPointSDL
         {
             if ( m_pType == g_Sdlipt[ 0 ] ) // Button
             {
+                int buttonIdentifier = m_Identifier;
+#if defined(RAD_ANDROID) && SDL_MAJOR_VERSION < 3
+                if ( AndroidIsNintendoSwitchController( m_pController ) )
+                {
+                    /*
+                     * Switch labels use the opposite ABXY arrangement from
+                     * the game's expected positional layout. Swap only the
+                     * four face buttons for recognised Switch controllers.
+                     */
+                    switch ( buttonIdentifier )
+                    {
+                        case SDL_CONTROLLER_BUTTON_A:
+                            buttonIdentifier = SDL_CONTROLLER_BUTTON_B;
+                            break;
+                        case SDL_CONTROLLER_BUTTON_B:
+                            buttonIdentifier = SDL_CONTROLLER_BUTTON_A;
+                            break;
+                        case SDL_CONTROLLER_BUTTON_X:
+                            buttonIdentifier = SDL_CONTROLLER_BUTTON_Y;
+                            break;
+                        case SDL_CONTROLLER_BUTTON_Y:
+                            buttonIdentifier = SDL_CONTROLLER_BUTTON_X;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+#endif
 #if SDL_MAJOR_VERSION < 3
-                newValue = SDL_GameControllerGetButton( m_pController, (SDL_GameControllerButton)m_Identifier ) ? 1.0f : 0.0f;
+                newValue = SDL_GameControllerGetButton( m_pController, (SDL_GameControllerButton)buttonIdentifier ) ? 1.0f : 0.0f;
 #else
-                newValue = SDL_GetGamepadButton( m_pController, (SDL_GamepadButton)m_Identifier ) ? 1.0f : 0.0f;
+                newValue = SDL_GetGamepadButton( m_pController, (SDL_GamepadButton)buttonIdentifier ) ? 1.0f : 0.0f;
 #endif
             }
             else if ( m_pType == g_Sdlipt[ 1 ] ) // Analog Button
@@ -619,6 +755,100 @@ class radControllerInputPointSDL
             }
         }
 
+#if defined(RAD_ANDROID) && SDL_MAJOR_VERSION < 3
+        /*
+         * Some Shield controller firmware/backends expose R2 on physical axis 5
+         * but SDL's GameController trigger mapping reads as zero. Preserve SDL's
+         * logical value when it works; otherwise normalize the physical axis
+         * from its observed idle value (-32768) to full press (+32767).
+         */
+        if (
+            m_pType == g_Sdlipt[ 1 ] &&
+            m_Identifier == SDL_CONTROLLER_AXIS_TRIGGERRIGHT &&
+            newValue <= 0.0001f &&
+            m_pController != NULL
+        )
+        {
+            SDL_Joystick* pJoystick = SDL_GameControllerGetJoystick( m_pController );
+            const char* deviceName = pJoystick != NULL ? SDL_JoystickName( pJoystick ) : NULL;
+
+            if (
+                pJoystick != NULL &&
+                deviceName != NULL &&
+                SDL_strstr( deviceName, "NVIDIA" ) != NULL &&
+                SDL_JoystickNumAxes( pJoystick ) > SDL_CONTROLLER_AXIS_TRIGGERRIGHT
+            )
+            {
+                const Sint16 rawRightTrigger = SDL_JoystickGetAxis(
+                    pJoystick,
+                    SDL_CONTROLLER_AXIS_TRIGGERRIGHT
+                );
+                const SDL_JoystickID instanceId = SDL_JoystickInstanceID( pJoystick );
+
+                /*
+                 * Some Android controller backends report all axes as zero
+                 * until the first physical input event initializes their state.
+                 * Zero is not the Shield trigger's resting value, so do not
+                 * interpret that startup placeholder as a half-pressed trigger.
+                 */
+                static bool sR2AxisInitialized = false;
+                static bool sHavePreviousRawR2ForInit = false;
+                static SDL_JoystickID sR2InitInstanceId = -1;
+                static Sint16 sPreviousRawR2ForInit = 0;
+
+                if ( instanceId != sR2InitInstanceId )
+                {
+                    sR2InitInstanceId = instanceId;
+                    sHavePreviousRawR2ForInit = false;
+                    sR2AxisInitialized =
+                        rawRightTrigger <= -30000 ||
+                        rawRightTrigger >= 1024 ||
+                        rawRightTrigger <= -1024;
+                }
+
+                int initRawDelta = static_cast<int>( rawRightTrigger ) -
+                    static_cast<int>( sPreviousRawR2ForInit );
+                if ( initRawDelta < 0 )
+                {
+                    initRawDelta = -initRawDelta;
+                }
+
+                if (
+                    rawRightTrigger <= -30000 ||
+                    ( sHavePreviousRawR2ForInit && initRawDelta >= 256 ) ||
+                    rawRightTrigger >= 1024 ||
+                    rawRightTrigger <= -1024
+                )
+                {
+                    sR2AxisInitialized = true;
+                }
+
+                sPreviousRawR2ForInit = rawRightTrigger;
+                sHavePreviousRawR2ForInit = true;
+
+                float fallbackValue = 0.0f;
+                if ( sR2AxisInitialized )
+                {
+                    fallbackValue =
+                        ( static_cast<float>( rawRightTrigger ) + 32768.0f ) / 65535.0f;
+
+                    if ( fallbackValue < 0.0f )
+                    {
+                        fallbackValue = 0.0f;
+                    }
+                    else if ( fallbackValue > 1.0f )
+                    {
+                        fallbackValue = 1.0f;
+                    }
+                }
+
+                newValue = fallbackValue;
+
+            }
+        }
+#endif
+
+
 		return newValue;
 	}
 
@@ -634,6 +864,7 @@ class radControllerInputPointSDL
         #if defined(RAD_ANDROID)
             float oldValue = m_Value;
         #endif
+
         //
         // Check tolerance
         //
@@ -662,9 +893,13 @@ class radControllerInputPointSDL
             m_TimeInState = 0; // Just changed
 
             //
-            // Notify callbacks
+            // Notify callbacks.
             //
-
+            // SDL's GameController value is the authoritative input
+            // source. Android raw joystick events are decoded by SDL and
+            // exposed through the GameController API, so do not maintain a
+            // second virtual-input writer on Android.
+            //
             AddRef( ); // Don't want to self destruct while we're calling out
 
             IRadWeakCallbackWrapper * pIWcr;
@@ -676,7 +911,7 @@ class radControllerInputPointSDL
                 IRadControllerInputPointCallback * pCallback = ( IRadControllerInputPointCallback* ) pIWcr->GetWeakInterface( );
                 unsigned int userData = reinterpret_cast< uintptr_t >( pIWcr->GetUserData( ) );
 
-                pCallback->OnControllerInputPointChange( userData, m_Value );           
+                pCallback->OnControllerInputPointChange( userData, m_Value );
             }
 
             Release( );
@@ -2393,6 +2628,7 @@ class radControllerSystemSDL
 
         #if defined(RAD_ANDROID)
             int androidInstanceId = -1;
+
         #endif
 
     #if SDL_MAJOR_VERSION < 3
@@ -2963,6 +3199,9 @@ class radControllerSystemSDL
 #endif
         for( int i = 0; i < numJoysticks; i++ )
         {
+#if defined(RAD_ANDROID) && SDL_MAJOR_VERSION < 3
+            EnsureAndroidGameControllerMapping( i );
+#endif
 #if SDL_MAJOR_VERSION < 3
             if( SDL_IsGameController( i ) )
 #else
@@ -2980,14 +3219,16 @@ class radControllerSystemSDL
                     pollingRate = m_xITimer->GetTimeout();
                 }
 
+#if SDL_MAJOR_VERSION < 3
+                SDL_GameController* pGameController = SDL_GameControllerOpen( i );
+#else
+                SDL_Gamepad* pGameController = SDL_OpenGamepad( joysticks[i] );
+#endif
+
                 xIController2 = new (g_ControllerSystemAllocator) radControllerSDL
                 (
                     g_ControllerSystemAllocator,
-#if SDL_MAJOR_VERSION < 3
-                    SDL_GameControllerOpen( i ),
-#else
-                    SDL_OpenGamepad( joysticks[i] ),
-#endif
+                    pGameController,
                     virtualTime,
                     m_EventBufferTime,
                     pollingRate

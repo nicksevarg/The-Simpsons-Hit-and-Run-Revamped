@@ -100,7 +100,7 @@ class FeTextBibleLoader : public tSimpleChunkHandler
 public:
     FeTextBibleLoader();
     virtual tEntity* LoadObject( tChunkFile* file, tEntityStore* store );
-    tEntity* LoadLanguage( tChunkFile* file, tEntityStore* store );
+    tEntity* LoadLanguage( tChunkFile* file, tEntityStore* store, char languageIDToLoad );
 
     static void SetOnlyLoadCurrentLanguage( bool isEnabled );
     static void SetUseLastLoadedTextBible( bool isEnabled );
