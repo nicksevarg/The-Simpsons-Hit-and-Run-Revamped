@@ -32,6 +32,15 @@
 #include <p3d/view.hpp>
 #include <p3d/effects/particlesystem.hpp>
 #include <pddi/pddi.hpp>
+#ifdef RAD_ANDROID
+void RegisterSHARMotionBlurSubjectBounds(int subjectType, float x, float y, float z, float halfWidth, float halfHeight, float speedKmh);
+bool IsCelShadingEnabled();
+bool IsCelShadingObjectEnabled();
+void SetCelShadingObjectEnabled(bool enabled);
+bool IsCelShadingOutlinePass();
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHARObjectDimming(float brightness, float saturation);
+#endif
 #include <p3d/utility.hpp>
 #include <typeinfo>
 #include <p3d/anim/visibilityanimation.hpp>
@@ -51,6 +60,38 @@
 //#define SHADOW_EDITTING
 
 const int TYPICAL_NUMBER_OF_FRAME_CONTROLLERS = 16;
+
+#ifdef RAD_ANDROID
+static void SetSHARVehicleNightDimming()
+{
+    float brightness = 1.0f;
+    float saturation = 1.0f;
+    GameplayManager* gameplay = GetGameplayManager();
+    if (gameplay != NULL)
+    {
+        switch (gameplay->GetCurrentLevelIndex())
+        {
+            case RenderEnums::L3:
+                brightness = 0.90f;
+                saturation = 0.85f;
+                break;
+            case RenderEnums::L4:
+            case RenderEnums::L5:
+            case RenderEnums::L6:
+                brightness = 0.82f;
+                saturation = 0.75f;
+                break;
+            case RenderEnums::L7:
+                brightness = 0.78f;
+                saturation = 0.58f;
+                break;
+            default:
+                break;
+        }
+    }
+    SetSHARObjectDimming(brightness, saturation);
+}
+#endif
 
 // this is by artist design... the value is between 0 and 255
 static const int INCAR_ROOF_ALPHA = 100;
@@ -641,6 +682,15 @@ void GeometryVehicle::Display()
 {
 BEGIN_PROFILE("GeometryVehicle::Display SetUp")
     rmt::Vector pos = mVehicleOwner->GetPosition ();
+#ifdef RAD_ANDROID
+    Avatar* motionBlurPlayerAvatar = GetAvatarManager()->GetAvatarForPlayer(0);
+    if (motionBlurPlayerAvatar != NULL && motionBlurPlayerAvatar->IsInCar() &&
+        motionBlurPlayerAvatar->GetVehicle() == mVehicleOwner)
+    {
+        // Protect the driving vehicle only; traffic and scenery stay in the blur pass.
+        RegisterSHARMotionBlurSubjectBounds(1, pos.x, pos.y + 0.75f, pos.z, 2.60f, 1.15f, mVehicleOwner->GetSpeedKmh());
+    }
+#endif
     rmt::Vector movement = pos - mLastPosition;
     bool smokeFirst = true; // Used to fix draw order problem with the smoke and a vehicle's windshield.
     tCamera* camera = p3d::context->GetView()->GetCamera();
@@ -1078,7 +1128,26 @@ BEGIN_PROFILE("GeometryVehicle::CompDraw->Disp")
     }
     if( sbDrawVehicle )
     {
+#ifdef RAD_ANDROID
+        SetSHARVehicleNightDimming();
+        if (IsCelShadingEnabled())
+        {
+            // Render the expanded-mesh black silhouette first, then the normal vehicle.
+            SetCelShadingObjectEnabled(true);
+            SetCelShadingOutlinePass(true);
+            mCompositeDrawable->Display();
+            SetCelShadingOutlinePass(false);
+            mCompositeDrawable->Display();
+            SetCelShadingObjectEnabled(false);
+        }
+        else
+        {
+            mCompositeDrawable->Display();
+        }
+        SetSHARObjectDimming(1.0f, 1.0f);
+#else
         mCompositeDrawable->Display();
+#endif
     }
     if( !smokeFirst )
     {
@@ -1190,6 +1259,12 @@ void GeometryVehicle::DisplayShadow( BlobShadowParams* BlobParams )
 {
     BEGIN_PROFILE("GeometryVehicle::DisplayShadow")
     rAssert(BlobParams);
+#ifdef RAD_ANDROID
+    const bool toonShadowsEnabled = IsCelShadingEnabled();
+#else
+    const bool toonShadowsEnabled = false;
+#endif
+    float toonShadowEdgeFadeScale = 1.0f;
     tColour OutsideColour, insideColour;
 
     // Hack for brightly colored shadows for special game mode
@@ -1234,8 +1309,11 @@ void GeometryVehicle::DisplayShadow( BlobShadowParams* BlobParams )
 
    		// Blobby shadow for vehicle.
         OutsideColour.Set( 255, 255, 255, 255 );
-        const int Inside = 128;
-        
+        // Match the toon character-shadow centre when cel shading is enabled.
+        // Keep the original shade and soft edge when cel shading is disabled.
+        const int Inside = toonShadowsEnabled ? 116 : 128;
+        toonShadowEdgeFadeScale = toonShadowsEnabled ? 0.0f : 1.0f;
+
         float fadeFactor = 1.0f;
         if( mVehicleOwner->mVehicleType == VT_TRAFFIC && 
             mFadeAlpha != 255 )
@@ -1382,8 +1460,8 @@ void GeometryVehicle::DisplayShadow( BlobShadowParams* BlobParams )
         inX = ( Points[ index ][ 0 ] + mShadowPointAdjustments[ adjust ][ 0 ] ) * BlobParams->ShadowScale;
         inY = ( Points[ index ][ 1 ] + mShadowPointAdjustments[ adjust ][ 1 ] ) * BlobParams->ShadowScale;
         inX *= mirrorX;
-        outX = inX + ( Fades[ index ][ 0 ] * mirrorX * BlobParams->ShadowScale );
-        outY = inY + ( Fades[ index ][ 1 ] * BlobParams->ShadowScale );
+        outX = inX + ( Fades[ index ][ 0 ] * mirrorX * BlobParams->ShadowScale * toonShadowEdgeFadeScale );
+        outY = inY + ( Fades[ index ][ 1 ] * BlobParams->ShadowScale * toonShadowEdgeFadeScale );
         blob->Colour( OutsideColour );
         blob->Coord( outX, outY, 0.0f );
         blob->Colour( insideColour );

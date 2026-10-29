@@ -19,21 +19,12 @@ def open_rgba(path: Path) -> Image.Image:
 
 
 def open_source_layer(path: Path, label: str) -> Image.Image:
-    """Normalize a square source layer to the 1024px canvas without cropping."""
+    """Load a supplied square icon layer without cropping or extending it."""
     image = open_rgba(path)
-    if image.width != image.height:
-        raise ValueError(
-            f"{label} is {image.width}x{image.height}; expected a square source layer. "
-            "Refusing to crop or distort source artwork."
-        )
     if image.size != (CANVAS_SIZE, CANVAS_SIZE):
-        print(
-            f"{label}: normalizing square source from "
-            f"{image.width}x{image.height} to {CANVAS_SIZE}x{CANVAS_SIZE}"
-        )
-        image = image.resize(
-            (CANVAS_SIZE, CANVAS_SIZE),
-            Image.Resampling.LANCZOS,
+        raise ValueError(
+            f"{label} is {image.width}x{image.height}; expected "
+            f"{CANVAS_SIZE}x{CANVAS_SIZE}. Refusing to resize or extend source artwork."
         )
     return image
 
@@ -64,13 +55,6 @@ def scale_foreground_layer(image: Image.Image, label: str) -> Image.Image:
     return canvas
 
 
-def save_png(image: Image.Image, path: Path) -> None:
-    """Write a supplied layer to the PNG resource Android actually references."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(path, format="PNG", optimize=True)
-    print(f"Wrote {path.relative_to(ROOT)}")
-
-
 def save_webp(image: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, format="WEBP", lossless=True, method=6)
@@ -80,18 +64,15 @@ def save_webp(image: Image.Image, path: Path) -> None:
 def main() -> None:
     DRAWABLE.mkdir(parents=True, exist_ok=True)
 
-    # Preserve the full-canvas background composition. Source layers are
-    # normalized to 1024px square above; only foreground and monochrome receive
-    # the established centered 77.5% artwork scale and mild edge sharpening.
+    # Keep the supplied green/yellow background pixel-for-pixel. Preserve the
+    # established 77.5% artwork scale and apply mild edge sharpening after
+    # resizing to counteract downsampling softness.
     background = open_source_layer(SOURCE / "background.png", "background.png")
     foreground_source = open_source_layer(SOURCE / "foreground.png", "foreground.png")
     monochrome_source = open_source_layer(SOURCE / "monochrome.png", "monochrome.png")
     foreground = scale_foreground_layer(foreground_source, "foreground.png")
     monochrome = scale_foreground_layer(monochrome_source, "monochrome.png")
 
-    # Keep the full-resolution background layer in sync with the adaptive icon
-    # XML resource. The background is deliberately not scaled or sharpened.
-    save_png(background, DRAWABLE / "ic_launcher_background.png")
     save_webp(foreground, DRAWABLE / "ic_launcher_logo.webp")
     save_webp(monochrome, DRAWABLE / "ic_launcher_monochrome.webp")
 

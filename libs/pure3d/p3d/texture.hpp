@@ -51,6 +51,12 @@ protected:
     pddiTexture* texture;
 };
 
+#ifdef RAD_ANDROID
+// Runtime alpha remapping for selected tree-shadow and bee-shadow textures. Original data is kept in
+// memory and restored whenever cel shading is disabled.
+void UpdateSelectedShadowAlphaForCelState();
+#endif
+
 class tImageFactory;
 class tImageConverter;
 

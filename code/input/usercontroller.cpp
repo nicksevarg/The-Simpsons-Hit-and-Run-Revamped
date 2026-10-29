@@ -273,8 +273,11 @@ void UserController::OnControllerInputPointChange( unsigned int buttonId, float 
 
 	float fLastValue = mButtonArray[ buttonId ].GetValue( );
     float fDeadZone = mButtonDeadZones[buttonId];
+    IRadControllerInputPoint* pInputPoint =
+        m_xIController2->GetInputPointByIndex( buttonId );
 
-    value = m_xIController2->GetInputPointByIndex( buttonId )->GetCurrentValue( );
+    value = pInputPoint->GetCurrentValue( );
+    const float fRawInputValue = value;
 
 	if ( rmt::Epsilon( value, 0.0f, fDeadZone ) )
 	{
@@ -301,6 +304,7 @@ void UserController::OnControllerInputPointChange( unsigned int buttonId, float 
 	}
 
     mButtonArray[ buttonId ].SetValue( value );
+
 }
 
 void UserController::Initialize( IRadController* pIController2 )

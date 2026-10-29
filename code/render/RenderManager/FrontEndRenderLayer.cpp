@@ -26,6 +26,10 @@
 #include <gameflow/gameflow.h>
 #include <contexts/contextenum.h>
 #include <contexts/gameplay/gameplaycontext.h>
+#include <App.h>
+#include <Project.h>
+#include <Screen.h>
+#include <Page.h>
 #include <worldsim/coins/coinmanager.h>
 #include <worldsim/coins/sparkle.h>
 #ifdef RAD_WIN32
@@ -34,6 +38,9 @@
 #ifdef RAD_ANDROID
 #include <presentation/fmvplayer/fmvplayer.h>
 #include <input/touch/touchhudrenderer.h>
+void ApplySHARPostProcessingBeforeTouchHud();
+void ApplySHARFrontendMenuFineDetail();
+bool IsSHARFrontendMenuCelPassActive();
 #endif
 
 
@@ -276,9 +283,32 @@ void FrontEndRenderLayer::Render()
     {
         fmvPlaying = pm->GetFMVPlayer()->IsPlaying();
     }
-
     if( fmvPlaying )
     {
+#ifdef RAD_ANDROID
+        // Do not call DrawFrame() during an FMV: that would render the full
+        // movie screen UI and can cover the video. Render only the foreground
+        // pages, which is where the standalone TVFrame page belongs.
+        for( unsigned int view = 0; view < mNumViews; view++ )
+        {
+            if( mpView[ view ] == NULL )
+            {
+                continue;
+            }
+
+            mpView[ view ]->BeginRender();
+
+            if( mpScroobyApp != NULL )
+            {
+
+                mpScroobyApp->DrawForeground( static_cast<float>( g_scroobySimulationTime ) );
+            }
+
+            mpView[ view ]->EndRender();
+        }
+#else
+        // Preserve the original non-Android behavior during FMV playback.
+#endif
 #ifdef DEBUGWATCH
         mDebugRenderTime = radTimeGetMicroseconds() - mDebugRenderTime;
 #endif
@@ -304,7 +334,37 @@ void FrontEndRenderLayer::Render()
 
         if( mpScroobyApp != NULL )
         {
+#ifdef RAD_ANDROID
+            // The front-end fine-contour pass must only see the 3D living-room
+            // scene. Scrooby's FeDivide split lets us process the background
+            // before the 2D foreground menu, so text, sprites and loading UI
+            // are never sampled by the contour shader.
+            Scrooby::Project* project = mpScroobyApp->GetProject();
+            Scrooby::Screen* screen = project != NULL ? project->GetCurrentScreen() : NULL;
+            const bool celPassActive = IsSHARFrontendMenuCelPassActive();
+            Scrooby::Page* menu3dPage = screen != NULL ? screen->GetPage( "3dFE" ) : NULL;
+
+            // FeDivide is Scrooby's internal drawable divider, not a page.
+            // DrawBackground/DrawForeground already split on that drawable, so
+            // do not require a separate divider-page lookup here.
+            const bool hasMenuCameraSet =
+                celPassActive && screen != NULL && menu3dPage != NULL;
+
+
+            if( hasMenuCameraSet )
+            {
+                const float frameDelta = static_cast<float>( g_scroobySimulationTime );
+                mpScroobyApp->DrawBackground( frameDelta );
+                ApplySHARFrontendMenuFineDetail();
+                mpScroobyApp->DrawForeground( frameDelta );
+            }
+            else
+            {
+                mpScroobyApp->DrawFrame( static_cast<float>( g_scroobySimulationTime ) );
+            }
+#else
             mpScroobyApp->DrawFrame( static_cast<float>( g_scroobySimulationTime ) );
+#endif
         }
 
 #ifdef RAD_PC
@@ -316,7 +376,8 @@ void FrontEndRenderLayer::Render()
         
         
         #ifdef RAD_ANDROID
-        TouchHudRenderer::GetInstance().Render(); // Excelente sitio para renderizar pero hay que vigilar el caso de cinematica
+        ApplySHARPostProcessingBeforeTouchHud();
+        TouchHudRenderer::GetInstance().Render(); // Render touch controls after full-frame filters.
         #endif
         HeapMgr()->PopHeap( GMA_TEMP );
 

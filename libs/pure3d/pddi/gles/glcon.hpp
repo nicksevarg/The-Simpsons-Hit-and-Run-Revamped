@@ -19,6 +19,28 @@ class pglTextureEnv;
 class pglExtContext;
 class pglExtGamma;
 
+#ifdef RAD_ANDROID
+void InvalidateSHARRenderStateCache();
+bool IsCelShadingEnabled();
+void SetCelShadingEnabled(bool enabled);
+bool IsCRTFilterEnabled();
+void SetCRTFilterEnabled(bool enabled);
+bool IsFrameSharpeningEnabled();
+void SetFrameSharpeningEnabled(bool enabled);
+float GetFrameSharpenStrength();
+bool IsCelShadingObjectEnabled();
+void SetCelShadingObjectEnabled(bool enabled);
+bool IsCelShadingOutlinePass();
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHARCharacterMaskModelPass(bool enabled);
+void SetSHARGagCharacterCelPassActive(bool enabled);
+bool IsSHARGagCharacterCelPassActive();
+void SetSHARFrontendMenuCelPassActive(bool enabled);
+bool IsSHARFrontendMenuCelPassActive();
+void SetSHARExteriorTransparencyDepthWriteFixActive(bool enabled);
+bool IsSHARExteriorTransparencyDepthWriteFixActive();
+#endif
+
 //--------------------------------------------------------------
 class pglContext : public pddiBaseContext
 {
@@ -87,6 +109,17 @@ public :
     void SetShaderProgram(pglProgram* program);
     void SetTextureEnvironment(const pglTextureEnv* texEnv);
 
+    void InvalidateGLStateCache();
+    void SetGLBlendEnabled(bool enabled);
+    void SetGLBlendEquation(GLenum equation);
+    void SetGLBlendFunc(GLenum source, GLenum destination);
+    void SetGLDepthMask(GLboolean enabled);
+    void SetGLCullEnabled(bool enabled);
+    void SetGLCullFace(GLenum mode);
+#ifdef RAD_ANDROID
+    void ApplyCelShadingState();
+#endif
+
     unsigned contextID;
 
 protected:
@@ -124,6 +157,20 @@ protected:
 //   ULONG compareMode;
 //   BOOL zWrite;
 //   float alphaRef;
+
+    bool mGLBlendEnabledKnown;
+    bool mGLBlendEnabled;
+    bool mGLBlendEquationKnown;
+    GLenum mGLBlendEquation;
+    bool mGLBlendFuncKnown;
+    GLenum mGLBlendSource;
+    GLenum mGLBlendDestination;
+    bool mGLDepthMaskKnown;
+    GLboolean mGLDepthMask;
+    bool mGLCullEnabledKnown;
+    bool mGLCullEnabled;
+    bool mGLCullFaceKnown;
+    GLenum mGLCullFaceMode;
 
     int maxTexSize;
     pddiMatrix projection;

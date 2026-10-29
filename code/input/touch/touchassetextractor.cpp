@@ -23,6 +23,18 @@
 static const char* TOUCH_ASSET_VERSION = "2";
 
 
+#if defined(RAD_ANDROID)
+static void MigrateLegacyTouchDirectory(const char* storagePath)
+{
+    char oldPath[512], newPath[512];
+    snprintf(oldPath, sizeof(oldPath), "%s/touch_controls", storagePath);
+    snprintf(newPath, sizeof(newPath), "%s/Touch", storagePath);
+    struct stat oldInfo, newInfo;
+    if (stat(newPath, &newInfo) != 0 && stat(oldPath, &oldInfo) == 0)
+        rename(oldPath, newPath);
+}
+#endif
+
 static const char* TOUCH_ASSET_FILES[] =
 {
     // Character
@@ -175,18 +187,20 @@ bool TouchAssetExtractor::BuildOutputRoot()
 #if !defined(RAD_ANDROID)
     return true;
 #else
-    const char* storagePath = SDL_AndroidGetExternalStoragePath();
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
 
     if ( storagePath == NULL || storagePath[ 0 ] == '\0' )
     {
-        SetLastError( "SDL_AndroidGetExternalStoragePath returned null/empty." );
+        SetLastError( "SDL_AndroidGetApplicationExternalFilesPath returned null/empty." );
         return false;
     }
+
+    MigrateLegacyTouchDirectory( storagePath );
 
     snprintf(
         mOutputRoot,
         sizeof( mOutputRoot ),
-        "%s/touch_controls",
+        "%s/Touch",
         storagePath
     );
 
@@ -204,7 +218,7 @@ bool TouchAssetExtractor::NeedsExtraction() const
         return true;
     }
 
-    const char* storagePath = SDL_AndroidGetExternalStoragePath();
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
 
     if ( storagePath == NULL || storagePath[ 0 ] == '\0' )
     {
@@ -262,22 +276,33 @@ bool TouchAssetExtractor::CopyAssetFile( const char* relativePath )
         return false;
     }
 
-    const char* storagePath = SDL_AndroidGetExternalStoragePath();
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
 
     if ( storagePath == NULL || storagePath[ 0 ] == '\0' )
     {
-        SetLastError( "Cannot copy asset: external storage path is invalid." );
+        SetLastError( "Cannot copy asset: application external-files path is invalid." );
         return false;
     }
 
     char outputPath[ MAX_TOUCH_PATH ];
 
+    // The packaged asset keeps the original APK path "touch_controls/...".
+    // On-device, place its contents directly inside /files/Touch so that the
+    // touch runtime reads /files/Touch/character, /vehicle, /frontend, etc.
+    static const char* LEGACY_ASSET_PREFIX = "touch_controls/";
+    const size_t legacyPrefixLength = strlen( LEGACY_ASSET_PREFIX );
+    const char* outputRelativePath = relativePath;
+    if ( strncmp( outputRelativePath, LEGACY_ASSET_PREFIX, legacyPrefixLength ) == 0 )
+    {
+        outputRelativePath += legacyPrefixLength;
+    }
+
     snprintf(
         outputPath,
         sizeof( outputPath ),
-        "%s/%s",
+        "%s/Touch/%s",
         storagePath,
-        relativePath
+        outputRelativePath
     );
 
     if ( !EnsureParentDirectoryForFile( outputPath ) )
@@ -474,7 +499,7 @@ bool TouchAssetExtractor::WriteVersionFile() const
 #if !defined(RAD_ANDROID)
     return true;
 #else
-    const char* storagePath = SDL_AndroidGetExternalStoragePath();
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
 
     if ( storagePath == NULL || storagePath[ 0 ] == '\0' )
     {
@@ -486,7 +511,7 @@ bool TouchAssetExtractor::WriteVersionFile() const
     snprintf(
         versionPath,
         sizeof( versionPath ),
-        "%s/touch_controls/.version",
+        "%s/Touch/.version",
         storagePath
     );
 
@@ -514,7 +539,7 @@ bool TouchAssetExtractor::IsVersionFileValid() const
 #if !defined(RAD_ANDROID)
     return true;
 #else
-    const char* storagePath = SDL_AndroidGetExternalStoragePath();
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
 
     if ( storagePath == NULL || storagePath[ 0 ] == '\0' )
     {
@@ -526,7 +551,7 @@ bool TouchAssetExtractor::IsVersionFileValid() const
     snprintf(
         versionPath,
         sizeof( versionPath ),
-        "%s/touch_controls/.version",
+        "%s/Touch/.version",
         storagePath
     );
 

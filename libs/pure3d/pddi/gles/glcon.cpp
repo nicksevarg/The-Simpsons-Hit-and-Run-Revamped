@@ -9,6 +9,885 @@
 #include <pddi/gles/gltex.hpp>
 #include <pddi/gles/glmat.hpp>
 #include <pddi/gles/glprog.hpp>
+#ifdef RAD_ANDROID
+bool GetSHARMotionBlurCameraBasis(float* output);
+#endif
+
+#ifdef RAD_ANDROID
+#include <SDL_system.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <sys/stat.h>
+#include <errno.h>
+
+
+static bool gCelShadingEnabled = true;
+static bool gCelShadingObjectEnabled = false;
+static bool gCelShadingOutlinePass = false;
+// Enabled by gameplay only for exterior Levels 1-6; Level 7 retains the prior behavior.
+static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
+static pglContext* gCelShadingContext = nullptr;
+
+// The scene texture alpha channel is a per-frame character-coverage mask during
+// Android world rendering. Keep the game's requested alpha-write state and gate
+// only effective GL alpha writes while the world target is active.
+static bool gSHARCharacterMaskWorldEnabled = false;
+static bool gSHARCharacterMaskModelPass = false;
+static bool gSHARCharacterMaskAlphaWriteRequested = true;
+
+// Enabled only while an NIS/presentation scene graph is being displayed.
+// Actual skinned meshes use this flag to receive the same two-pass toon
+// silhouette treatment as CharacterRenderable; static gag props are untouched.
+static bool gSHARGagCharacterCelPassActive = false;
+// Enabled while Scrooby displays the main-menu camera set. This is separate
+// from the NIS gag flag because the front-end scene is not rendered by NISPlayer.
+static bool gSHARFrontendMenuCelPassActive = false;
+
+// Mirror the colour-write mask set through the Android GLES backend. Character
+// mask policy changes usually only need to toggle alpha; querying GL state for
+// both transitions on every character was unnecessary. All Android-side
+// glColorMask calls in this backend go through SetSHARTrackedColorWriteMask().
+static GLboolean gSHARTrackedColorWriteMask[4] = {
+    GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE
+};
+static bool gSHARTrackedColorWriteMaskKnown = false;
+
+#ifdef RAD_ANDROID
+static float gSHARObjectBrightness = 1.0f;
+static float gSHARObjectSaturation = 1.0f;
+#endif
+
+void SetSHARTrackedColorWriteMask(
+    GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha)
+{
+    if (!gSHARTrackedColorWriteMaskKnown ||
+        gSHARTrackedColorWriteMask[0] != red ||
+        gSHARTrackedColorWriteMask[1] != green ||
+        gSHARTrackedColorWriteMask[2] != blue ||
+        gSHARTrackedColorWriteMask[3] != alpha)
+    {
+        glColorMask(red, green, blue, alpha);
+    }
+
+    gSHARTrackedColorWriteMask[0] = red;
+    gSHARTrackedColorWriteMask[1] = green;
+    gSHARTrackedColorWriteMask[2] = blue;
+    gSHARTrackedColorWriteMask[3] = alpha;
+    gSHARTrackedColorWriteMaskKnown = true;
+}
+
+void InvalidateSHARTrackedColorWriteMaskCache()
+{
+    gSHARTrackedColorWriteMaskKnown = false;
+}
+
+static void ApplySHARCharacterMaskAlphaPolicy()
+{
+    // Query only when the tracked state is unknown (startup/context reset), not
+    // on every character's begin/end model-pass transition.
+    if (!gSHARTrackedColorWriteMaskKnown)
+    {
+        glGetBooleanv(GL_COLOR_WRITEMASK, gSHARTrackedColorWriteMask);
+        gSHARTrackedColorWriteMaskKnown = true;
+    }
+
+    // The repurposed alpha channel is a mask, so character geometry must
+    // mark it even if a material disables ordinary framebuffer alpha writes.
+    const GLboolean alphaAllowed = gSHARCharacterMaskWorldEnabled
+        ? (gSHARCharacterMaskModelPass ? GL_TRUE : GL_FALSE)
+        : (gSHARCharacterMaskAlphaWriteRequested ? GL_TRUE : GL_FALSE);
+    SetSHARTrackedColorWriteMask(
+        gSHARTrackedColorWriteMask[0],
+        gSHARTrackedColorWriteMask[1],
+        gSHARTrackedColorWriteMask[2],
+        alphaAllowed);
+}
+
+void SetSHARCharacterMaskWorldEnabled(bool enabled)
+{
+    gSHARCharacterMaskWorldEnabled = enabled;
+    ApplySHARCharacterMaskAlphaPolicy();
+}
+
+void SetSHARCharacterMaskModelPass(bool enabled)
+{
+    gSHARCharacterMaskModelPass = enabled;
+    ApplySHARCharacterMaskAlphaPolicy();
+}
+
+void SetSHARGagCharacterCelPassActive(bool enabled)
+{
+    gSHARGagCharacterCelPassActive = enabled;
+}
+
+bool IsSHARGagCharacterCelPassActive()
+{
+    return gSHARGagCharacterCelPassActive;
+}
+
+void SetSHARFrontendMenuCelPassActive(bool enabled)
+{
+    gSHARFrontendMenuCelPassActive = enabled;
+}
+
+bool IsSHARFrontendMenuCelPassActive()
+{
+    return gSHARFrontendMenuCelPassActive;
+}
+
+#ifdef RAD_ANDROID
+void SetSHARObjectDimming(float brightness, float saturation)
+{
+    if (brightness < 0.0f) brightness = 0.0f;
+    if (brightness > 1.0f) brightness = 1.0f;
+    if (saturation < 0.0f) saturation = 0.0f;
+    if (saturation > 1.0f) saturation = 1.0f;
+
+    gSHARObjectBrightness = brightness;
+    gSHARObjectSaturation = saturation;
+    if (gCelShadingContext)
+        gCelShadingContext->ApplyCelShadingState();
+}
+#endif
+static bool gCelShadingConfigurationLoaded = false;
+// Fresh installs use the Remastered Settings sharpening default of 40%.
+// User-selected values are loaded from Simpsons_sharpening.txt and remain unchanged on existing installs.
+static float gFrameSharpenStrength = 0.4f;
+static bool gFrameSharpeningEnabled = true;
+static bool gSharpeningConfigurationLoaded = false;
+
+static bool gCRTConfigurationLoaded = false;
+static bool gMotionBlurConfigurationLoaded = false;
+static bool gMotionBlurEnabled = false;
+static bool gCRTEnabled = false;
+static bool gSHARRimLightingEnabled = false;
+static bool gSHARRimLightingConfigurationLoaded = false;
+static float gCRTScanlineStrength = 0.5f;
+static float gCRTCurvature = 0.06f;
+static float gCRTGlowStrength = 0.25f;
+static float gCRTCornerDarkening = 0.33f;
+static float gCRTOverscan = 0.0f;
+static float gCRTBrightness = 1.0f;
+static float gCRTContrast = 1.0f;
+
+static const char* CRT_CONFIGURATION_FILE_NAME = "Simpsons_crt_configuration.txt";
+static const char* MOTION_BLUR_CONFIGURATION_FILE_NAME = "Simpsons_motion_blur.txt";
+static const char* CEL_SHADING_CONFIGURATION_FILE_NAME = "Simpsons_cel_shading.txt";
+static const char* SHARPENING_CONFIGURATION_FILE_NAME = "Simpsons_sharpening.txt";
+static const char* RIM_LIGHTING_CONFIGURATION_FILE_NAME = "Simpsons_rim_lighting.txt";
+
+static bool BuildGraphicsConfigurationPath(char* filePath, size_t filePathSize, const char* fileName)
+{
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
+    if (storagePath == nullptr || storagePath[0] == '\0')
+        return false;
+
+    char graphicsPath[512];
+    snprintf(graphicsPath, sizeof(graphicsPath), "%s/Graphics", storagePath);
+    if (mkdir(graphicsPath, 0777) != 0 && errno != EEXIST)
+        return false;
+
+    struct stat directoryInfo;
+    if (stat(graphicsPath, &directoryInfo) != 0 || !S_ISDIR(directoryInfo.st_mode))
+        return false;
+
+    snprintf(filePath, filePathSize, "%s/%s", graphicsPath, fileName);
+    return true;
+}
+
+static bool BuildLegacyRootConfigurationPath(char* filePath, size_t filePathSize, const char* fileName)
+{
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
+    if (storagePath == nullptr || storagePath[0] == '\0')
+        return false;
+
+    snprintf(filePath, filePathSize, "%s/%s", storagePath, fileName);
+    return true;
+}
+
+static bool GraphicsConfigurationFileExists(const char* path)
+{
+    FILE* file = fopen(path, "r");
+    if (file == nullptr)
+        return false;
+    fclose(file);
+    return true;
+}
+
+static void RemoveLegacyRootConfigurationIfMigrated(const char* oldName, const char* newPath)
+{
+    char oldPath[512];
+    if (!BuildLegacyRootConfigurationPath(oldPath, sizeof(oldPath), oldName))
+        return;
+
+    if (GraphicsConfigurationFileExists(newPath))
+        remove(oldPath);
+}
+
+static void LoadSharpeningConfiguration();
+
+
+static bool ParseCelShadingBool(const char* value, bool defaultValue)
+{
+    if (value == nullptr)
+        return defaultValue;
+
+    while (*value == ' ' || *value == '\t')
+        ++value;
+
+    if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0)
+        return true;
+
+    if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0)
+        return false;
+
+    return defaultValue;
+}
+
+static void WriteCelShadingConfiguration()
+{
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), CEL_SHADING_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "w");
+    if (file == nullptr)
+        return;
+
+    fprintf(file, "# Simpsons Hit & Run - Revamped! [Cel Shading Setting]\n");
+    fprintf(file, "# Changes the graphics to more resemble the original Simpsons cartoon style.\n");
+    fprintf(file, "# Change with true/false or 1/0 values.\n");
+    fprintf(file, "# You can also use the in-game settings toggle.\n");
+    fprintf(file, "# Changes to this file will be reflected upon restart.\n");
+    fprintf(file, "\n");
+    fprintf(file, "cel_shading=%s\n", gCelShadingEnabled ? "true" : "false");
+    fclose(file);
+}
+
+static void LoadCelShadingConfiguration()
+{
+    if (gCelShadingConfigurationLoaded)
+        return;
+
+    gCelShadingConfigurationLoaded = true;
+
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), CEL_SHADING_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "r");
+    bool fromLegacyRoot = false;
+    char legacyPath[512];
+    if (file == nullptr &&
+        BuildLegacyRootConfigurationPath(legacyPath, sizeof(legacyPath), CEL_SHADING_CONFIGURATION_FILE_NAME))
+    {
+        file = fopen(legacyPath, "r");
+        fromLegacyRoot = (file != nullptr);
+    }
+
+    if (file == nullptr)
+    {
+        // New installs keep cel shading enabled unless explicitly disabled in the config.
+        WriteCelShadingConfiguration();
+        return;
+    }
+
+    // Older versions stored sharpen= in this same file. Read that value before
+    // migrating/removing the old cel-shading file.
+    if (fromLegacyRoot)
+        LoadSharpeningConfiguration();
+
+    char line[256];
+    while (fgets(line, sizeof(line), file) != nullptr)
+    {
+        char* key = strstr(line, "cel_shading=");
+        if (key == nullptr)
+            continue;
+
+        key += strlen("cel_shading=");
+        char* end = key + strlen(key);
+        while (end > key &&
+               (end[-1] == '\n' || end[-1] == '\r' ||
+                end[-1] == ' ' || end[-1] == '\t'))
+            --end;
+        *end = '\0';
+
+        gCelShadingEnabled = ParseCelShadingBool(key, gCelShadingEnabled);
+    }
+    fclose(file);
+
+    if (fromLegacyRoot)
+    {
+        WriteCelShadingConfiguration();
+        RemoveLegacyRootConfigurationIfMigrated(CEL_SHADING_CONFIGURATION_FILE_NAME, filePath);
+    }
+}
+
+static void WriteSharpeningConfiguration()
+{
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), SHARPENING_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "w");
+    if (file == nullptr)
+        return;
+
+    fprintf(file, "# Simpsons Hit & Run - Revamped! [Sharpening Setting]\n");
+    fprintf(file, "# Enhances brightness contrast along edges to make graphics more defined.\n");
+    fprintf(file, "# Change with 0.20/0.40/0.60/0.80/1.00 values and true/false or 1/0 values.\n");
+    fprintf(file, "# You can also use the in-game settings toggle.\n");
+    fprintf(file, "# Changes to this file will be reflected upon restart.\n");
+    fprintf(file, "\n");
+    fprintf(file, "sharpen=%.2f\n", gFrameSharpenStrength);
+    fprintf(file, "sharpening_enabled=%s\n", gFrameSharpeningEnabled ? "true" : "false");
+
+    fclose(file);
+}
+
+static bool ParseSharpeningStrengthLine(char* line)
+{
+    char* value = strstr(line, "sharpen=");
+    if (value == nullptr)
+        return false;
+
+    value += strlen("sharpen=");
+    char* end = value + strlen(value);
+    while (end > value &&
+           (end[-1] == '\n' || end[-1] == '\r' ||
+            end[-1] == ' ' || end[-1] == '\t'))
+    {
+        --end;
+    }
+    *end = '\0';
+
+    char* parseEnd = nullptr;
+    const float parsed = strtof(value, &parseEnd);
+    if (parseEnd != value && isfinite(parsed))
+        gFrameSharpenStrength = fmaxf(0.0f, fminf(1.0f, parsed));
+    return true;
+}
+
+static void ParseSharpeningEnabledLine(char* line)
+{
+    char* enabled = strstr(line, "sharpening_enabled=");
+    if (enabled == nullptr)
+        return;
+
+    enabled += strlen("sharpening_enabled=");
+    while (*enabled == ' ' || *enabled == '\t')
+        ++enabled;
+
+    gFrameSharpeningEnabled =
+        (*enabled == '1' || strncmp(enabled, "true", 4) == 0 ||
+         strncmp(enabled, "on", 2) == 0);
+}
+
+static void LoadSharpeningConfiguration()
+{
+    if (gSharpeningConfigurationLoaded)
+        return;
+
+    gSharpeningConfigurationLoaded = true;
+
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), SHARPENING_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "r");
+    bool fromLegacyDedicatedFile = false;
+    bool fromLegacyCombinedCelFile = false;
+    char legacyPath[512];
+
+    if (file == nullptr &&
+        BuildLegacyRootConfigurationPath(legacyPath, sizeof(legacyPath), SHARPENING_CONFIGURATION_FILE_NAME))
+    {
+        file = fopen(legacyPath, "r");
+        fromLegacyDedicatedFile = (file != nullptr);
+    }
+
+    if (file == nullptr &&
+        BuildLegacyRootConfigurationPath(legacyPath, sizeof(legacyPath), CEL_SHADING_CONFIGURATION_FILE_NAME))
+    {
+        file = fopen(legacyPath, "r");
+        fromLegacyCombinedCelFile = (file != nullptr);
+    }
+
+    if (file == nullptr)
+    {
+        WriteSharpeningConfiguration();
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file) != nullptr)
+    {
+        if (ParseSharpeningStrengthLine(line))
+            continue;
+        ParseSharpeningEnabledLine(line);
+    }
+
+    fclose(file);
+
+    if (fromLegacyDedicatedFile)
+    {
+        WriteSharpeningConfiguration();
+        RemoveLegacyRootConfigurationIfMigrated(SHARPENING_CONFIGURATION_FILE_NAME, filePath);
+    }
+    else if (fromLegacyCombinedCelFile)
+    {
+        // Keep the combined file until its cel_shading value has been migrated.
+        WriteSharpeningConfiguration();
+    }
+}
+
+static bool ParseCRTFloatSetting(char* line, const char* key, float* target, float minimum, float maximum)
+{
+    char* value = strstr(line, key);
+    if (value == nullptr)
+        return false;
+    value += strlen(key);
+    char* end = value + strlen(value);
+    while (end > value && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t'))
+        --end;
+    *end = '\0';
+    char* parseEnd = nullptr;
+    const float parsed = strtof(value, &parseEnd);
+    if (parseEnd != value && isfinite(parsed))
+        *target = fmaxf(minimum, fminf(maximum, parsed));
+    return true;
+}
+
+static void WriteCRTConfiguration()
+{
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), CRT_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "w");
+    if (file == nullptr)
+        return;
+
+    fprintf(file, "# Simpsons Hit & Run - Revamped [CRT Filter Configuration]\n");
+    fprintf(file, "# (GLES2 CRT-Geom-Style)\n");
+    fprintf(file, "# Overlays a screen filter that imitates a 90s CRT TV.\n");
+    fprintf(file, "# 0/off bypasses the CRT pass.\n");
+    fprintf(file, "# You can also use the in-game settings toggle.\n");
+    fprintf(file, "# Changes to this file will be reflected upon restart.\n");
+    fprintf(file, "\n");
+    fprintf(file, "crt_enabled=%d\n", gCRTEnabled ? 1 : 0);
+    fprintf(file, "scanline_strength=%.2f\n", gCRTScanlineStrength);
+    fprintf(file, "curvature=%.2f\n", gCRTCurvature);
+    fprintf(file, "glow_strength=%.2f\n", gCRTGlowStrength);
+    fprintf(file, "corner_darkening=%.2f\n", gCRTCornerDarkening);
+    fprintf(file, "overscan=%.2f\n", gCRTOverscan);
+    fprintf(file, "brightness=%.2f\n", gCRTBrightness);
+    fprintf(file, "contrast=%.2f\n", gCRTContrast);
+    fclose(file);
+}
+
+static void LoadCRTConfiguration()
+{
+    if (gCRTConfigurationLoaded)
+        return;
+
+    gCRTConfigurationLoaded = true;
+
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), CRT_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "r");
+    bool fromLegacyRoot = false;
+    char legacyPath[512];
+    if (file == nullptr &&
+        BuildLegacyRootConfigurationPath(legacyPath, sizeof(legacyPath), CRT_CONFIGURATION_FILE_NAME))
+    {
+        file = fopen(legacyPath, "r");
+        fromLegacyRoot = (file != nullptr);
+    }
+
+    if (file == nullptr)
+    {
+        WriteCRTConfiguration();
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file) != nullptr)
+    {
+        char* enabled = strstr(line, "crt_enabled=");
+        if (enabled != nullptr)
+        {
+            enabled += strlen("crt_enabled=");
+            while (*enabled == ' ' || *enabled == '\t')
+                ++enabled;
+            gCRTEnabled = (*enabled == '1' || strncmp(enabled, "true", 4) == 0 || strncmp(enabled, "on", 2) == 0);
+            continue;
+        }
+        ParseCRTFloatSetting(line, "scanline_strength=", &gCRTScanlineStrength, 0.0f, 1.0f);
+        ParseCRTFloatSetting(line, "curvature=", &gCRTCurvature, 0.0f, 0.5f);
+        ParseCRTFloatSetting(line, "glow_strength=", &gCRTGlowStrength, 0.0f, 1.0f);
+        ParseCRTFloatSetting(line, "corner_darkening=", &gCRTCornerDarkening, 0.0f, 1.0f);
+        ParseCRTFloatSetting(line, "overscan=", &gCRTOverscan, 0.0f, 0.05f);
+        ParseCRTFloatSetting(line, "brightness=", &gCRTBrightness, 0.5f, 1.5f);
+        ParseCRTFloatSetting(line, "contrast=", &gCRTContrast, 0.5f, 1.5f);
+    }
+
+    fclose(file);
+
+    if (fromLegacyRoot)
+    {
+        WriteCRTConfiguration();
+        RemoveLegacyRootConfigurationIfMigrated(CRT_CONFIGURATION_FILE_NAME, filePath);
+    }
+}
+
+bool IsCRTFilterEnabled()
+{
+    LoadCRTConfiguration();
+    return gCRTEnabled;
+}
+
+void SetCRTFilterEnabled(bool enabled)
+{
+    LoadCRTConfiguration();
+    if (gCRTEnabled == enabled)
+        return;
+    gCRTEnabled = enabled;
+    WriteCRTConfiguration();
+}
+
+void GetCRTFilterConfiguration(bool* enabled, float* scanlineStrength, float* curvature,
+                               float* glowStrength, float* cornerDarkening, float* overscan,
+                               float* brightness, float* contrast)
+{
+    LoadCRTConfiguration();
+    if (enabled) *enabled = gCRTEnabled;
+    if (scanlineStrength) *scanlineStrength = gCRTScanlineStrength;
+    if (curvature) *curvature = gCRTCurvature;
+    if (glowStrength) *glowStrength = gCRTGlowStrength;
+    if (cornerDarkening) *cornerDarkening = gCRTCornerDarkening;
+    if (overscan) *overscan = gCRTOverscan;
+    if (brightness) *brightness = gCRTBrightness;
+    if (contrast) *contrast = gCRTContrast;
+}
+
+
+static void WriteMotionBlurConfiguration()
+{
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), MOTION_BLUR_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "w");
+    if (file == nullptr)
+        return;
+
+    fprintf(file, "# Simpsons Hit & Run - Revamped! [Motion Blur Setting]\n");
+    fprintf(file, "# Adds motion blur to the tail of vehicles and the bottom of the screen.\n");
+    fprintf(file, "# Change with true/false or 1/0 values.\n");
+    fprintf(file, "# You can also use the in-game settings toggle.\n");
+    fprintf(file, "# Changes to this file will be reflected upon restart.\n");
+    fprintf(file, "\n");
+    fprintf(file, "motion_blur=%s\n", gMotionBlurEnabled ? "true" : "false");
+    fclose(file);
+}
+
+static void LoadMotionBlurConfiguration()
+{
+    if (gMotionBlurConfigurationLoaded)
+        return;
+
+    gMotionBlurConfigurationLoaded = true;
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), MOTION_BLUR_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "r");
+    bool fromLegacyRoot = false;
+    char legacyPath[512];
+    if (file == nullptr &&
+        BuildLegacyRootConfigurationPath(legacyPath, sizeof(legacyPath), MOTION_BLUR_CONFIGURATION_FILE_NAME))
+    {
+        file = fopen(legacyPath, "r");
+        fromLegacyRoot = (file != nullptr);
+    }
+
+    if (file == nullptr)
+    {
+        // Fresh installs default to motion blur disabled; an existing saved preference is preserved.
+        WriteMotionBlurConfiguration();
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file) != nullptr)
+    {
+        char* value = strstr(line, "motion_blur=");
+        if (value == nullptr)
+            continue;
+        value += strlen("motion_blur=");
+        while (*value == ' ' || *value == '\t')
+            ++value;
+        gMotionBlurEnabled =
+            (*value == '1' || strncmp(value, "true", 4) == 0 ||
+             strncmp(value, "on", 2) == 0);
+    }
+    fclose(file);
+
+    if (fromLegacyRoot)
+    {
+        WriteMotionBlurConfiguration();
+        RemoveLegacyRootConfigurationIfMigrated(MOTION_BLUR_CONFIGURATION_FILE_NAME, filePath);
+    }
+}
+
+bool IsMotionBlurEnabled()
+{
+    LoadMotionBlurConfiguration();
+    return gMotionBlurEnabled;
+}
+
+void SetMotionBlurEnabled(bool enabled)
+{
+    LoadMotionBlurConfiguration();
+    if (gMotionBlurEnabled == enabled)
+        return;
+    gMotionBlurEnabled = enabled;
+    WriteMotionBlurConfiguration();
+}
+
+
+static void WriteSHARRimLightingConfiguration()
+{
+    char filePath[512];
+    if( !BuildGraphicsConfigurationPath( filePath, sizeof(filePath),
+                                         RIM_LIGHTING_CONFIGURATION_FILE_NAME ) )
+        return;
+    FILE* file = fopen( filePath, "w" );
+    if( file == nullptr )
+        return;
+    fprintf( file, "# Simpsons Hit & Run - Revamped! [Rim Lighting Setting]\n" );
+    fprintf( file, "# Illuminates the outer edges of characters and vehicles.\n" );
+    fprintf( file, "# Change with true/false or 1/0 values.\n" );
+    fprintf( file, "# You can also use the in-game settings toggle.\n" );
+    fprintf( file, "# Changes to this file will be reflected upon restart.\n" );
+    fprintf( file, "\n" );
+    fprintf( file, "rim_lighting=%s\n", gSHARRimLightingEnabled ? "true" : "false" );
+    fclose( file );
+}
+
+static void LoadSHARRimLightingConfiguration()
+{
+    if( gSHARRimLightingConfigurationLoaded )
+        return;
+    gSHARRimLightingConfigurationLoaded = true;
+
+    char filePath[512];
+    if( !BuildGraphicsConfigurationPath( filePath, sizeof(filePath),
+                                         RIM_LIGHTING_CONFIGURATION_FILE_NAME ) )
+        return;
+    FILE* file = fopen( filePath, "r" );
+    if( file == nullptr )
+    {
+        WriteSHARRimLightingConfiguration();
+        return;
+    }
+
+    char line[256];
+    while( fgets( line, sizeof(line), file ) != nullptr )
+    {
+        char* value = strstr( line, "rim_lighting=" );
+        if( value == nullptr )
+            continue;
+        value += strlen( "rim_lighting=" );
+        while( *value == ' ' || *value == '\t' )
+            ++value;
+        gSHARRimLightingEnabled =
+            ( *value == '1' || strncmp(value, "true", 4) == 0 ||
+              strncmp(value, "on", 2) == 0 || strncmp(value, "ON", 2) == 0 );
+        break;
+    }
+    fclose( file );
+}
+
+
+bool GetSHARMotionBlurCameraData(float* output)
+{
+    if (output == NULL || gCelShadingContext == NULL)
+        return false;
+
+    float nearPlane = 0.0f;
+    float farPlane = 0.0f;
+    float fov = 0.0f;
+    float aspect = 0.0f;
+    gCelShadingContext->GetCamera(&nearPlane, &farPlane, &fov, &aspect);
+    if (nearPlane <= 0.0f || farPlane <= nearPlane ||
+        fov <= 0.01f || aspect <= 0.01f)
+        return false;
+
+    // Use CVMI from tContext via the small helper above, avoiding a full P3D
+    // context-header dependency in the GLES backend.
+    if (!GetSHARMotionBlurCameraBasis(output))
+        return false;
+    output[12] = tanf(fov * 0.5f);
+    output[13] = output[12] / aspect;
+    output[14] = nearPlane;
+    output[15] = farPlane;
+    return true;
+}
+
+bool IsCelShadingEnabled()
+{
+    LoadCelShadingConfiguration();
+    return gCelShadingEnabled;
+}
+
+bool IsFrameSharpeningEnabled()
+{
+    LoadSharpeningConfiguration();
+    return gFrameSharpeningEnabled;
+}
+
+void SetFrameSharpeningEnabled(bool enabled)
+{
+    LoadSharpeningConfiguration();
+    gFrameSharpeningEnabled = enabled;
+    WriteSharpeningConfiguration();
+}
+
+int GetFrameSharpeningLevel()
+{
+    LoadSharpeningConfiguration();
+
+    if( !gFrameSharpeningEnabled )
+    {
+        return 0;
+    }
+
+    int level = static_cast<int>( gFrameSharpenStrength * 5.0f + 0.5f );
+    if( level < 0 ) level = 0;
+    if( level > 5 ) level = 5;
+    return level;
+}
+
+void SetFrameSharpeningLevel( int level )
+{
+    LoadSharpeningConfiguration();
+
+    if( level < 0 ) level = 0;
+    if( level > 5 ) level = 5;
+
+    gFrameSharpenStrength = static_cast<float>( level ) * 0.2f;
+    gFrameSharpeningEnabled = ( level > 0 );
+    WriteSharpeningConfiguration();
+}
+
+float GetFrameSharpenStrength()
+{
+    LoadSharpeningConfiguration();
+    return gFrameSharpenStrength;
+}
+bool IsCelShadingObjectEnabled() { return gCelShadingObjectEnabled; }
+bool IsCelShadingOutlinePass() { return gCelShadingOutlinePass; }
+
+void SetSHARExteriorTransparencyDepthWriteFixActive(bool enabled)
+{
+    gSHARExteriorTransparencyDepthWriteFixActive = enabled;
+}
+
+bool IsSHARExteriorTransparencyDepthWriteFixActive()
+{
+    return gSHARExteriorTransparencyDepthWriteFixActive;
+}
+
+static void ApplyCelShadingState()
+{
+    if (gCelShadingContext)
+        gCelShadingContext->ApplyCelShadingState();
+}
+
+bool IsSHARRimLightingEnabled()
+{
+    LoadSHARRimLightingConfiguration();
+    return gSHARRimLightingEnabled;
+}
+
+void SetSHARRimLightingEnabled( bool enabled )
+{
+    LoadSHARRimLightingConfiguration();
+    if( gSHARRimLightingEnabled == enabled )
+        return;
+    gSHARRimLightingEnabled = enabled;
+    WriteSHARRimLightingConfiguration();
+    ApplyCelShadingState();
+}
+
+void SetCelShadingEnabled(bool enabled)
+{
+    LoadCelShadingConfiguration();
+    // Preserve a legacy sharpening value before rewriting the old combined file.
+    LoadSharpeningConfiguration();
+    gCelShadingEnabled = enabled;
+    WriteCelShadingConfiguration();
+    ApplyCelShadingState();
+}
+
+void SetCelShadingObjectEnabled(bool enabled)
+{
+    gCelShadingObjectEnabled = enabled;
+    ApplyCelShadingState();
+}
+
+void SetCelShadingOutlinePass(bool enabled)
+{
+    gCelShadingOutlinePass = enabled;
+
+    if (enabled && gCelShadingEnabled && gCelShadingObjectEnabled)
+    {
+        // Keep the outline behind the normal pass and render only backfaces.
+        if (gCelShadingContext)
+        {
+            gCelShadingContext->SetGLCullEnabled(true);
+            gCelShadingContext->SetGLCullFace(GL_BACK);
+            gCelShadingContext->SetGLDepthMask(GL_FALSE);
+        }
+        else
+        {
+            glEnable(GL_CULL_FACE);
+            glCullFace(GL_BACK);
+            glDepthMask(GL_FALSE);
+        }
+    }
+    else
+    {
+        // Restore the renderer's normal culling and depth-write state after
+        // the silhouette pass, even when the same material remains current.
+        if (gCelShadingContext)
+        {
+            const pddiCullMode mode = gCelShadingContext->GetCullMode();
+            if (mode == PDDI_CULL_NONE)
+            {
+                gCelShadingContext->SetGLCullEnabled(false);
+            }
+            else
+            {
+                gCelShadingContext->SetGLCullEnabled(true);
+                gCelShadingContext->SetGLCullFace(mode == PDDI_CULL_INVERTED ? GL_BACK : GL_FRONT);
+            }
+            gCelShadingContext->SetGLDepthMask(GL_TRUE);
+        }
+        else
+        {
+            glDepthMask(GL_TRUE);
+        }
+    }
+
+    ApplyCelShadingState();
+}
+#endif
 
 #include <pddi/base/debug.hpp>
 #include <math.h>
@@ -73,6 +952,11 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
     device = dev;
     display = disp;
     currentProgram = nullptr;
+    InvalidateGLStateCache();
+
+#ifdef RAD_ANDROID
+    gCelShadingContext = this;
+#endif
 
     device->AddRef();
     display->AddRef();
@@ -187,7 +1071,40 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform mat4 modelview;\n"
         "uniform mat4 normalmatrix;\n"
 
-        // Lights
+        "varying vec2 tc;\n"
+        "varying vec4 cpri;\n"
+        "varying vec3 toonNormal;\n"
+        "varying vec3 toonViewPos;\n"
+#ifdef RAD_ANDROID
+        "uniform int toonEnabled;\n"
+        "uniform int toonObjectEnabled;\n"
+        "uniform int toonOutlinePass;\n"
+        "uniform float toonOutlineWidth;\n"
+#endif
+        "void main() {\n"
+        "    vec4 V = modelview * vec4(position, 1.0);\n"
+        "    toonNormal = normalize(mat3(normalmatrix) * normal);\n"
+#ifdef RAD_ANDROID
+        "    if (toonEnabled != 0 && toonObjectEnabled != 0 && toonOutlinePass != 0) {\n"
+        "        V.xyz += toonNormal * toonOutlineWidth;\n"
+        "    }\n"
+#endif
+        "    toonViewPos = V.xyz;\n"
+        "    tc = texcoord;\n"
+        "    cpri = color;\n"
+        "    gl_Position = projection * V;\n"
+        "}\n"
+    );
+
+    // Evaluate lighting per-pixel so the toon thresholds remain crisp across
+    // each polygon instead of being interpolated from the triangle vertices.
+    const std::string toonLighting =
+        "precision mediump float;\n"
+        "varying vec2 tc;\n"
+        "varying vec4 cpri;\n"
+        "varying vec3 toonNormal;\n"
+        "varying vec3 toonViewPos;\n"
+
         "uniform struct LightParams {\n"
         "    int enabled;\n"
         "    vec4 position;\n"
@@ -195,117 +1112,141 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec3 attenuation;\n"
         "} lights[" PDDI_STRINGIZE(PDDI_MAX_LIGHTS) "];\n"
 
-        // Scene
         "uniform vec4 acs;\n"
-
-        // Material
         "uniform vec4 acm;\n"
         "uniform vec4 dcm;\n"
         "uniform vec4 scm;\n"
         "uniform vec4 ecm;\n"
         "uniform float srm;\n"
-
-        #ifdef RAD_ANDROID
-        // Indica si el material debe recibir iluminación.
+#ifdef RAD_ANDROID
         "uniform int lit;\n"
-        #endif
-
-        "varying vec2 tc;\n"
-        "varying vec4 cpri;\n"
-        "varying vec4 csec;\n"
+        "uniform int toonEnabled;\n"
+        "uniform int toonObjectEnabled;\n"
+        "uniform int toonRimEnabled;\n"
+        "uniform int toonOutlinePass;\n"
+        "uniform float toonOutlineWidth;\n"
+        "uniform float nightObjectBrightness;\n"
+        "uniform float nightObjectSaturation;\n"
+#endif
 
         "vec3 direction(vec4 p1, vec4 p2) { return normalize(p2.xyz * sign(p1.w) - p1.xyz * sign(p2.w)); }\n"
-        "float power(float x, float y) { return y != 0.0 ? pow(x,y) : 1.0; }\n"
         "float product(vec3 x, vec3 y) { return max(dot(x,y), 0.0); }\n"
+        "float power(float x, float y) { return y != 0.0 ? pow(x,y) : 1.0; }\n"
 
-                "void main() {\n"
-                "    vec4 V = modelview * vec4(position, 1.0);\n"
-                 
+        // One flat toon tone for enabled characters and vehicles. This removes
+        // the two-band light/shadow jump and keeps the source texture colours intact.
+        "const float toonFlatLight = 0.78;\n"
+#ifdef RAD_ANDROID
+        "const float toonRimStrength = 0.20;\n"
+#endif
 
-    #ifdef RAD_ANDROID
-            "    vec3 diff;\n"
-    #else
-            "    vec3 n = normalize(mat3(normalmatrix) * normal);\n"
-            "    vec3 diff = ecm.rgb + acm.rgb * acs.rgb;\n"
-    #endif
-
-            "    vec3 spec = vec3(0.0);\n"
-
-    #ifdef RAD_ANDROID
-            // Los materiales no iluminados deben conservar directamente
-            // el color del vértice, sin luz ambiental, difusa o especular.
-            "    if (lit == 0) {\n"
-            "        diff = vec3(1.0);\n"
-            "    } else {\n"
-            "        vec3 n = normalize(mat3(normalmatrix) * normal);\n"
-            "        diff = ecm.rgb + acm.rgb * acs.rgb;\n"
-    #endif
-
-            "        for (int i = 0; i < " PDDI_STRINGIZE(PDDI_MAX_LIGHTS) "; i++) {\n"
-            "            if (lights[i].enabled == 0) continue;\n"
-
-            "            vec3 VP = direction(V, lights[i].position);\n"
-            "            float f = product(n,VP) != 0.0 ? 1.0 : 0.0;\n"
-            "            vec3 h = normalize(VP + vec3(0.0, 0.0, 1.0));\n"
-
-            "            vec3 k = lights[i].attenuation;\n"
-            "            float d = distance(V.xyz, lights[i].position.xyz);\n"
-            "            float att = lights[i].position.w != 0.0 ? 1.0 / (k[0] + k[1] * d + k[2] * d * d) : 1.0;\n"
-
-            "            diff += att * product(n,VP) * dcm.rgb * lights[i].colour.rgb;\n"
-            "            spec += att * f * power(product(n,h),srm) * scm.rgb * lights[i].colour.rgb;\n"
-            "        }\n"
-
-        #ifdef RAD_ANDROID
-                "    }\n"
-        #endif
-
-        "    tc = texcoord;\n"
-        "    cpri = color * vec4(diff, dcm.a);\n"
-        "    csec = vec4(spec, 0.0);\n"
-        "    gl_Position = projection * V;\n"
+        "vec3 toonLightingColor() {\n"
+        "    if (toonEnabled == 0 || toonObjectEnabled == 0) {\n"
+        "        vec3 n = normalize(toonNormal);\n"
+        "        vec3 diff = ecm.rgb + acm.rgb * acs.rgb;\n"
+        "        vec3 spec = vec3(0.0);\n"
+#ifdef RAD_ANDROID
+        "        if (lit == 0) return vec3(1.0);\n"
+#endif
+        "        for (int i = 0; i < " PDDI_STRINGIZE(PDDI_MAX_LIGHTS) "; i++) {\n"
+        "            if (lights[i].enabled == 0) continue;\n"
+        "            vec3 VP = direction(vec4(toonViewPos, 1.0), lights[i].position);\n"
+        "            float ndotl = product(n, VP);\n"
+        "            vec3 h = normalize(VP + vec3(0.0, 0.0, 1.0));\n"
+        "            float specular = power(product(n, h), srm);\n"
+        "            vec3 k = lights[i].attenuation;\n"
+        "            float d = distance(toonViewPos, lights[i].position.xyz);\n"
+        "            float att = lights[i].position.w != 0.0 ? 1.0 / (k[0] + k[1] * d + k[2] * d * d) : 1.0;\n"
+        "            diff += att * ndotl * dcm.rgb * lights[i].colour.rgb;\n"
+        "            spec += att * specular * scm.rgb * lights[i].colour.rgb;\n"
+        "        }\n"
+        "        return diff + spec;\n"
+        "    }\n"
+#ifdef RAD_ANDROID
+        "    if (lit == 0) return vec3(1.0);\n"
+        "    if (toonRimEnabled == 0) return dcm.rgb * toonFlatLight;\n"
+        // Guard the rim calculation against zero-length vectors and precision
+        // overshoot. Some mobile GPUs can round a normalized dot product above
+        // 1.0; pow() with a negative base and fractional exponent is undefined.
+        "    vec3 nRaw = toonNormal;\n"
+        "    vec3 vRaw = -toonViewPos;\n"
+        "    float nLen2 = dot(nRaw, nRaw);\n"
+        "    float vLen2 = dot(vRaw, vRaw);\n"
+        "    float rim = 0.0;\n"
+        "    if (nLen2 > 0.000001 && vLen2 > 0.000001) {\n"
+        "        vec3 n = nRaw * inversesqrt(nLen2);\n"
+        "        vec3 v = vRaw * inversesqrt(vLen2);\n"
+        "        float facing = clamp(dot(n, v), 0.0, 1.0);\n"
+        "        rim = pow(max(1.0 - facing, 0.0), 2.5);\n"
+        "    }\n"
+        "    return dcm.rgb * (toonFlatLight + toonRimStrength * rim);\n"
+#else
+        "    return dcm.rgb * toonFlatLight;\n"
+#endif
         "}\n"
-    );
+#ifdef RAD_ANDROID
+        "vec3 applySHARObjectDimming(vec3 colour) {\n"
+        "    float luma = dot(colour, vec3(0.299, 0.587, 0.114));\n"
+        "    return mix(vec3(luma), colour, clamp(nightObjectSaturation, 0.0, 1.0)) * clamp(nightObjectBrightness, 0.0, 1.0);\n"
+        "}\n"
+#endif
+        ;
 
-    GLuint fragmentShader = pglProgram::CompileShader( GL_FRAGMENT_SHADER,
-        "precision mediump float;\n"
-        "varying vec2 tc;\n"
-        "varying vec4 cpri;\n"
-        "varying vec4 csec;\n"
-
+    GLuint fragmentShader = pglProgram::CompileShader(GL_FRAGMENT_SHADER,
+        (toonLighting +
         "void main() {\n"
-        "    gl_FragColor = cpri + csec;\n"
+        "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
+        "        gl_FragColor = vec4(0.0, 0.0, 0.0, cpri.a * dcm.a);\n"
+        "        return;\n"
+        "    }\n"
+#ifdef RAD_ANDROID
+        "    vec4 finalColour = cpri * vec4(toonLightingColor(), dcm.a);\n"
+        "    finalColour.rgb = applySHARObjectDimming(finalColour.rgb);\n"
+        "    gl_FragColor = finalColour;\n"
+#else
+        "    gl_FragColor = cpri * vec4(toonLightingColor(), dcm.a);\n"
+#endif
         "}\n"
-    );
+    ).c_str());
 
     GLuint textureShader = pglProgram::CompileShader(GL_FRAGMENT_SHADER,
-        "precision mediump float;\n"
-        "varying vec2 tc;\n"
-        "varying vec4 cpri;\n"
-        "varying vec4 csec;\n"
-
+        (toonLighting +
         "uniform sampler2D tex;\n"
-
         "void main() {\n"
-        "    gl_FragColor = texture2D(tex, tc) * cpri + csec;\n"
+        "    vec4 base = texture2D(tex, tc) * cpri;\n"
+        "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
+        "        gl_FragColor = vec4(0.0, 0.0, 0.0, base.a);\n"
+        "        return;\n"
+        "    }\n"
+#ifdef RAD_ANDROID
+        "    vec4 finalColour = base * vec4(toonLightingColor(), dcm.a);\n"
+        "    finalColour.rgb = applySHARObjectDimming(finalColour.rgb);\n"
+        "    gl_FragColor = finalColour;\n"
+#else
+        "    gl_FragColor = base * vec4(toonLightingColor(), dcm.a);\n"
+#endif
         "}\n"
-    );
+    ).c_str());
 
     GLuint alphaTestShader = pglProgram::CompileShader(GL_FRAGMENT_SHADER,
-        "precision mediump float;\n"
-        "varying vec2 tc;\n"
-        "varying vec4 cpri;\n"
-        "varying vec4 csec;\n"
-
+        (toonLighting +
         "uniform float alpharef;\n"
         "uniform sampler2D tex;\n"
-
         "void main() {\n"
-        "    vec4 c = texture2D(tex, tc) * cpri + csec;\n"
+        "    vec4 base = texture2D(tex, tc) * cpri;\n"
+        "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
+        "        if (base.a < alpharef) discard;\n"
+        "        gl_FragColor = vec4(0.0, 0.0, 0.0, base.a);\n"
+        "        return;\n"
+        "    }\n"
+        "    vec4 c = base * vec4(toonLightingColor(), dcm.a);\n"
         "    if (c.a < alpharef) discard;\n"
+#ifdef RAD_ANDROID
+        "    c.rgb = applySHARObjectDimming(c.rgb);\n"
+#endif
         "    gl_FragColor = c;\n"
         "}\n"
-    );
+    ).c_str());
 #endif
 
     colorProgram = pglProgram::CreateProgram(vertexShader, fragmentShader);
@@ -334,6 +1275,11 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
 
 pglContext::~pglContext()
 {
+#ifdef RAD_ANDROID
+    if (gCelShadingContext == this)
+        gCelShadingContext = nullptr;
+#endif
+
     defaultShader->Release();
     currentProgram->Release();
     colorProgram->Release();
@@ -348,15 +1294,100 @@ pglContext::~pglContext()
     device->Release();
 }
 
+
+void pglContext::InvalidateGLStateCache()
+{
+    mGLBlendEnabledKnown = false;
+    mGLBlendEquationKnown = false;
+    mGLBlendFuncKnown = false;
+    mGLDepthMaskKnown = false;
+    mGLCullEnabledKnown = false;
+    mGLCullFaceKnown = false;
+}
+#ifdef RAD_ANDROID
+void InvalidateSHARRenderStateCache()
+{
+    if (gCelShadingContext)
+        gCelShadingContext->InvalidateGLStateCache();
+}
+#endif
+
+void pglContext::SetGLBlendEnabled(bool enabled)
+{
+    if (!mGLBlendEnabledKnown || mGLBlendEnabled != enabled)
+    {
+        if (enabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+        mGLBlendEnabled = enabled; mGLBlendEnabledKnown = true;
+    }
+}
+void pglContext::SetGLBlendEquation(GLenum equation)
+{
+    if (!mGLBlendEquationKnown || mGLBlendEquation != equation)
+    {
+        glBlendEquation(equation);
+        mGLBlendEquation = equation; mGLBlendEquationKnown = true;
+    }
+}
+void pglContext::SetGLBlendFunc(GLenum source, GLenum destination)
+{
+    if (!mGLBlendFuncKnown || mGLBlendSource != source || mGLBlendDestination != destination)
+    {
+        glBlendFunc(source, destination);
+        mGLBlendSource = source; mGLBlendDestination = destination; mGLBlendFuncKnown = true;
+    }
+}
+void pglContext::SetGLDepthMask(GLboolean enabled)
+{
+    if (!mGLDepthMaskKnown || mGLDepthMask != enabled)
+    {
+        glDepthMask(enabled);
+        mGLDepthMask = enabled; mGLDepthMaskKnown = true;
+    }
+}
+void pglContext::SetGLCullEnabled(bool enabled)
+{
+    if (!mGLCullEnabledKnown || mGLCullEnabled != enabled)
+    {
+        if (enabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+        mGLCullEnabled = enabled; mGLCullEnabledKnown = true;
+    }
+}
+void pglContext::SetGLCullFace(GLenum mode)
+{
+    if (!mGLCullFaceKnown || mGLCullFaceMode != mode)
+    {
+        glCullFace(mode);
+        mGLCullFaceMode = mode; mGLCullFaceKnown = true;
+    }
+}
+
 // frame synchronisation
 void pglContext::BeginFrame()
 {
+    InvalidateGLStateCache();
+#ifdef RAD_ANDROID
+    // Commit the selected internal render target and reset GL resources on this
+    // render thread. The platform-sized Android output Surface is not resized.
+    display->CommitPendingResize();
+#endif
     pddiBaseContext::BeginFrame();
 
-    SDL_GL_SetSwapInterval(display->GetForceVSync() ? 1 : 0);
+    static int cachedSwapInterval = -2;
+    if (display->HasReset())
+        cachedSwapInterval = -2;
+    const int requestedSwapInterval = display->GetForceVSync() ? 1 : 0;
+    if (requestedSwapInterval != cachedSwapInterval)
+    {
+        SDL_GL_SetSwapInterval(requestedSwapInterval);
+        cachedSwapInterval = requestedSwapInterval;
+    }
 
     if(display->HasReset())
     {
+        InvalidateGLStateCache();
+#ifdef RAD_ANDROID
+        InvalidateSHARUniformCaches();
+#endif
         contextID++;
 
         glEnable(GL_CULL_FACE);
@@ -369,6 +1400,16 @@ void pglContext::BeginFrame()
     }
 
     projection.Identity();
+
+#ifdef RAD_ANDROID
+    /*
+     * Always route the world into the offscreen render target before draw calls.
+     * Cel shading selects either the toon compose or a plain resolve; GUI rendering
+     * then uses the actual output Surface dimensions.
+     */
+    BeginCelPostProcessFrame(display->GetWidth(), display->GetHeight());
+    InvalidateGLStateCache();
+#endif
 }
 
 void pglContext::EndFrame()
@@ -1018,12 +2059,12 @@ void pglContext::SetCullMode(pddiCullMode mode)
 
     if(mode == PDDI_CULL_NONE)
     {
-        glDisable(GL_CULL_FACE);
+        SetGLCullEnabled(false);
     }
     else
     {
-        glEnable(GL_CULL_FACE);
-        glCullFace(cullModeTable[mode]);
+        SetGLCullEnabled(true);
+        SetGLCullFace(cullModeTable[mode]);
     }
 }
 
@@ -1042,7 +2083,19 @@ GLenum compTable[8] = {
 void pglContext::SetColourWrite( bool red, bool green, bool blue, bool alpha )
 {
     pddiBaseContext::SetColourWrite(red, green, blue, alpha);
+#ifdef RAD_ANDROID
+    gSHARCharacterMaskAlphaWriteRequested = alpha;
+    const bool effectiveAlpha = gSHARCharacterMaskWorldEnabled
+        ? gSHARCharacterMaskModelPass
+        : alpha;
+    SetSHARTrackedColorWriteMask(
+        red ? GL_TRUE : GL_FALSE,
+        green ? GL_TRUE : GL_FALSE,
+        blue ? GL_TRUE : GL_FALSE,
+        effectiveAlpha ? GL_TRUE : GL_FALSE);
+#else
     glColorMask(red, green, blue, alpha);
+#endif
 }
 
 void pglContext::EnableZBuffer(bool enable)
@@ -1068,7 +2121,7 @@ void pglContext::SetZCompare(pddiCompareMode compareMode)
 void pglContext::SetZWrite(bool b)
 {
     pddiBaseContext::SetZWrite(b);
-    glDepthMask(b);
+    SetGLDepthMask(b ? GL_TRUE : GL_FALSE);
 }
 
 void pglContext::SetZBias(float bias)
@@ -1197,7 +2250,13 @@ float pglContext::EndTiming(void)
 void pglContext::SetShaderProgram(pglProgram* program)
 {
     if(program == currentProgram)
+    {
+#ifdef RAD_ANDROID
+        if (currentProgram)
+            currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled());
+#endif
         return;
+    }
 
     if(currentProgram)
         currentProgram->Release();
@@ -1207,6 +2266,9 @@ void pglContext::SetShaderProgram(pglProgram* program)
 
     currentProgram->AddRef();
     currentProgram->UseProgram();
+#ifdef RAD_ANDROID
+    currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled());
+#endif
     currentProgram->SetProjectionMatrix(&projection);
 
     LoadHardwareMatrix(PDDI_MATRIX_MODELVIEW);
@@ -1217,6 +2279,14 @@ void pglContext::SetShaderProgram(pglProgram* program)
         SetAmbientLight(state.lightingState->ambient);
     }
 }
+
+#ifdef RAD_ANDROID
+void pglContext::ApplyCelShadingState()
+{
+    if (currentProgram)
+        currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled());
+}
+#endif
 
 void pglContext::SetTextureEnvironment(const pglTextureEnv* texEnv)
 {

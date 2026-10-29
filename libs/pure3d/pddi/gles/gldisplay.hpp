@@ -50,6 +50,11 @@ public:
     bool CheckExtension(const char*);
     bool HasReset(void) { return reset; }
 
+#ifdef RAD_ANDROID
+    // Commit the latest Java-confirmed Surface size only from the GL thread.
+    void CommitPendingResize(void);
+#endif
+
     void BeginContext(void);
     void EndContext(void);
 
@@ -81,4 +86,10 @@ private:
     float beginTime;
 };
 
+
+#ifdef RAD_ANDROID
+bool BeginCelPostProcessFrame(int width, int height);
+void ApplyCelPostProcessBeforeGui(int width, int height);
+void BeginSHARAndroidFMVOutputRender();
+#endif
 #endif

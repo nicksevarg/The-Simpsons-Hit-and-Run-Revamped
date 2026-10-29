@@ -12,6 +12,7 @@
 #include <microprofile.h>
 #include <SDL.h>
 
+
 pddiShadeColourTable pglMat::colourTable[] = 
 {
     {PDDI_SP_AMBIENT  , SHADE_COLOUR(&pglMat::SetAmbient)},
@@ -57,15 +58,25 @@ GLenum filterMagTable[5] =
     GL_LINEAR
 };
 
-// GL_NEAREST_MIPMAP_LINEAR not used
+#if defined(RAD_ANDROID)
 GLenum filterMinTable[5] =
 {
     GL_NEAREST,
     GL_LINEAR,
-    GL_NEAREST,//GL_NEAREST_MIPMAP_NEAREST,
-    GL_LINEAR,//GL_LINEAR_MIPMAP_NEAREST,
-    GL_LINEAR,//GL_LINEAR_MIPMAP_LINEAR
+    GL_NEAREST_MIPMAP_NEAREST,
+    GL_LINEAR_MIPMAP_NEAREST,
+    GL_LINEAR_MIPMAP_LINEAR
 };
+#else
+GLenum filterMinTable[5] =
+{
+    GL_NEAREST,
+    GL_LINEAR,
+    GL_NEAREST,
+    GL_LINEAR,
+    GL_LINEAR
+};
+#endif
 
 GLenum uvTable[3] =
 {
@@ -263,29 +274,72 @@ void pglMat::SetDevPass(unsigned pass)
     {
         texEnv[i].texture->SetGLState();
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filterMagTable[texEnv[i].filterMode]);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filterMinTable[texEnv[i].filterMode]);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, uvTable[texEnv[i].uvMode]);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, uvTable[texEnv[i].uvMode]);
+        texEnv[i].texture->SetSamplerParameters(
+            filterMagTable[texEnv[i].filterMode],
+            filterMinTable[texEnv[i].filterMode],
+            uvTable[texEnv[i].uvMode],
+            uvTable[texEnv[i].uvMode]);
     }
 
     if(texEnv[i].alphaBlendMode == PDDI_BLEND_NONE)
     {
-        glDisable(GL_BLEND);
+        context->SetGLBlendEnabled(false);
     }
     else
     {
-        glEnable(GL_BLEND);
-        glBlendEquation(alphaBlendTable[texEnv[i].alphaBlendMode][0]);
-        glBlendFunc(alphaBlendTable[texEnv[i].alphaBlendMode][1],alphaBlendTable[texEnv[i].alphaBlendMode][2]);
+        context->SetGLBlendEnabled(true);
+        context->SetGLBlendEquation(alphaBlendTable[texEnv[i].alphaBlendMode][0]);
+        context->SetGLBlendFunc(alphaBlendTable[texEnv[i].alphaBlendMode][1],alphaBlendTable[texEnv[i].alphaBlendMode][2]);
     }
+
+#ifdef RAD_ANDROID
+    // Keep the transparent-depth workaround away from cel-shaded characters
+    // and vehicles: their material depth writes are required for correct
+    // facial details and front-to-back occlusion.
+    // The expanded-mesh outline pass owns its depth-write state and must not
+    // be overridden here.
+    const bool celShadingOutlineObjectPass =
+        IsCelShadingEnabled() && IsCelShadingObjectEnabled() &&
+        IsCelShadingOutlinePass();
+
+    if (celShadingOutlineObjectPass)
+    {
+        // Intentionally leave the GL depth-write state untouched.
+    }
+    else if (IsCelShadingEnabled() && !IsCelShadingObjectEnabled() &&
+             texEnv[i].alphaBlendMode != PDDI_BLEND_NONE && !texEnv[i].alphaTest &&
+             !IsSHARExteriorTransparencyDepthWriteFixActive())
+    {
+        // Only suppress depth writes for genuinely blended materials.
+        // Alpha-tested cutouts (including foliage and other masked geometry)
+        // must keep writing depth for correct occlusion and stable silhouettes.
+        // Transparent silhouettes from blended materials should not feed the
+        // depth-edge detector used by the post-process outlines.
+        context->SetGLDepthMask(GL_FALSE);
+    }
+    else
+    {
+        context->SetGLDepthMask(context->GetZWrite() ? GL_TRUE : GL_FALSE);
+    }
+#endif
 
     if( texEnv[i].twoSided || context->GetCullMode() == PDDI_CULL_NONE )
     {
-        glDisable(GL_CULL_FACE);
+        context->SetGLCullEnabled(false);
     }
     else
     {
-        glEnable(GL_CULL_FACE);
+        context->SetGLCullEnabled(true);
     }
+
+#ifdef RAD_ANDROID
+    // The outline pass renders backfaces of a slightly expanded mesh so only
+    // the silhouette remains visible around the normal draw.
+    if (IsCelShadingEnabled() && IsCelShadingObjectEnabled() &&
+        IsCelShadingOutlinePass())
+    {
+        context->SetGLCullEnabled(true);
+        context->SetGLCullFace(GL_BACK);
+    }
+#endif
 }

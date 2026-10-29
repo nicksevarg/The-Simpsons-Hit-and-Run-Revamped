@@ -1,424 +1,592 @@
-# 🎮 Simpsons Hit & Run Port para Android
+# The Simpsons Hit & Run - Revamped! (Android)
 
-🌍 **Idiomas disponibles**
+[🇬🇧 English](#-english) | [🇫🇷 Français](#-français) | [🇩🇪 Deutsch](#-deutsch) | [🇪🇸 Español](#-español)
 
-[🇪🇸 Español](#-español) | [🇬🇧 English](#-english) | [🇫🇷 Français](#-français) | [🇩🇪 Deutsch](#-deutsch)
-
-![Cheatsheet](logos/LayoutVehiculo.jpeg)
-
----
-
-# 🇪🇸 Español
-
-## 🎮 Simpsons Hit & Run Port para Android
-
-Este proyecto es un port para Android de *The Simpsons: Hit & Run*.
-
-El objetivo de este port es hacer que el juego sea jugable en dispositivos Android manteniendo la experiencia original.
-
----
-
-Para una instalación completa debes proporcionar **tu propia copia de seguridad de la versión de PC del juego**.
-
-Para más información consulta el archivo **[INSTALLATION.md](INSTALLATION.md)**.
-
-Si deseas jugar **CON CONTROLES TÁCTILES ES MUY IMPORTANTE** leas este archivo **[CONTROLES_TÁCTILES.md](TOUCH_CONTROLS.md)**
-
----
-
-## 🤝 Comunidad y reporte de errores
-
-Este proyecto ha sido desarrollado **completamente por mí en solitario**.
-Debido a ello, es posible que todavía existan **errores menores o comportamientos inesperados** que no haya detectado durante las pruebas.
-
-Para facilitar el reporte de problemas y crear una comunidad alrededor del proyecto, he creado un **[servidor de Discord](https://discord.gg/6Gw6jTJv8w)** donde podréis:
-
-* Reportar errores o problemas que encontréis para ayudar a mejorar el port.
-* Compartir experiencias de juego, capturas de pantalla y charlar con otros usuarios.
-
-Si encuentras algún problema, por favor **repórtalo siguiendo la plantilla de reporte** disponible en el servidor.
-
-⚠ **Antes de reportar un error**, revisa primero el archivo de **[problemas conocidos](KNOWN_ISSUES.md)** para evitar reportar fallos que **ya estén documentados**.
-
-💬 **Servidor de Discord**
-[Discord](https://discord.gg/6Gw6jTJv8w)
-
----
-
-## 🙏 Créditos y agradecimientos
-
-Este proyecto comenzó a partir del trabajo realizado por el usuario ZenoArrows (https://github.com/ZenoArrows), quien realizó los ports para **Nintendo Switch** y **PS Vita**.
-
-Para facilitar la visibilidad de esto, se ha decidido hacer un fork del proyecto del cual partí para comenzar a hacerlo compatible con Android.
-
-Repositorio original:
-👉 https://github.com/ZenoArrows/The-Simpsons-Hit-and-Run
-
-Este proyecto continúa el trabajo de la comunidad con el objetivo de llevar **The Simpsons: Hit & Run** a Android en este caso.
-
----
-
-## Estado del proyecto
-
-Versión actual: 
-
-* ✔ Controles táctiles nativos integrados con el juego y sus herramientas propias.
-* ✔ Nuevo menú para configurar los controles táctiles posición y tamaño dentro del juego. Para más información revisa [Controles Tactiles](TOUCH_CONTROLS.md)
-* ✔ Modo historia jugable de principio a fin.
-* ✔ Cinemáticas funcionando correctamente durante el juego.
-* ✔ Soporte para mandos/controladores externos.
-* ✔ 60 FPS estables con VSync.
-* ✔ Físicas del juego fieles a la version original.
-* ✔ Soporte para múltiples resoluciones de forma adaptativa. Revisa el archivo [Cómo instalar](INSTALLATION.md) para saber cómo cambiar la resolución.
-
----
-
-## Documentación
-
-* 📥  [Cómo instalar](INSTALLATION.md)
-* 🎮  [Controles del mando](CONTROLLER_CONTROLS.md)
-* 📱   [Controles táctiles](TOUCH_CONTROLS.md)
-* 📌  [Novedades de la última versión](CHANGELOG.md)
-* ⚠   [Problemas conocidos](KNOWN_ISSUES.md)
-* 📊  [Estado actual del port en profundidad](FEATURES.md)
-* 🎮  [Cheats](CHEATS.md)
-* 🚧  [Trabajo futuro](FUTURE_WORK.md)
-
----
-
-## 📱 Requisitos mínimos
-
-* **Android 7.0 o superior**
-
-Las pruebas realizadas en distintos dispositivos Android indican que el **rendimiento mínimo aceptable** se obtiene en hardware con especificaciones similares a las siguientes:
-
-* **CPU:** MediaTek Helio P35
-* **GPU:** PowerVR Rogue GE8320
-* **RAM:** 3 GB, aunque es posible que funcione correctamente con **2 GB**
-
-Como referencia, el juego ha sido probado en un **Vivo Y01**, donde resulta **completamente jugable y disfrutable**.
-
-Dispositivos con especificaciones iguales o superiores probablemente ofrecerán mejor rendimiento.
-
----
-
-## Construido con
-
-* Android Studio
-* SDL
-* CMake
-* FFmpeg
-* NDK
 
 ---
 
 # 🇬🇧 English
 
-## 🎮 Simpsons Hit & Run Android Port
+## The Simpsons Hit & Run - Revamped! (Android)
 
-This project is an Android port of *The Simpsons: Hit & Run*.
+An enhanced Android port of The Simpsons: Hit & Run that focuses on bringing the original game to Android devices with improved graphics, expanded customization, touch screen support, support for Android TV devices, as well as various bug fixes and quality of life improvements.
 
-The goal of this port is to make the game playable on Android devices while preserving the original experience.
+**Important:** You must provide your own PC version of the game and its required game data. Due to copyright reasons, the original game data is not included with this project.
 
----
+The main vision this project is to push the original game and its original game assets to the limit while remaining optimized with a goal to modernize this legendary Simpsons game.
 
-For a complete installation, you must provide **your own backup copy of the PC version of the game**.
+This version is based on the excellent Carlox33's fork of ZenoArrows's original Switch and Vita port of the game. A special thanks to everyone involved in making this port possible!
 
-For more information, see **[INSTALLATION.md](INSTALLATION.md)**.
+## ⚡ Recommended Specs
 
-If you want to play **WITH TOUCH CONTROLS, IT IS VERY IMPORTANT** that you read this file **[TOUCH_CONTROLS.md](TOUCH_CONTROLS.md)**
+*(Stock Settings / Cel Shading ON)*
 
----
+- Tegra X1 or Helio G99 [3/4GB RAM]   (1080p / 60FPS) 
+- Snapdragon 8 Gen 1/2    [8GB RAM]   (2160p / 120FPS)
 
-## 🤝 Community & Bug Reports
+*(All Enhancements OFF)*
 
-This project has been developed **entirely by myself alone**.
-Because of this, there may still be **minor bugs or unexpected behaviors** that were not discovered during testing.
+- Any older low/mid spec SOC [2GB RAM] (720p / 60FPS)
 
-To make reporting issues easier and to build a community around the project, I created a **[Discord server](https://discord.gg/6Gw6jTJv8w)** where you can:
+Stock settings are fine tuned to work nicely on most modern smartphones.
 
-* Report bugs or issues you encounter to help improve the port.
-* Share gameplay experiences, screenshots, and chat with other users.
+Please note: Motion Blur and CRT Filter can be quite GPU intensive, so they are toggled off by default.
 
-If you encounter any problem, please **report it using the report template** available on the server.
+## 📦 Installation
 
-⚠ **Before reporting a bug**, please check the **[known issues](KNOWN_ISSUES.md)** file first to avoid reporting problems that are **already documented**.
+Select the appropriate game-data location when prompted, or allow the port to detect available data.
 
-💬 **Discord Server**
-[Discord](https://discord.gg/6Gw6jTJv8w)
+All game data must be sourced from the original PC install and consists of the following:
 
----
+- `art` folder
+- `movies` folder
+- `scripts` folder
+- `sound` folder
+- All other `.rcf` files located in the parent install folder, including the language dialog `.rcf` file
 
-## 🙏 Credits & Acknowledgements
+Supported game-data locations:
 
-This project started from the work done by user ZenoArrows (https://github.com/ZenoArrows), who created ports for **Nintendo Switch** and **PS Vita**.
+- `Android\data\com.sevarg.simpsons\files`
+- `Shared Internal\Simpsons`
+- `External\Simpsons`
 
-To properly acknowledge this work, this project has been created as a fork of the original repository used as the starting point for making Android compatibility possible.
+## 🌐 Languages
 
-Original repository:
-👉 https://github.com/ZenoArrows/The-Simpsons-Hit-and-Run
+Support for English, Français, Deutsch and Español.
 
-This project continues the community effort with the goal of bringing **The Simpsons: Hit & Run** to Android.
+If PC game data is sourced from any European release, you can select any language you like and in-game text will also be supported. The European release has in-game text data and videos for all 4 languages. (This includes UK and Ireland)
 
----
+If sourced from the North American release, for compatibility reasons the language will always default back to English.
 
-## Project Status
+As for in-game dialog, it will depend on the country and the language dialog files are as follows:
 
-Current version: 
+- English (`dialog.rcf`): UK, Ireland, USA, Canada, Netherlands, International
+- Français (`dialogf.rcf`): France
+- Deutsch (`dialogg.rcf`): Germany
+- Español (`dialogs.rcf`): Spain
 
-* ✔ Native touch controls integrated with the game and its own tools.
-* ✔ New menu for configuring the position and size of the in-game touch controls. For more information, see [Touch Controls](TOUCH_CONTROLS.md).
-* ✔ Story mode playable from start to finish.
-* ✔ Cutscenes working correctly during gameplay.
-* ✔ Support for controllers/external gamepads.
-* ✔ Stable 60 FPS with VSync.
-* ✔ Game physics faithful to the original version.
-* ✔ Support for multiple adaptive resolutions. Check the [Installation Guide](INSTALLATION.md) file to learn how to change the resolution.
+You can select your desired language when opening the game. If you do not have the correct respective dialog language file, and `dialog.rcf` is also present, then the game dialog will automatically default back to English. If no dialog file is found, the game will fail to load; this is to mitigate gameplay crashes.
 
----
+Carefully copy all your files from the PC install folder.
 
-## Documentation
+## 🎮 Controls
 
-* 📥 [How to install](INSTALLATION.md)
-* 🎮 [Controller controls](CONTROLLER_CONTROLS.md)
-* 📱  [Touch controls](TOUCH_CONTROLS.md)
-* 📌 [Latest version news](CHANGELOG.md)
-* ⚠  [Known issues](KNOWN_ISSUES.md) 
-* 📊 [Current port status in depth](FEATURES.md)
-* 🎮 [Cheats](CHEATS.md) 
-* 🚧 [Future work](FUTURE_WORK.md)
+Compatibility with Xbox One/Series, DualShock 4/DualSense, Switch 1/2, 8bitdo and various other compatible Bluetooth controllers.
 
----
+Button actions are listed in this order: Xbox > PlayStation > Switch. On-foot / Driving controls are separated with `/`.
 
-## 📱 Minimum Requirements
+- **Start button** — Pause Menu
+- **Top face button** — Interact / Interact with car — △ Y X
+- **Left face button** — Attack / Handbrake — □ X Y
+- **Right face button** — Toggle sprint / Reverse — ○ B A
+- **Bottom face button** — Jump or Confirm / Accelerate — ✕ A B
+- **D-pad** — Menu navigation and Movement/Steering
+- **Left stick** — Menu navigation and Movement/Steering
+- **Right stick** — Camera control
+- **Left shoulder (L1)** — Switch camera zoom
+- **Left trigger (L2)** — Zoom in / Reverse (Analog)
+- **Right shoulder (R1)** — Centre camera / Car horn
+- **Right trigger (R2)** — Zoom out / Accelerate (Analog)
+- **Left stick click (L3)** — Toggle sprint
 
-* **Android 7.0 or higher**
+**Control Improvements:**
 
-Testing across multiple Android devices indicates that **minimum acceptable performance** is achieved on hardware with specifications similar to the following:
+- Integrated touchscreen HUD and controls with customization options for touch-button placement, size and opacity.
+- All the hard work was done by Carlox33, so please check out their repository for more details: https://github.com/Carlox33/The-Simpsons-Hit-and-Run-Android/blob/master/TOUCH_CONTROLS.md
+- Improved camera system with faster response and more camera freedom.
+- Improved responsiveness and tighter controls when on foot.
 
-* **CPU:** MediaTek Helio P35
-* **GPU:** PowerVR Rogue GE8320
-* **RAM:** 3 GB, although it may also work correctly with **2 GB**
+## ✨ Quality of Life Improvements
 
-As a reference, the game has been tested on a **Vivo Y01**, where it is **fully playable and enjoyable**.
+- In-game toggles for graphics and controller settings.
+- Compatibility for Android TV devices with proper controller ordering and double-back support (tested on NVIDIA Shield TV).
+- Flexible game-data location selection, with support for available internal, shared and external storage locations.
+- First-launch game-data detection to simplify startup when the required files are already available.
+- In-game cheats menu added.
 
-Devices with equal or better specifications will likely provide better performance.
+## 🎨 Graphics & Visual Improvements
 
----
+**Graphics options added:**
 
-## Built With
+- Configurable cel-shading effect for a more aesthetically pleasing visual style, closely matching the original cartoon style of The Simpsons.
+- In-game selectable rendering resolutions: 480p, 720p, 1080p, 1440p and 2160p.
+- Configurable anisotropic texture filtering from 2× to 16×, improving texture clarity at distant and oblique angles.
+- Adjustable image sharpening, with configurable strength and an enable/disable option.
+- Lightweight bicubic upscaling for the game's low-resolution, 3D-rendered cutscenes.
+- Configurable bloom to enhance the appearance of lights and special effects.
+- Improved sunlight glare and lighting balance.
+- Experimental animated cloud-shadow effects for outdoor daytime environments.
+- Optional rim lighting for character and vehicle edges.
+- **CRT filter:** An optional CRT-Geom-style effect that imitates the appearance of a 1990s television.
+- **Motion blur:** A camera-aware effect focused on vehicle motion, tail separation and the lower portion of the screen.
+- Increased scenery draw distance, allowing more of the game world to remain visible, with increased pedestrian and vehicle rendering distances and smoother animation of distant pedestrians.
 
-* Android Studio
-* SDL
-* CMake
-* FFmpeg
-* NDK
+## 🛠️ Default Graphics Configuration
+
+| Setting | Default |
+| --- | --- |
+| Resolution | 1080p |
+| Cel Shading | On |
+| Anisotropic Filtering | 2× |
+| Bloom | On |
+| Cloud Shadows | On |
+| Sharpening | 40% |
+| CRT Filter | Off |
+| Motion Blur | Off |
+| Rim Lighting | Off |
+| FPS Cap | 60 FPS |
+
+## 🧪 Experimental Features
+
+Some features remain experimental and may vary by device:
+
+- Higher FPS caps (90, 120 and 144 FPS)
+- Cloud-shadow rendering
+
+## 🔬 Upcoming Features
+
+- Refining compatibility for other languages.
+- Researching possible compatibility with game data from PS2, GameCube and Xbox releases.
+- Automatic extraction of game data from disc-image files.
 
 ---
 
 # 🇫🇷 Français
 
-## 🎮 Port Android de Simpsons Hit & Run
+## The Simpsons Hit & Run - Revamped! (Android)
 
-Ce projet est un port Android de *The Simpsons: Hit & Run*.
+Un portage Android amélioré de The Simpsons: Hit & Run qui vise à porter le jeu original sur les appareils Android avec des graphismes améliorés, une personnalisation étendue, le support des écrans tactiles, le support des appareils Android TV, ainsi que diverses corrections de bugs et améliorations du confort de jeu.
 
-L'objectif de ce port est de rendre le jeu jouable sur les appareils Android tout en préservant l'expérience originale.
+**Important :** Vous devez fournir votre propre version PC du jeu et ses données de jeu requises. Pour des raisons de droits d'auteur, les données du jeu original ne sont pas incluses dans ce projet.
 
----
+La vision principale de ce projet est de pousser le jeu original et ses ressources graphiques/sonores d'origine dans leurs derniers retranchements tout en restant optimisé, dans le but de moderniser ce jeu Simpsons légendaire.
 
-Pour une installation complète, vous devez fournir **votre propre copie de sauvegarde de la version PC du jeu**.
+Cette version est basée sur l'excellent fork de Carlox33 du portage original Switch et Vita par ZenoArrows. Un remerciement particulier à toutes les personnes impliquées pour avoir rendu ce portage possible !
 
-Pour plus d'informations, consultez **[INSTALLATION.md](INSTALLATION.md)**.
+## ⚡ Spécifications recommandées
 
-Si vous souhaitez jouer **AVEC LES COMMANDES TACTILES, IL EST TRÈS IMPORTANT** de lire ce fichier **[COMMANDES_TACTILES.md](TOUCH_CONTROLS.md)**
+*(Paramètres par défaut / Cel Shading ACTIVÉ)*
 
----
+- Tegra X1 ou Helio G99 [3/4 Go de RAM]   (1080p / 60 FPS)
+- Snapdragon 8 Gen 1/2    [8 Go de RAM]    (2160p / 120 FPS)
 
-## 🤝 Communauté et signalement de bugs
+*(Toutes les améliorations DÉSACTIVÉES)*
 
-Ce projet a été développé **entièrement par moi seul**.
-Pour cette raison, il peut encore exister **des bugs mineurs ou des comportements inattendus** qui n'ont pas été détectés pendant les tests.
+- Tout SoC ancien de faible/moyenne spécification [2 Go de RAM] (720p / 60 FPS)
 
-Pour faciliter le signalement des problèmes et créer une communauté autour du projet, j'ai créé un **[serveur Discord](https://discord.gg/6Gw6jTJv8w)** où vous pouvez :
+Les paramètres par défaut sont ajustés pour fonctionner correctement sur la plupart des smartphones modernes.
 
-* Signaler les bugs ou problèmes rencontrés afin d'améliorer le port.
-* Partager vos expériences de jeu, captures d'écran et discuter avec d'autres utilisateurs.
+Remarque : Le flou de bougé (Motion Blur) et le filtre CRT peuvent être très gourmands en ressources GPU, ils sont donc désactivés par défaut.
 
-Si vous rencontrez un problème, veuillez **le signaler en utilisant le modèle de rapport** disponible sur le serveur.
+## 📦 Installation
 
-⚠ **Avant de signaler un bug**, veuillez consulter le fichier **[problèmes connus](KNOWN_ISSUES.md)** afin d'éviter de signaler des problèmes **déjà documentés**.
+Sélectionnez l'emplacement approprié des données de jeu lorsque vous y êtes invité, ou laissez le portage détecter les données disponibles.
 
-💬 **Serveur Discord**
-[Discord](https://discord.gg/6Gw6jTJv8w)
+Toutes les données de jeu doivent provenir de l'installation PC d'origine et se composent des éléments suivants :
 
----
+- Dossier `art`
+- Dossier `movies`
+- Dossier `scripts`
+- Dossier `sound`
+- Tous les autres fichiers `.rcf` situés dans le dossier d'installation principal, y compris le fichier de langue dialog `.rcf`
 
-## 🙏 Crédits et remerciements
+Les emplacements de données de jeu pris en charge sont les suivants :
 
-Ce projet a commencé à partir du travail réalisé par l'utilisateur ZenoArrows (https://github.com/ZenoArrows), qui a créé des ports pour **Nintendo Switch** et **PS Vita**.
+- `Android\data\com.sevarg.simpsons\files`
+- `Stockage interne partagé\Simpsons`
+- `Stockage externe\Simpsons`
 
-Afin de mettre en valeur ce travail, ce projet a été créé comme un fork du dépôt original utilisé comme point de départ pour rendre la compatibilité Android possible.
+## 🌐 Langues
 
-Dépôt original :
-👉 https://github.com/ZenoArrows/The-Simpsons-Hit-and-Run
+Prise en charge de l'anglais, du français, de l'allemand et de l'espagnol.
 
-Ce projet poursuit le travail de la communauté avec l'objectif d'amener **The Simpsons: Hit & Run** sur Android.
+Si les données du jeu PC proviennent d'une version européenne, vous pouvez sélectionner la langue de votre choix et le texte en jeu sera également pris en charge. La version européenne contient les données textuelles et vidéos en jeu pour les 4 langues. (Cela inclut le Royaume-Uni et l'Irlande)
 
----
+Si les données proviennent de la version nord-américaine, la langue reviendra toujours par défaut à l'anglais pour des raisons de compatibilité.
 
-## État du projet
+Concernant les dialogues en jeu, cela dépendra du pays et les fichiers de dialogue linguistique sont les suivants :
 
-Version actuelle : 
+- Anglais (`dialog.rcf`) : Royaume-Uni, Irlande, États-Unis, Canada, Pays-Bas, International
+- Français (`dialogf.rcf`) : France
+- Allemand (`dialogg.rcf`) : Allemagne
+- Espagnol (`dialogs.rcf`) : Espagne
 
-* ✔ Commandes tactiles natives intégrées au jeu et à ses propres outils.
-* ✔ Nouveau menu permettant de configurer la position et la taille des commandes tactiles dans le jeu. Pour plus d’informations, consultez [Commandes tactiles](TOUCH_CONTROLS.md).
-* ✔ Mode histoire jouable du début à la fin.
-* ✔ Cinématiques fonctionnant correctement pendant le jeu.
-* ✔ Support des manettes/contrôleurs externes.
-* ✔ 60 FPS stables avec VSync.
-* ✔ Physique du jeu fidèle à la version originale.
-* ✔ Prise en charge de plusieurs résolutions adaptatives. Consultez le fichier [Guide d'installation](INSTALLATION.md) pour savoir comment changer la résolution.
+Vous pouvez sélectionner la langue souhaitée lors de l'ouverture du jeu. Si vous ne possédez pas le fichier de langue dialog correspondant, mais que le fichier `dialog.rcf` est présent, les dialogues du jeu repasseront automatiquement en anglais. Si aucun fichier de dialogue n'est trouvé, le jeu ne se chargera pas afin d'éviter les plantages pendant la partie.
 
----
+Copiez soigneusement tous vos fichiers depuis le dossier d'installation PC.
 
-## Documentation
+## 🎮 Commandes
 
-* 📥 [Comment installer](INSTALLATION.md)
-* 🎮 [Commandes de la manette](CONTROLLER_CONTROLS.md)
-* 📱  [Commandes tactiles](TOUCH_CONTROLS.md)
-* 📌 [Nouveautés de la dernière version](CHANGELOG.md)
-* ⚠  [Problèmes connus](KNOWN_ISSUES.md)
-* 📊 [État actuel détaillé du port](FEATURES.md) 
-* 🎮 [Codes de triche](CHEATS.md) 
-* 🚧 [Travail futur](FUTURE_WORK.md)
+Compatibilité avec les manettes Xbox One/Series, DualShock 4/DualSense, Switch 1/2, 8bitdo et diverses autres manettes Bluetooth compatibles.
 
----
+Les actions des boutons sont répertoriées dans cet ordre : Xbox > PlayStation > Switch. Les commandes À pied / Conduite sont séparées par `/`.
 
-## 📱 Configuration minimale
+- **Bouton Start** — Menu Pause
+- **Bouton du haut** — Interagir / Interagir avec le véhicule — △ Y X
+- **Bouton de gauche** — Attaquer / Frein à main — □ X Y
+- **Bouton de droite** — Basculer le sprint / Marche arrière — ○ B A
+- **Bouton du bas** — Sauter ou Confirmer / Accélérer — ✕ A B
+- **Croix directionnelle** — Navigation dans les menus et Déplacement/Direction
+- **Stick gauche** — Navigation dans les menus et Déplacement/Direction
+- **Stick droit** — Contrôle de la caméra
+- **Gâchette haute gauche (L1)** — Changer le zoom de la caméra
+- **Gâchette basse gauche (L2)** — Zoomer / Marche arrière (Analogique)
+- **Gâchette haute droite (R1)** — Centrer la caméra / Klaxon
+- **Gâchette basse droite (R2)** — Dézoomer / Accélérer (Analogique)
+- **Clic stick gauche (L3)** — Basculer le sprint
 
-* **Android 7.0 ou supérieur**
+**Autres améliorations :**
 
-Les tests réalisés sur différents appareils Android indiquent que les **performances minimales acceptables** sont obtenues sur un matériel avec des spécifications similaires aux suivantes :
+- HUD tactile et commandes intégrés avec options de personnalisation pour l'emplacement, la taille et l'opacité des boutons tactiles.
+- Tout le travail de fond a été réalisé par Carlox33, n'hésitez pas à consulter son dépôt pour plus de détails: https://github.com/Carlox33/The-Simpsons-Hit-and-Run-Android/blob/master/TOUCH_CONTROLS.md
+- Système de caméra amélioré avec une réponse plus rapide et une plus grande liberté d'orientation.
+- Réactivité améliorée et commandes plus précises lors des déplacements à pied.
 
-* **CPU :** MediaTek Helio P35
-* **GPU :** PowerVR Rogue GE8320
-* **RAM :** 3 Go, bien qu'il puisse également fonctionner correctement avec **2 Go**
+## ✨ Améliorations du confort de jeu (Quality of Life)
 
-À titre de référence, le jeu a été testé sur un **Vivo Y01**, où il est **entièrement jouable et agréable**.
+- Options en jeu pour les paramètres graphiques et de manette.
+- Compatibilité avec les appareils Android TV avec gestion appropriée de l'ordre des manettes et prise en charge du double retour arrière (testé sur NVIDIA Shield TV).
+- Sélection flexible de l'emplacement des données de jeu, avec prise en charge des emplacements de stockage interne, partagé et externe disponibles.
+- Détection des données de jeu au premier lancement pour simplifier le démarrage lorsque les fichiers requis sont déjà disponibles.
+- Menu de codes de triche (cheats) ajouté en jeu.
 
-Les appareils avec des spécifications égales ou supérieures offriront probablement de meilleures performances.
+## 🎨 Améliorations graphiques & visuelles
 
----
+**Options graphiques ajoutées :**
 
-## Construit avec
+- Effet cel-shading configurable pour un style visuel plus esthétique, correspondant fidèlement au style de dessin animé original des Simpsons.
+- Résolutions de rendu sélectionnables en jeu : 480p, 720p, 1080p, 1440p et 2160p.
+- Filtrage anisotrope des textures configurable de 2× à 16×, améliorant la netteté des textures sous les angles éloignés et obliques.
+- Netteté de l'image (Sharpening) ajustable, avec intensité configurable et option d'activation/désactivation.
+- Upscaling bicubique léger pour les cinématiques 3D basse résolution du jeu.
+- Effet Bloom configurable pour sublimer l'apparence des lumières et des effets spéciaux.
+- Éblouissement du soleil et équilibre de l'éclairage améliorés.
+- Effets d'ombres de nuages animés expérimentaux pour les environnements extérieurs en journée.
+- Éclairage de contour (Rim lighting) optionnel pour les bords des personnages et des véhicules.
+- **Filtre CRT :** Un effet optionnel de style CRT-Geom imitant l'apparence d'un téléviseur des années 1990.
+- **Flou de mouvement (Motion blur) :** Un effet tenant compte de la caméra et axé sur le mouvement des véhicules, la séparation des feux arrière et la partie inférieure de l'écran.
+- Distance d'affichage des décors augmentée, permettant à une plus grande partie du monde du jeu de rester visible avec des distances d'affichage accrues pour les piétons et les véhicules, ainsi qu'une animation plus fluide des piétons éloignés.
 
-* Android Studio
-* SDL
-* CMake
-* FFmpeg
-* NDK
+## 🛠️ Configuration graphique par défaut
+
+| Paramètre | Valeur par défaut |
+| --- | --- |
+| Résolution | 1080p |
+| Cel Shading | Activé |
+| Filtrage anisotrope | 2× |
+| Bloom | Activé |
+| Ombres de nuages | Activé |
+| Netteté (Sharpening) | 40 % |
+| Filtre CRT | Désactivé |
+| Flou de mouvement | Désactivé |
+| Éclairage de contour | Désactivé |
+| Limite de FPS | 60 FPS |
+
+## 🧪 Fonctionnalités expérimentales
+
+Certaines fonctionnalités restent expérimentales et peuvent varier selon l'appareil :
+
+- Limites de FPS plus élevées (90, 120 et 144 FPS)
+- Rendu des ombres de nuages
+
+## 🔬 Fonctionnalités à venir
+
+- Affinage de la compatibilité avec d'autres langues.
+- Recherche sur une compatibilité possible avec les données de jeu des versions PS2, GameCube et Xbox.
+- Extraction automatique des données de jeu à partir de fichiers d'images de disque.
 
 ---
 
 # 🇩🇪 Deutsch
 
-## 🎮 Simpsons Hit & Run Android-Port
+## The Simpsons Hit & Run - Revamped! (Android)
 
-Dieses Projekt ist ein Android-Port von *The Simpsons: Hit & Run*.
+Ein verbesserter Android-Port von The Simpsons: Hit & Run, der darauf abzielt, das Originalspiel mit verbesserter Grafik, erweiterter Anpassung, Touchscreen-Unterstützung, Unterstützung für Android-TV-Geräte sowie verschiedenen Fehlerbehebungen und Qualitätsverbesserungen (Quality of Life) auf Android-Geräte zu bringen.
 
-Ziel dieses Ports ist es, das Spiel auf Android-Geräten spielbar zu machen und dabei das ursprüngliche Spielerlebnis beizubehalten.
+**Wichtig:** Sie müssen Ihre eigene PC-Version des Spiels und die erforderlichen Spieldaten bereitstellen. Aus Urheberrechtsgründen sind die ursprünglichen Spieldaten nicht in diesem Projekt enthalten.
+
+Die Hauptvision dieses Projekts besteht darin, das Originalspiel und seine ursprünglichen Spieldateien an die Grenzen zu bringen und gleichzeitig optimiert zu bleiben, um diesen legendären Simpsons-Klassiker zu modernisieren.
+
+Diese Version basiert auf dem hervorragenden Fork von Carlox33 des ursprünglichen Switch- und Vita-Ports von ZenoArrows. Ein besonderer Dank geht an alle Beteiligten, die diesen Port möglich gemacht haben!
+
+## ⚡ Empfohlene Spezifikationen
+
+*(Standardeinstellungen / Cel Shading EIN)*
+
+- Tegra X1 oder Helio G99 [3/4 GB RAM]   (1080p / 60 FPS)
+- Snapdragon 8 Gen 1/2    [8 GB RAM]     (2160p / 120 FPS)
+
+*(Alle Verbesserungen AUS)*
+
+- Beliebiger älterer Low/Mid-Spec SOC [2 GB RAM] (720p / 60 FPS)
+
+Die Standardeinstellungen sind so angepasst, dass sie auf den meisten modernen Smartphones gut funktionieren.
+
+Bitte beachten: Bewegungsunschärfe (Motion Blur) und CRT-Filter können sehr GPU-intensiv sein und sind daher standardmäßig deaktiviert.
+
+## 📦 Installation
+
+Wählen Sie bei Aufforderung den entsprechenden Speicherort für die Spieldaten oder lassen Sie den Port die verfügbaren Daten automatisch erkennen.
+
+Alle Spieldaten müssen aus der ursprünglichen PC-Installation stammen und bestehen aus Folgendem:
+
+- Ordner `art`
+- Ordner `movies`
+- Ordner `scripts`
+- Ordner `sound`
+- Alle anderen `.rcf`-Dateien im Haupt-Installationsordner, einschließlich der Sprachdatei dialog `.rcf`
+
+Unterstützte Spieldaten-Speicherorte sind wie folgt:
+
+- `Android\data\com.sevarg.simpsons\files`
+- `Gemeinsamer interner Speicher\Simpsons`
+- `Externer Speicher\Simpsons`
+
+## 🌐 Sprachen
+
+Unterstützung für Englisch, Français, Deutsch und Español.
+
+Wenn die PC-Spieldaten aus einer europäischen Version stammen, können Sie jede beliebige Sprache auswählen, und die Texte im Spiel werden ebenfalls unterstützt. Die europäische Version enthält Textdaten und Videos im Spiel für alle 4 Sprachen. (Dies umfasst auch Großbritannien und Irland)
+
+Wenn die Daten aus der nordamerikanischen Version stammen, wird die Sprache aus Kompatibilitätsgründen immer auf Englisch zurückgesetzt.
+
+Was die Sprachausgabe im Spiel betrifft, hängt sie vom Land ab und die Sprach-Dialogdateien lauten wie folgt:
+
+- Englisch (`dialog.rcf`): Großbritannien, Irland, USA, Kanada, Niederlande, International
+- Französisch (`dialogf.rcf`): Frankreich
+- Deutsch (`dialogg.rcf`): Deutschland
+- Spanisch (`dialogs.rcf`): Spanien
+
+Sie können Ihre gewünschte Sprache beim Starten des Spiels auswählen. Wenn Sie nicht über die entsprechende Sprach-Dialogdatei verfügen, aber `dialog.rcf` vorhanden ist, wird die Sprachausgabe im Spiel automatisch auf Englisch zurückgesetzt. Wenn keine Dialogdatei gefunden wird, kann das Spiel nicht geladen werden; dies dient dazu, Abstürze während des Spiels zu vermeiden.
+
+Kopieren Sie sorgfältig alle Ihre Dateien aus dem PC-Installationsordner.
+
+## 🎮 Steuerung
+
+Kompatibilität mit Xbox One/Series, DualShock 4/DualSense, Switch 1/2, 8bitdo und verschiedenen anderen kompatiblen Bluetooth-Controllern.
+
+Tastenaktionen sind in dieser Reihenfolge aufgeführt: Xbox > PlayStation > Switch. Die Steuerungen Zu Fuß / Fahren sind durch `/` getrennt.
+
+- **Start-Taste** — Pause-Menü
+- **Obere Aktionstaste** — Interagieren / Mit Auto interagieren — △ Y X
+- **Linke Aktionstaste** — Angriff / Handbremse — □ X Y
+- **Rechte Aktionstaste** — Sprinten umschalten / Rückwärtsfahren — ○ B A
+- **Untere Aktionstaste** — Springen oder Bestätigen / Beschleunigen — ✕ A B
+- **Steuerkreuz** — Menünavigation und Bewegung/Lenken
+- **Linker Stick** — Menünavigation und Bewegung/Lenken
+- **Rechter Stick** — Kamerasteuerung
+- **Linker Schulterbutton (L1)** — Kamera-Zoom umschalten
+- **Linker Trigger (L2)** — Heranzoomen / Rückwärtsfahren (Analog)
+- **Rechter Schulterbutton (R1)** — Kamera zentrieren / Hupe
+- **Rechter Trigger (R2)** — Herauszoomen / Beschleunigen (Analog)
+- **Linker Stick Klick (L3)** — Sprinten umschalten
+
+**Weitere Verbesserungen:**
+
+- Integriertes Touchscreen-HUD und Steuerung mit Anpassungsoptionen für Position, Größe und Deckkraft der Touch-Tasten.
+- Die gesamte Vorarbeit wurde von Carlox33 geleistet. Bitte besuchen Sie das Repository für weitere Details: https://github.com/Carlox33/The-Simpsons-Hit-and-Run-Android/blob/master/TOUCH_CONTROLS.md
+- Verbessertes Kamerasystem mit schnellerer Reaktion und mehr Kamerafreiheit.
+- Verbesserte Reaktionsfähigkeit und präzisere Steuerung zu Fuß.
+
+## ✨ Qualitätsverbesserungen (Quality of Life)
+
+- In-Game-Schalter für Grafik- und Controller-Einstellungen.
+- Kompatibilität für Android-TV-Geräte mit ordnungsgemäßer Controller-Sortierung und Unterstützung für doppeltes Zurückdrücken (getestet auf NVIDIA Shield TV).
+- Flexible Auswahl des Spieldaten-Speicherorts mit Unterstützung für verfügbare interne, gemeinsame und externe Speicherorte.
+- Spieldaten-Erkennung beim ersten Start zur Vereinfachung der Inbetriebnahme, wenn die erforderlichen Dateien bereits vorhanden sind.
+- In-Game-Cheat-Menü hinzugefügt.
+
+## 🎨 Grafik- & visuelle Verbesserungen
+
+**Hinzugefügte Grafikoptionen:**
+
+- Konfigurierbarer Cel-Shading-Effekt für einen ästhetisch ansprechenderen visuellen Stil, der dem ursprünglichen Cartoon-Stil der Simpsons sehr nahe kommt.
+- Im Spiel auswählbare Rendering-Auflösungen: 480p, 720p, 1080p, 1440p und 2160p.
+- Konfigurierbare anisotrope Texturfilterung von 2× bis 16× zur Verbesserung der Texturschärfe bei entfernten und schrägen Blickwinkeln.
+- Einstellbare Bildschärfung mit konfigurierbarer Stärke und Option zum Aktivieren/Deaktivieren.
+- Leichtes bikubisches Upscaling für die niedrig aufgelösten 3D-Renderszenen des Spiels.
+- Konfigurierbarer Bloom-Effekt zur Verbesserung der Darstellung von Lichtern und Spezialeffekten.
+- Verbesserte Sonnenlicht-Blendeffekte und ausgewogenere Beleuchtung.
+- Experimentelle animierte Wolkenschatten-Effekte für Außenbereiche bei Tageslicht.
+- Optionale Randbeleuchtung (Rim lighting) für Charakter- und Fahrzeugkanten.
+- **CRT-Filter:** Ein optionaler Effekt im CRT-Geom-Stil, der das Erscheinungsbild eines Fernsehers aus den 1990er Jahren imitiert.
+- **Bewegungsunschärfe (Motion blur):** Ein kamerabezogener Effekt, der auf Fahrzeugbewegung, Rücklicht-Spuren und den unteren Bildschirmbereich fokussiert ist.
+- Erhöhte Sichtweite der Umgebung, sodass mehr von der Spielwelt sichtbar bleibt, zusammen mit erhöhten Darstellungsdistanzen für Fußgänger und Fahrzeuge sowie flüssigeren Animationen entfernter Fußgänger.
+
+## 🛠️ Standard-Grafikkonfiguration
+
+| Einstellung | Standardwert |
+| --- | --- |
+| Auflösung | 1080p |
+| Cel Shading | An |
+| Anisotrope Filterung | 2× |
+| Bloom | An |
+| Wolkenschatten | An |
+| Bildschärfung | 40 % |
+| CRT-Filter | Aus |
+| Bewegungsunschärfe | Aus |
+| Randbeleuchtung (Rim lighting) | Aus |
+| FPS-Begrenzung | 60 FPS |
+
+## 🧪 Experimentelle Funktionen
+
+Einige Funktionen bleiben experimentell und können je nach Gerät variieren:
+
+- Höhere FPS-Begrenzungen (90, 120 und 144 FPS)
+- Wolkenschatten-Rendering
+
+## 🔬 Zukünftige Funktionen
+
+- Verfeinerung der Kompatibilität für weitere Sprachen.
+- Erforschung einer möglichen Kompatibilität mit Spieldaten der PS2-, GameCube- und Xbox-Releases.
+- Automatische Extraktion von Spieldaten aus Disc-Image-Dateien.
 
 ---
 
-Für eine vollständige Installation musst du **deine eigene Sicherungskopie der PC-Version des Spiels bereitstellen**.
+# 🇪🇸 Español
 
-Weitere Informationen findest du in **[INSTALLATION.md](INSTALLATION.md)**.
+## The Simpsons Hit & Run - Revamped! (Android)
 
-Wenn du **MIT TOUCH-STEUERUNG** spielen möchtest, ist es **SEHR WICHTIG**, dass du diese Datei liest: **[TOUCH_STEUERUNG.md](TOUCH_CONTROLS.md)**
+Un port mejorado para Android de The Simpsons: Hit & Run que se enfoca en llevar el juego original a dispositivos Android con gráficos mejorados, personalización ampliada, soporte para pantalla táctil, soporte para dispositivos Android TV, así como varias correcciones de errores y mejoras de calidad de vida.
+
+**Importante:** Debes proporcionar tu propia versión para PC del juego y sus datos de juego requeridos. Por razones de derechos de autor, los datos del juego original no se incluyen en este proyecto.
+
+La visión principal de este proyecto es llevar al límite el juego original y sus archivos de recursos originales mientras se mantiene optimizado con el objetivo de modernizar este legendario juego de los Simpsons.
+
+Esta versión se basa en el excelente fork de Carlox33 del port original para Switch y Vita realizado por ZenoArrows. ¡Un agradecimiento especial a todos los involucrados en hacer posible este port!
+
+## ⚡ Especificaciones recomendadas
+
+*(Ajustes por defecto / Cel Shading ACTIVADO)*
+
+- Tegra X1 o Helio G99 [3/4GB RAM]   (1080p / 60FPS)
+- Snapdragon 8 Gen 1/2    [8GB RAM]   (2160p / 120FPS)
+
+*(Todas las mejoras DESACTIVADAS)*
+
+- Cualquier SoC antiguo de gama baja/media [2 GB de RAM] (720p / 60 FPS)
+
+Los ajustes por defecto están optimizados para funcionar bien en la mayoría de los smartphones modernos.
+
+Nota: El desenfoque de movimiento (Motion Blur) y el filtro CRT pueden requerir bastante uso de la GPU, por lo que están desactivados por defecto.
+
+## 📦 Instalación
+
+Selecciona la ubicación adecuada de los datos del juego cuando se te solicite, o permite que el port detecte los datos disponibles.
+
+Todos los datos del juego deben proceder de la instalación original de PC y constan de lo siguiente:
+
+- Carpeta `art`
+- Carpeta `movies`
+- Carpeta `scripts`
+- Carpeta `sound`
+- Todos los demás archivos `.rcf` que se encuentran en la carpeta raíz de instalación, incluido el archivo de idioma dialog `.rcf`
+
+Las ubicaciones de datos de juego compatibles son las siguientes:
+
+- `Android\data\com.sevarg.simpsons\files`
+- `Almacenamiento interno compartido\Simpsons`
+- `Almacenamiento externo\Simpsons`
+
+## 🌐 Idiomas
+
+Soporte para inglés, francés, alemán y español.
+
+Si los datos del juego para PC provienen de cualquier versión europea, puedes seleccionar cualquier idioma que desees y el texto del juego también será compatible. La versión europea incluye datos de texto e imágenes de vídeo en el juego para los 4 idiomas. (Esto incluye Reino Unido e Irlanda)
+
+Si provienen de la versión norteamericana, por razones de compatibilidad el idioma siempre se restablecerá de forma predeterminada a inglés.
+
+En cuanto a los diálogos del juego, dependerán del país y los archivos de diálogo por idioma son los siguientes:
+
+- Inglés (`dialog.rcf`): Reino Unido, Irlanda, EE. UU., Canadá, Países Bajos, Internacional
+- Francés (`dialogf.rcf`): Francia
+- Alemán (`dialogg.rcf`): Alemania
+- Español (`dialogs.rcf`): España
+
+Puedes seleccionar el idioma deseado al abrir el juego. Si no tienes el archivo de idioma dialog correspondiente y el archivo `dialog.rcf` predeterminado está presente, los diálogos del juego cambiarán automáticamente a inglés. Si no se encuentra ningún archivo de diálogo, el juego no se cargará; esto es para mitigar bloqueos en la partida.
+
+Copia cuidadosamente todos tus archivos desde la carpeta de instalación de PC.
+
+## 🎮 Controles
+
+Compatibilidad con mandos Xbox One/Series, DualShock 4/DualSense, Switch 1/2, 8bitdo y varios otros mandos Bluetooth compatibles.
+
+Las acciones de los botones se enumeran en este orden: Xbox > PlayStation > Switch. Los controles A pie / Conducción están separados por `/`.
+
+- **Botón Start** — Menú de pausa
+- **Botón frontal superior** — Interactuar / Interactuar con el coche — △ Y X
+- **Botón frontal izquierdo** — Ataque / Freno de mano — □ X Y
+- **Botón frontal derecho** — Alternar esprint / Marcha atrás — ○ B A
+- **Botón frontal inferior** — Saltar o Confirmar / Acelerar — ✕ A B
+- **Cruceta (D-pad)** — Navegación por el menú y Movimiento/Dirección
+- **Stick izquierdo** — Navegación por el menú y Movimiento/Dirección
+- **Stick derecho** — Control de la cámara
+- **Gatillo superior izquierdo (L1)** — Cambiar zoom de cámara
+- **Gatillo inferior izquierdo (L2)** — Acercar zoom / Marcha atrás (Analógico)
+- **Gatillo superior derecho (R1)** — Centrar cámara / Claxon del coche
+- **Gatillo inferior derecho (R2)** — Alejar zoom / Acelerar (Analógico)
+- **Pulsación stick izquierdo (L3)** — Alternar esprint
+
+**Otras mejoras:**
+
+- HUD táctil integrado y controles en pantalla con opciones de personalización de posición, tamaño y opacidad de los botones táctiles.
+- Todo el trabajo duro fue realizado por Carlox33, así que visita su repositorio para obtener más detalles: https://github.com/Carlox33/The-Simpsons-Hit-and-Run-Android/blob/master/TOUCH_CONTROLS.md
+- Sistema de cámara mejorado con respuesta más rápida y mayor libertad de movimiento.
+- Capacidad de respuesta mejorada y controles más precisos al ir a pie.
+
+## ✨ Mejoras de calidad de vida (Quality of Life)
+
+- Interruptores en el juego para la configuración gráfica y del mando.
+- Compatibilidad con dispositivos Android TV con un orden correcto de mandos y soporte para doble pulsación atrás (probado en NVIDIA Shield TV).
+- Selección flexible de la ubicación de datos del juego, compatible con ubicaciones de almacenamiento interno, compartido y externo disponibles.
+- Detección de datos del juego en el primer lanzamiento para simplificar el inicio cuando los archivos requeridos ya están disponibles.
+- Menú de trucos (cheats) integrado en el juego.
+
+## 🎨 Mejoras gráficas y visuales
+
+**Opciones gráficas añadidas:**
+
+- Efecto cel-shading configurable para un estilo visual más estético, que se adapta fielmente al estilo de dibujo animado original de los Simpsons.
+- Resoluciones de renderizado seleccionables en el juego: 480p, 720p, 1080p, 1440p y 2160p.
+- Filtrado anisotrópico de texturas configurable de 2× a 16×, mejorando la claridad de las texturas en ángulos distantes u oblicuos.
+- Enfoque de imagen (Sharpening) ajustable, con intensidad configurable y opción de activar/desactivar.
+- Escalado bicúbico ligero para las cinemáticas renderizadas en 3D de baja resolución del juego.
+- Efecto Bloom configurable para realzar la apariencia de las luces y efectos especiales.
+- Brillo de la luz solar y balance de iluminación mejorados.
+- Efectos experimentales de sombras de nubes animadas para entornos exteriores diurnos.
+- Iluminación de borde (Rim lighting) opcional para los bordes de personajes y vehículos.
+- **Filtro CRT:** Un efecto opcional estilo CRT-Geom que imita la apariencia de un televisor de la década de 1990.
+- **Desenfoque de movimiento (Motion blur):** Un efecto adaptado a la cámara centrado en el movimiento del vehículo, la estela de las luces traseras y la parte inferior de la pantalla.
+- Mayor distancia de dibujado del escenario, permitiendo que una mayor parte del mundo del juego permanezca visible con mayores distancias de renderizado de peatones y vehículos, y una animación más fluida de peatones distantes.
+
+## 🛠️ Configuración gráfica predeterminada
+
+| Ajuste | Valor predeterminado |
+| --- | --- |
+| Resolución | 1080p |
+| Cel Shading | Activado |
+| Filtrado anisotrópico | 2× |
+| Bloom | Activado |
+| Sombras de nubes | Activado |
+| Enfoque (Sharpening) | 40 % |
+| Filtro CRT | Desactivado |
+| Desenfoque de movimiento | Desactivado |
+| Iluminación de borde (Rim lighting) | Desactivado |
+| Límite de FPS | 60 FPS |
+
+## 🧪 Funciones experimentales
+
+Algunas funciones siguen siendo experimentales y pueden variar según el dispositivo:
+
+- Límites de FPS más altos (90, 120 y 144 FPS)
+- Renderizado de sombras de nubes
+
+## 🔬 Próximas funciones
+
+- Perfeccionamiento de la compatibilidad con otros idiomas.
+- Investigación de una posible compatibilidad con datos de juego de los lanzamientos de PS2, GameCube y Xbox.
+- Extracción automática de datos del juego desde archivos de imagen de disco.
 
 ---
 
-## 🤝 Community & Fehlerberichte
-
-Dieses Projekt wurde **vollständig von mir allein entwickelt**.
-Daher kann es noch **kleinere Fehler oder unerwartete Verhaltensweisen** geben, die während der Tests nicht entdeckt wurden.
-
-Um das Melden von Problemen zu erleichtern und eine Community rund um das Projekt aufzubauen, habe ich einen **[Discord-Server](https://discord.gg/6Gw6jTJv8w)** erstellt, auf dem du:
-
-* Fehler oder Probleme melden kannst, um den Port zu verbessern.
-* Spielerfahrungen teilen, Screenshots posten und mit anderen Nutzern sprechen kannst.
-
-Wenn du ein Problem findest, melde es bitte **mithilfe der Berichtsvorlage**, die auf dem Server verfügbar ist.
-
-⚠ **Bevor du einen Fehler meldest**, überprüfe bitte zuerst die Datei **[bekannte Probleme](KNOWN_ISSUES.md)**, um zu vermeiden, bereits **dokumentierte Fehler** zu melden.
-
-💬 **Discord-Server**
-[Discord](https://discord.gg/6Gw6jTJv8w)
-
----
-
-## 🙏 Credits & Danksagungen
-
-Dieses Projekt basiert auf der Arbeit des Nutzers ZenoArrows (https://github.com/ZenoArrows), der Ports für **Nintendo Switch** und **PS Vita** erstellt hat.
-
-Um diese Arbeit sichtbar zu machen, wurde dieses Projekt als Fork des ursprünglichen Repositories erstellt, das als Ausgangspunkt für die Android-Kompatibilität diente.
-
-Original-Repository:
-👉 https://github.com/ZenoArrows/The-Simpsons-Hit-and-Run
-
-Dieses Projekt führt die Arbeit der Community fort, mit dem Ziel, **The Simpsons: Hit & Run** auf Android zu bringen.
-
----
-
-## Projektstatus
-
-Aktuelle Version: 
-
-* ✔ Native Touch-Steuerung, die in das Spiel und die eigenen Tools integriert ist.
-* ✔ Neues Menü zum Anpassen der Position und Größe der Touch-Steuerung im Spiel. Weitere Informationen findest du unter [Touch-Steuerung](TOUCH_CONTROLS.md).
-* ✔ Story-Modus von Anfang bis Ende spielbar.
-* ✔ Zwischensequenzen funktionieren während des Spiels korrekt.
-* ✔ Unterstützung für Controller/externe Gamepads.
-* ✔ Stabile 60 FPS mit VSync.
-* ✔ Spielphysik getreu der Originalversion.
-* ✔ Unterstützung für mehrere adaptive Auflösungen. Siehe die Datei [Installationsanleitung](INSTALLATION.md), um zu erfahren, wie die Auflösung geändert wird.
-
----
-
-## Dokumentation
-
-* 📥 [Installationsanleitung](INSTALLATION.md) 
-* 🎮 [Controller-Steuerung](CONTROLLER_CONTROLS.md) 
-* 📱  [Touch-Steuerung](TOUCH_CONTROLS.md)
-* 📌 [Neuigkeiten der neuesten Version](CHANGELOG.md)
-* ⚠  [Bekannte Probleme](KNOWN_ISSUES.md) 
-* 📊 [Aktueller Stand des Ports im Detail](FEATURES.md)
-* 🎮 [Cheats](CHEATS.md) 
-* 🚧 [Zukünftige Arbeiten](FUTURE_WORK.md)
----
-
-## 📱 Mindestanforderungen
-
-* **Android 7.0 oder höher**
-
-Tests auf verschiedenen Android-Geräten zeigen, dass eine **minimal akzeptable Leistung** auf Hardware mit ähnlichen Spezifikationen wie den folgenden erreicht wird:
-
-* **CPU:** MediaTek Helio P35
-* **GPU:** PowerVR Rogue GE8320
-* **RAM:** 3 GB, obwohl es möglicherweise auch mit **2 GB** korrekt funktioniert
-
-Als Referenz wurde das Spiel auf einem **Vivo Y01** getestet, wo es **vollständig spielbar und angenehm** ist.
-
-Geräte mit gleichen oder besseren Spezifikationen werden wahrscheinlich eine bessere Leistung bieten.
-
----
-
-## Erstellt mit
-
-* Android Studio
-* SDL
-* CMake
-* FFmpeg
-* NDK
-
----
+https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped

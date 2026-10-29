@@ -15,6 +15,7 @@
 #include <ai/sequencer/action.h>
 
 #include <ai/sequencer/actioncontroller.h>
+#include <cheats/cheatinputsystem.h>
 
 // Needed for particle animation to be played upon impact after jumping
 #include <render/Particles/particlemanager.h>
@@ -186,15 +187,9 @@ float WalkerLocomotionAction::SolveActualDir( float fDesiredDir, float timeins )
     //
     float rotateDelta = choreo::GetSmallestArc( mpCharacter->GetFacingDir( ), fDesiredDir );
     
-    float newRatio;
-    if ( mpCharacter->IsTurbo() )
-    {
-        newRatio = CharacterTune::sfTurboRotateRate * timeins;
-    }
-    else
-    {
-        newRatio = CharacterTune::sfLocoRotateRate * timeins;
-    }
+    // Sprint changes speed, not steering responsiveness. Always use the same
+    // turn-rate parameter as normal locomotion, including runtime tuning.
+    float newRatio = CharacterTune::sfLocoRotateRate * timeins;
     float oldRatio = 1.0f - newRatio;
     float newDir = ( mpCharacter->GetFacingDir( ) * oldRatio ) + ( ( mpCharacter->GetFacingDir( ) + rotateDelta ) * newRatio );
 
@@ -303,7 +298,7 @@ void WalkerLocomotionAction::DoSimulation( float timeins)
     // Smoother 180 turns, but left right motion is jerkier.
     //  [6/21/2002]
     //
-    if ( CharacterTune::bLocoTest || mpCharacter->IsTurbo() )
+    if ( CharacterTune::bLocoTest )
     {
         mpLocomotionDriver->SetDesiredMotionAngle( mpCharacter->GetFacingDir( ) );
         mpLocomotionDriver->SetDesiredFacingAngle( mpCharacter->GetFacingDir( ) );
@@ -2076,11 +2071,18 @@ Return:         void
 */
 void JumpAction::TestForJumpAgain( const rmt::Vector& currentPos, float fUpVelocity, rmt::Vector& groundPos )
 {
-    if(mbPreSlam || mbSlam || mbInJumpKick || mbDoJumpKick || mbFalling)
+    // Moon Jump deliberately applies only to the player. NPC jump actions keep
+    // their original one-extra-jump and velocity limits.
+    const bool moonJumpEnabled =
+        !mpCharacter->IsNPC() && GetCheatInputSystem()->IsMoonJumpEnabled();
+
+    if(mbPreSlam || mbSlam || mbInJumpKick || mbDoJumpKick ||
+       (mbFalling && !moonJumpEnabled))
         return;
 
     CharacterController::eIntention theIntention = mpCharacter->GetController()->GetIntention();
-    if ( theIntention == CharacterController::Jump && !mbJumpAgain)
+    if ( theIntention == CharacterController::Jump &&
+         (!mbJumpAgain || moonJumpEnabled) )
     {
         mpCharacter->GetController()->ClearIntention();
 
@@ -2090,9 +2092,9 @@ void JumpAction::TestForJumpAgain( const rmt::Vector& currentPos, float fUpVeloc
         static float allowJump = 4.0f;
 
         float fHeightAboveGround = currentPos.y - groundPos.y;
-        bool doJump = (fUpVelocity > 0) ? 
+        bool doJump = moonJumpEnabled || ((fUpVelocity > 0) ?
             (fUpVelocity <= CharacterTune::sfDoubleJumpAllowUp) :
-            (rmt::Abs(fUpVelocity) <= CharacterTune::sfDoubleJumpAllowDown);
+            (rmt::Abs(fUpVelocity) <= CharacterTune::sfDoubleJumpAllowDown));
         if ( doJump ) 
         {
             if(mpAnimationDriver)

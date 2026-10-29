@@ -76,18 +76,35 @@ FeLanguage::~FeLanguage()
 
 unsigned short* FeLanguage::GetString( const char* name )
 {
+    if( name == NULL || m_modulo == 0 )
+    {
+        return NULL;
+    }
+
     return GetString( GetHash( name ) );
 }
 
 unsigned short* FeLanguage::GetString( unsigned int hash )
 {
+    // Do not read entries from a partially initialized or empty language table.
+    if( m_hashes == NULL || m_offsets == NULL || m_buffer == NULL )
+    {
+        return NULL;
+    }
+
     //MIKE IMPROVE : make this hashing actually do something useful, instead of a linear sort
     unsigned int i = 0;
     for( ; i < m_numStrings; i++ )
     {
         if( m_hashes[i] == hash )
         {
-            return m_buffer+(m_offsets[i]/2);
+            // Offsets are byte offsets into a UTF-16 buffer.
+            if( (m_offsets[i] % sizeof( unsigned short )) != 0 ||
+                m_offsets[i] >= m_bufferSize )
+            {
+                return NULL;
+            }
+            return m_buffer + (m_offsets[i] / sizeof( unsigned short));
         }
     }
     return NULL;
@@ -95,6 +112,11 @@ unsigned short* FeLanguage::GetString( unsigned int hash )
 
 unsigned int FeLanguage::GetHash( const char* name )
 {
+    if( name == NULL || m_modulo == 0 )
+    {
+        return 0;
+    }
+
     const char* pch = name;
     unsigned int lHash = 0L;
 

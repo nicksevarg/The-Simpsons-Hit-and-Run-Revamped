@@ -19,6 +19,14 @@
 #include <radmath/radmath.hpp>
 #include <pddi/pddiext.hpp>
 #include <p3d/anim/instancedgeometry.hpp>
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHARGagCharacterCelPassActive();
+bool IsSHARFrontendMenuCelPassActive();
+void SetSHARCharacterMaskModelPass(bool enabled);
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+#endif
 
 #include <string.h>
 
@@ -61,17 +69,44 @@ tPolySkin::~tPolySkin()
 
 void tPolySkin::Display(tPose* p)
 {
+#ifdef RAD_ANDROID
+    // NIS/gag characters and skinned models in the main-menu camera set bypass
+    // CharacterRenderable::DisplayModel(), so explicitly give those meshes the
+    // same silhouette + normal pass. Ordinary gameplay remains unchanged.
+    if ((IsSHARGagCharacterCelPassActive() ||
+         IsSHARFrontendMenuCelPassActive()) && IsCelShadingEnabled())
+    {
+        SetSHARCharacterMaskModelPass(true);
+        SetCelShadingObjectEnabled(true);
+
+        SetCelShadingOutlinePass(true);
+        DisplaySkinGeometry(p);
+
+        SetCelShadingOutlinePass(false);
+        DisplaySkinGeometry(p);
+
+        SetCelShadingObjectEnabled(false);
+        SetSHARCharacterMaskModelPass(false);
+        return;
+    }
+#endif
+
+    DisplaySkinGeometry(p);
+}
+
+void tPolySkin::DisplaySkinGeometry(tPose* p)
+{
     if (p == NULL)
     {
         return;
     }
 
-    // transform the pose joints into world space
+    // Transform the pose joints into world space.
+    // The skin vertices are stored in rest-pose relative world space.
+    // The below matrix transforms from rest-pose relative space, into
+    // bone-local space where the animation is applied, and then into view space.
     p->Evaluate();
 
-    // The skin vertices are stored in rest-pose relative world space.
-    // The below matrix will transform from this space, into bone-local
-    // space where the animation is applied, and then back into camera space.
     for(int i = 0; i < p->GetNumJoint(); i++)
     {
 #ifndef RAD_PS2
@@ -79,15 +114,12 @@ void tPolySkin::Display(tPose* p)
 #else
         boneMatrix[i].MultAligned(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
 #endif
-
         boneMatrix[i].Mult(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
-
     }
 
     boneMatrix[skeleton->GetNumJoint()].Identity();
 
     pddiExtHardwareSkinning* hwSkin = p3d::context->GetHardwareSkinning();
-
     if(hwSkin)
     {
         hwSkin->Begin();

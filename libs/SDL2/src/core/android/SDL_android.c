@@ -2486,8 +2486,70 @@ int SDL_AndroidGetExternalStorageState(void)
     return stateFlags;
 }
 
+const char *SDL_AndroidGetGameDataPath(void)
+{
+    static char *s_AndroidGameDataPath = NULL;
+
+    if (!s_AndroidGameDataPath) {
+        JNIEnv *env = Android_JNI_GetEnv();
+        if (!env || !mActivityClass) {
+            return NULL;
+        }
+
+        /*
+         * mActivityClass is the SDLActivity base class. The actual running
+         * activity is SimpsonsActivity, which owns getGameDataPath().
+         * Get the concrete activity class from the current SDL context.
+         */
+        jobject context = (*env)->CallStaticObjectMethod(env, mActivityClass, midGetContext);
+        if ((*env)->ExceptionCheck(env) || !context) {
+            (*env)->ExceptionClear(env);
+            return NULL;
+        }
+
+        jclass activityClass = (*env)->GetObjectClass(env, context);
+        if (!activityClass) {
+            (*env)->DeleteLocalRef(env, context);
+            return NULL;
+        }
+
+        jmethodID mid = (*env)->GetStaticMethodID(env, activityClass,
+                                                  "getGameDataPath", "()Ljava/lang/String;");
+        if (!mid) {
+            (*env)->ExceptionClear(env);
+            (*env)->DeleteLocalRef(env, activityClass);
+            (*env)->DeleteLocalRef(env, context);
+            return NULL;
+        }
+
+        jstring pathString = (jstring)(*env)->CallStaticObjectMethod(env, activityClass, mid);
+        if ((*env)->ExceptionCheck(env) || !pathString) {
+            (*env)->ExceptionClear(env);
+            (*env)->DeleteLocalRef(env, activityClass);
+            (*env)->DeleteLocalRef(env, context);
+            return NULL;
+        }
+
+        const char *path = (*env)->GetStringUTFChars(env, pathString, NULL);
+        if (path) {
+            s_AndroidGameDataPath = SDL_strdup(path);
+            (*env)->ReleaseStringUTFChars(env, pathString, path);
+        }
+
+        (*env)->DeleteLocalRef(env, pathString);
+        (*env)->DeleteLocalRef(env, activityClass);
+        (*env)->DeleteLocalRef(env, context);
+    }
+
+    return s_AndroidGameDataPath;
+}
+
 const char *SDL_AndroidGetExternalStoragePath(void)
 {
+    const char *gameDataPath = SDL_AndroidGetGameDataPath();
+    if (gameDataPath) {
+        return gameDataPath;
+    }
     static char *s_AndroidExternalFilesPath = NULL;
 
     if (!s_AndroidExternalFilesPath) {
@@ -2529,6 +2591,59 @@ const char *SDL_AndroidGetExternalStoragePath(void)
         LocalReferenceHolder_Cleanup(&refs);
     }
     return s_AndroidExternalFilesPath;
+}
+
+const char *SDL_AndroidGetApplicationExternalFilesPath(void)
+{
+    static char *s_AndroidApplicationExternalFilesPath = NULL;
+
+    if (!s_AndroidApplicationExternalFilesPath) {
+        struct LocalReferenceHolder refs = LocalReferenceHolder_Setup(__FUNCTION__);
+        jmethodID mid;
+        jobject context;
+        jobject fileObject;
+        jstring pathString;
+        const char *path;
+
+        JNIEnv *env = Android_JNI_GetEnv();
+        if (!LocalReferenceHolder_Init(&refs, env)) {
+            LocalReferenceHolder_Cleanup(&refs);
+            return NULL;
+        }
+
+        context = (*env)->CallStaticObjectMethod(env, mActivityClass, midGetContext);
+        if (!context) {
+            SDL_SetError("Couldn't get Android context");
+            LocalReferenceHolder_Cleanup(&refs);
+            return NULL;
+        }
+
+        mid = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, context),
+                                  "getExternalFilesDir", "(Ljava/lang/String;)Ljava/io/File;");
+        fileObject = (*env)->CallObjectMethod(env, context, mid, NULL);
+        if (!fileObject) {
+            SDL_SetError("Couldn't get application external-files directory");
+            LocalReferenceHolder_Cleanup(&refs);
+            return NULL;
+        }
+
+        mid = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, fileObject),
+                                  "getAbsolutePath", "()Ljava/lang/String;");
+        pathString = (jstring)(*env)->CallObjectMethod(env, fileObject, mid);
+
+        if (Android_JNI_ExceptionOccurred(SDL_FALSE)) {
+            LocalReferenceHolder_Cleanup(&refs);
+            return NULL;
+        }
+
+        path = (*env)->GetStringUTFChars(env, pathString, NULL);
+        s_AndroidApplicationExternalFilesPath = SDL_strdup(path);
+        (*env)->ReleaseStringUTFChars(env, pathString, path);
+
+        LocalReferenceHolder_Cleanup(&refs);
+    }
+
+    return s_AndroidApplicationExternalFilesPath;
 }
 
 SDL_bool SDL_AndroidRequestPermission(const char *permission)

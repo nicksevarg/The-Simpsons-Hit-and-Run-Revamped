@@ -1025,22 +1025,23 @@ bool Win32Platform::OnDriveError( radFileError error, const char* pDriveName, vo
             radFileRequest* request = static_cast<radFileRequest*>( pUserData );
             const char* fileName = request->GetFilename();
 
-            //Get rid of the slashes.
-            unsigned int i;
-            unsigned int lastIndex = 0;
-            for ( i = 0; i < strlen( fileName ); ++i )
+            // Find the basename without copying an arbitrarily long path
+            // into a fixed-size temporary buffer.
+            const char* adjustedName = fileName != NULL ? fileName : "(unknown)";
+            if (fileName != NULL)
             {
-                if ( fileName[ i ] == '\\' )
+                const char* lastSlash = strrchr(fileName, '/');
+                const char* lastBackslash = strrchr(fileName, '\\');
+                if (lastBackslash != NULL &&
+                    (lastSlash == NULL || lastBackslash > lastSlash))
                 {
-                    lastIndex = i;
+                    lastSlash = lastBackslash;
+                }
+                if (lastSlash != NULL)
+                {
+                    adjustedName = lastSlash + 1;
                 }
             }
-
-            unsigned int adjustedIndex = lastIndex == 0 ? lastIndex : lastIndex + 1;
-
-            char adjustedName[32];
-            strncpy( adjustedName, &fileName[adjustedIndex], ( strlen( fileName ) - lastIndex ) );
-            adjustedName[ strlen( fileName ) - lastIndex ] = '\0';
 
 #ifdef RAD_PC
             if( strcmp( fileName, GameConfigManager::ConfigFilename ) == 0 )
@@ -1049,14 +1050,27 @@ bool Win32Platform::OnDriveError( radFileError error, const char* pDriveName, vo
             }
 #endif
 
+#ifdef RAD_ANDROID
+            // FileNotFound is not recoverable by retrying the same path. Fail
+            // this request and keep the frame loop alive instead of repeatedly
+            // showing the error splash and compounding post-processing.
+            LOGE("RAD FileNotFound: failing request without retry. drive='%s' file='%s'",
+                 pDriveName != NULL ? pDriveName : "(unknown)",
+                 fileName != NULL ? fileName : "(unknown)");
+            mErrorState = NONE;
+            mPauseForError = false;
+            return false;
+#else
             char errorString[256];
-            sprintf( errorString, "%s:\n%s", ERROR_STRINGS[error], adjustedName );
+            snprintf(errorString, sizeof(errorString), "%s:\n%s",
+                     ERROR_STRINGS[error], adjustedName);
             fprintf(stderr, "error: %s\n", errorString);
             DisplaySplashScreen( Error, errorString, 1.0f, 0.0f, 0.0f, tColour(255, 255, 255), 0 );
             mErrorState = P_ERROR;
             mPauseForError = true;
 
             return true;
+#endif
         }
     case NoMedia:
     case MediaNotFormatted:

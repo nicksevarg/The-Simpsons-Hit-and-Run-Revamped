@@ -42,6 +42,8 @@ public:
 
     // gl specific stuff
     void SetGLState(void);
+    void SetSamplerParameters(unsigned int magFilter, unsigned int minFilter,
+                              unsigned int wrapS, unsigned int wrapT);
 
 protected:
     pglContext* context;
@@ -55,6 +57,16 @@ protected:
     bool valid;
     unsigned int gltexture;
     int priority;
+    bool samplerParamsValid;
+    unsigned int samplerMagFilter;
+    unsigned int samplerMinFilter;
+    unsigned int samplerWrapS;
+    unsigned int samplerWrapT;
+#if defined(RAD_ANDROID)
+    int anisotropySelectionApplied;
+    bool mipmapsAvailable;
+    bool mipmapGenerationAttempted;
+#endif
 
     pddiLockInfo lock;
 

@@ -7,16 +7,70 @@
     #include <SDL.h>
     #include <sys/stat.h>
     #include <errno.h>
+    #include <unistd.h>
 #endif
 
 namespace
 {
-    const int CURRENT_CONFIGURATION_VERSION = 1;
+    const int CURRENT_CONFIGURATION_VERSION = 9;
 
 #if defined(RAD_ANDROID)
-    const char* CONFIGURATION_FOLDER_NAME = "Simpsons_configuration";
-    const char* CONFIGURATION_FILE_NAME   = "Simpsons_configuration.txt";
-    const char* VERSION_FILE_NAME         = ".versionSimpsons_configuration";
+    const char* CONFIGURATION_FOLDER_NAME = "Controller";
+    const char* CONFIGURATION_FILE_NAME   = "Simpsons_controls.txt";
+    const char* VERSION_FILE_NAME         = ".versionSimpsons_controls";
+    const char* LEGACY_CONFIGURATION_FOLDER_NAME = "Simpsons_configuration";
+    const char* LEGACY_CONFIGURATION_FILE_NAME = "Simpsons_configuration.txt";
+    const char* LEGACY_VERSION_FILE_NAME = ".versionSimpsons_configuration";
+
+    static bool PathExists(const char* path)
+    {
+        struct stat info;
+        return stat(path, &info) == 0;
+    }
+
+    static void MigrateLegacyControllerPaths(const char* basePath)
+    {
+        char oldDirectory[512], newDirectory[512];
+        char oldConfiguration[512], newConfiguration[512];
+        char oldVersion[512], newVersion[512];
+        snprintf(oldDirectory, sizeof(oldDirectory), "%s/%s", basePath, LEGACY_CONFIGURATION_FOLDER_NAME);
+        snprintf(newDirectory, sizeof(newDirectory), "%s/%s", basePath, CONFIGURATION_FOLDER_NAME);
+        snprintf(oldConfiguration, sizeof(oldConfiguration), "%s/%s", oldDirectory, LEGACY_CONFIGURATION_FILE_NAME);
+        snprintf(newConfiguration, sizeof(newConfiguration), "%s/%s", newDirectory, CONFIGURATION_FILE_NAME);
+        snprintf(oldVersion, sizeof(oldVersion), "%s/%s", oldDirectory, LEGACY_VERSION_FILE_NAME);
+        snprintf(newVersion, sizeof(newVersion), "%s/%s", newDirectory, VERSION_FILE_NAME);
+
+        struct stat info;
+        if (stat(newDirectory, &info) != 0)
+        {
+            if (stat(oldDirectory, &info) == 0)
+                rename(oldDirectory, newDirectory);
+            else
+                mkdir(newDirectory, 0777);
+        }
+
+        if (!PathExists(newConfiguration))
+        {
+            char moved[512];
+            snprintf(moved, sizeof(moved), "%s/%s", newDirectory, LEGACY_CONFIGURATION_FILE_NAME);
+            if (PathExists(moved))
+                rename(moved, newConfiguration);
+            else if (PathExists(oldConfiguration))
+                rename(oldConfiguration, newConfiguration);
+        }
+
+        if (!PathExists(newVersion))
+        {
+            char moved[512];
+            snprintf(moved, sizeof(moved), "%s/%s", newDirectory, LEGACY_VERSION_FILE_NAME);
+            if (PathExists(moved))
+                rename(moved, newVersion);
+            else if (PathExists(oldVersion))
+                rename(oldVersion, newVersion);
+        }
+
+        rmdir(oldDirectory);
+    }
 #endif
 }
 
@@ -36,9 +90,10 @@ AndroidConfigurationManager* GetAndroidConfigurationManager()
 AndroidConfigurationManager::AndroidConfigurationManager()
 :
     m_initialized( false ),
-    m_invertCamera( true ),
+    m_invertCamera( false ),
     m_gamepadVibration( true ),
     m_phoneVibration( false ),
+    m_modernCamera( true ),
     m_dirty( false )
 {
 #if defined(RAD_ANDROID)
@@ -50,9 +105,10 @@ AndroidConfigurationManager::AndroidConfigurationManager()
 
 void AndroidConfigurationManager::SetDefaults()
 {
-    m_invertCamera = true;
+    m_invertCamera = false;
     m_gamepadVibration = true;
     m_phoneVibration = false;
+    m_modernCamera = true;
     m_dirty = false;
 }
 
@@ -77,10 +133,8 @@ void AndroidConfigurationManager::Initialize()
     const bool loadedConfiguration = this->LoadConfigurationFile();
     const int loadedVersion = this->LoadVersionFile();
 
-    //
-    // If the file does not exist, or the version is old/missing,
-    // rewrite the configuration while preserving any values already loaded.
-    //
+    // If the file does not exist, or the version is old/missing, rewrite the
+    // configuration while preserving the other loaded settings.
     if( !loadedConfiguration || loadedVersion != CURRENT_CONFIGURATION_VERSION )
     {
         this->WriteConfigurationFile();
@@ -101,7 +155,6 @@ void AndroidConfigurationManager::Reload()
         return;
     }
 
-    this->EnsureDirectory();
     this->LoadConfigurationFile();
 #endif
 }
@@ -148,6 +201,11 @@ bool AndroidConfigurationManager::IsPhoneVibrationEnabled() const
     return m_phoneVibration;
 }
 
+bool AndroidConfigurationManager::IsModernCameraEnabled() const
+{
+    return m_modernCamera;
+}
+
 void AndroidConfigurationManager::SetInvertCameraEnabled( bool enabled )
 {
     if( m_invertCamera == enabled )
@@ -175,21 +233,33 @@ void AndroidConfigurationManager::SetPhoneVibrationEnabled( bool enabled )
     m_phoneVibration = enabled;
 }
 
+void AndroidConfigurationManager::SetModernCameraEnabled( bool enabled )
+{
+    if( m_modernCamera == enabled )
+    {
+        return;
+    }
+
+    m_modernCamera = enabled;
+    m_dirty = true;
+}
+
 #if defined(RAD_ANDROID)
 
 bool AndroidConfigurationManager::BuildPaths()
 {
-    const char* basePath = SDL_AndroidGetExternalStoragePath();
-
-    if( basePath == NULL || basePath[ 0 ] == '\0' )
-    {
-        basePath = SDL_AndroidGetInternalStoragePath();
-    }
+    // Simpsons configuration belongs in the app's primary Android
+    // external-files directory under /Android/data/<package>/files.
+    // Do not use SDL_AndroidGetExternalStoragePath(), because this project
+    // overrides that API for the selectable USB game-data location.
+    const char* basePath = SDL_AndroidGetApplicationExternalFilesPath();
 
     if( basePath == NULL || basePath[ 0 ] == '\0' )
     {
         return false;
     }
+
+    MigrateLegacyControllerPaths( basePath );
 
     snprintf( m_directoryPath,
               sizeof( m_directoryPath ),
@@ -283,14 +353,16 @@ void AndroidConfigurationManager::WriteConfigurationFile()
         return;
     }
 
-    fprintf( file, "# Simpsons Hit & Run Android - Configuration\n" );
-    fprintf( file, "# Change only true/false values.\n" );
-    fprintf( file, "# U can put 1/0 values too.\n" );
-    fprintf( file, "# Restart the game after changing this file.\n" );
+    fprintf( file, "# Simpsons Hit & Run - Revamped! [Controller Configuration]\n" );
+    fprintf( file, "# Legacy Invert Camera compatibility, Improved Camera mode, and controller vibration.\n" );
+    fprintf( file, "# Change with true/false or 1/0 values.\n" );
+    fprintf( file, "# You can also use the in-game settings toggle.\n" );
+    fprintf( file, "# Changes to this file will be reflected upon restart.\n" );
     fprintf( file, "\n" );
 
     fprintf( file, "invert_camera=%s\n", m_invertCamera ? "true" : "false" );
     fprintf( file, "gamepad_vibration=%s\n", m_gamepadVibration ? "true" : "false" );
+    fprintf( file, "improved_camera=%s\n", m_modernCamera ? "true" : "false" );
 
     fclose( file );
 }
@@ -399,6 +471,11 @@ void AndroidConfigurationManager::ParseLine( const char* line )
     else if( strcmp( key, "phone_vibration" ) == 0 )
     {
         m_phoneVibration = this->ParseBool( value, m_phoneVibration );
+    }
+    else if( strcmp( key, "improved_camera" ) == 0 ||
+             strcmp( key, "modern_camera" ) == 0 )
+    {
+        m_modernCamera = this->ParseBool( value, m_modernCamera );
     }
 }
 

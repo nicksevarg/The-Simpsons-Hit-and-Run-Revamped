@@ -1042,6 +1042,10 @@ FeResourceManager::SetSecondaryInventorySection( const char* name )
 //===========================================================================
 void FeResourceManager::SetLocalizationLanguage( const Scrooby::XLLanguage lang )
 {
+    // This must also be updated when no text bible is currently loaded.
+    // Future bible loads use it to choose the best available language table.
+    FeTextBible::SetCurrentLanguageID( Scrooby::language_ID[ lang ] );
+
     if( m_eLang != lang )
     {
         m_eLang = lang;
