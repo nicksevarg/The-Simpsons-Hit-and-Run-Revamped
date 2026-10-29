@@ -2,7 +2,8 @@
 
 [🇬🇧 English](#-english) | [🇫🇷 Français](#-français) | [🇩🇪 Deutsch](#-deutsch) | [🇪🇸 Español](#-español)
 
-(media/main.png)
+![Language selection artwork](media/main.png)
+
 ---
 
 # 🇬🇧 English
