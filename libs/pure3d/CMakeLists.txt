@@ -183,6 +183,12 @@ target_link_libraries(pddi
 	radcore
 )
 
+if(ANDROID)
+	# The GLES display backend calls EGL directly. Propagate libEGL to every
+	# consumer of this static archive, including Android helper executables.
+	target_link_libraries(pddi EGL)
+endif()
+
 add_library(p3d STATIC ${P3D_SOURCES})
 target_include_directories(p3d
 	PUBLIC "."
