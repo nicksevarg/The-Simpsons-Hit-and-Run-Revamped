@@ -80,7 +80,7 @@ static void SHARLoadFrontendDiagnosticConfig()
     const char* basePath = SDL_AndroidGetApplicationExternalFilesPath();
     if (basePath == NULL || basePath[0] == '\0')
     {
-        LOGI("[PERF][FRONTEND] diagnostic config unavailable; using normal background rendering");
+        SDL_Log("[PERF][FRONTEND] diagnostic config unavailable; using normal background rendering");
         return;
     }
 
@@ -110,7 +110,7 @@ static void SHARLoadFrontendDiagnosticConfig()
             fprintf(file, "skip_frontend_background=false\n");
             fclose(file);
         }
-        LOGI("[PERF][FRONTEND] created diagnostic config; skip_frontend_background=false path=%s", path);
+        SDL_Log("[PERF][FRONTEND] created diagnostic config; skip_frontend_background=false path=%s", path);
         return;
     }
 
@@ -140,7 +140,7 @@ static void SHARLoadFrontendDiagnosticConfig()
     }
 
     fclose(file);
-    LOGI("[PERF][FRONTEND] diagnostic config skip_frontend_background=%s path=%s",
+    SDL_Log("[PERF][FRONTEND] diagnostic config skip_frontend_background=%s path=%s",
          gSHARFrontendSkipBackground ? "true" : "false", path);
 }
 
@@ -173,7 +173,7 @@ static void SHARLogFrontendPerf()
     if (nowUs - gSHARFrontendPerfWindowStartUs < 1000000ULL)
         return;
 
-    LOGI("[PERF][FRONTEND] frames=%u split=%u full=%u bg_skipped=%u "
+    SDL_Log("[PERF][FRONTEND] frames=%u split=%u full=%u bg_skipped=%u "
          "background_us=%llu/%llu foreground_us=%llu/%llu drawframe_us=%llu/%llu "
          "fine_detail_us=%llu/%llu post_us=%llu/%llu touch_us=%llu/%llu coin_us=%llu/%llu",
          gSHARFrontendPerfFrames,
