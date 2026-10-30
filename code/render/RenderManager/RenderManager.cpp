@@ -722,6 +722,14 @@ p3d::pddi->DrawString(buff, RIGHT, TOP, GREEN);
 
 void RenderManager::ContextUpdate( unsigned int iElapsedTime )
 {
+#ifdef RAD_ANDROID
+    const unsigned long long perfRenderFrameStartUs = (unsigned long long)radTimeGetMicroseconds64();
+    unsigned long long perfSwapUs = 0, perfPrepUs = 0, perfBeginFrameUs = 0;
+    unsigned long long perfLayersWallUs = 0, perfLayerRenderSumUs = 0;
+    unsigned long long perfLayerMaxUs = 0, perfTailUs = 0, perfEndFrameUs = 0;
+    unsigned long long perfPresentationMarkUs = 0;
+    int perfLayerMaxIndex = -1;
+#endif
     // On the PS2, use a minimum blur all the time
 #ifdef RAD_PS2
     ApplyPS2Blur();
@@ -736,7 +744,17 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
     BEGIN_PROFILE("Rendering");
 
     BEGIN_PROFILE("Swap Buffers");
+#ifdef RAD_ANDROID
+    unsigned long long perfStageStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
     p3d::context->SwapBuffers();
+#ifdef RAD_ANDROID
+    {
+        const unsigned long long perfAfterSwapUs = (unsigned long long)radTimeGetMicroseconds64();
+        perfSwapUs = perfAfterSwapUs - perfStageStartUs;
+        perfStageStartUs = perfAfterSwapUs;
+    }
+#endif
     END_PROFILE("Swap Buffers");
 
 #if defined( RAD_XBOX ) || defined ( RAD_GAMECUBE ) || defined( RAD_WIN32 )
@@ -765,9 +783,23 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
         TransitionMoodLighting(iElapsedTime);
     }
 
+#ifdef RAD_ANDROID
+    {
+        const unsigned long long perfBeforeBeginUs = (unsigned long long)radTimeGetMicroseconds64();
+        perfPrepUs = perfBeforeBeginUs - perfStageStartUs;
+        perfStageStartUs = perfBeforeBeginUs;
+    }
+#endif
     BEGIN_PROFILE("Begin Frame");
     p3d::context->BeginFrame();
     END_PROFILE("Begin Frame");
+#ifdef RAD_ANDROID
+    {
+        const unsigned long long perfAfterBeginUs = (unsigned long long)radTimeGetMicroseconds64();
+        perfBeginFrameUs = perfAfterBeginUs - perfStageStartUs;
+        perfStageStartUs = perfAfterBeginUs;
+    }
+#endif
 
     #if defined(RAD_ANDROID)
     {
@@ -783,6 +815,9 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
     }
 #endif
 
+#ifdef RAD_ANDROID
+    const unsigned long long perfLayerLoopStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
     for (int i = RenderEnums::numLayers - 1; i > -1; i--)
     {
 #ifdef RAD_ANDROID
@@ -819,11 +854,32 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
         if (ready)
         {
             BEGIN_PROFILE("Layers");
+#ifdef RAD_ANDROID
+            const unsigned long long perfLayerStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
             pLayer->Render();
+#ifdef RAD_ANDROID
+            {
+                const unsigned long long perfLayerUs = (unsigned long long)radTimeGetMicroseconds64() - perfLayerStartUs;
+                perfLayerRenderSumUs += perfLayerUs;
+                if ( perfLayerUs > perfLayerMaxUs )
+                {
+                    perfLayerMaxUs = perfLayerUs;
+                    perfLayerMaxIndex = i;
+                }
+            }
+#endif
             END_PROFILE("Layers");
         }
     }
 
+#ifdef RAD_ANDROID
+    {
+        const unsigned long long perfAfterLayersUs = (unsigned long long)radTimeGetMicroseconds64();
+        perfLayersWallUs = perfAfterLayersUs - perfLayerLoopStartUs;
+        perfStageStartUs = perfAfterLayersUs;
+    }
+#endif
     END_PROFILE("Rendering");
 
 #ifdef DEBUGWATCH
@@ -900,9 +956,104 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
         */
         TouchHudRenderer::GetInstance().RenderCinematicSkip();
     #endif
+#ifdef RAD_ANDROID
+    {
+        const unsigned long long perfBeforeEndFrameUs = (unsigned long long)radTimeGetMicroseconds64();
+        perfTailUs = perfBeforeEndFrameUs - perfStageStartUs;
+        perfStageStartUs = perfBeforeEndFrameUs;
+    }
+#endif
     p3d::context->EndFrame(false);
 #ifdef RAD_ANDROID
+    {
+        const unsigned long long perfAfterEndFrameUs = (unsigned long long)radTimeGetMicroseconds64();
+        perfEndFrameUs = perfAfterEndFrameUs - perfStageStartUs;
+        perfStageStartUs = perfAfterEndFrameUs;
+    }
     SHARMarkFrameRenderedForPresentation();
+#ifdef RAD_ANDROID
+    {
+        const unsigned long long perfAfterPresentationMarkUs = (unsigned long long)radTimeGetMicroseconds64();
+        perfPresentationMarkUs = perfAfterPresentationMarkUs - perfStageStartUs;
+    }
+    {
+        const unsigned long long perfRenderFrameEndUs = (unsigned long long)radTimeGetMicroseconds64();
+        const unsigned long long perfRenderFrameUs = perfRenderFrameEndUs - perfRenderFrameStartUs;
+
+        static unsigned long long perfWindowStartUs = 0;
+        static unsigned long long perfFrameTotalUs = 0, perfFrameMaxUs = 0;
+        static unsigned long long perfSwapTotalUs = 0, perfSwapMaxUs = 0;
+        static unsigned long long perfPrepTotalUs = 0, perfPrepMaxUs = 0;
+        static unsigned long long perfBeginTotalUs = 0, perfBeginMaxUs = 0;
+        static unsigned long long perfLayersWallTotalUs = 0, perfLayersWallMaxUs = 0;
+        static unsigned long long perfLayerSumTotalUs = 0, perfLayerMaxUsWindow = 0;
+        static unsigned long long perfTailTotalUs = 0, perfTailMaxUs = 0;
+        static unsigned long long perfEndTotalUs = 0, perfEndMaxUs = 0;
+        static unsigned long long perfPresentationMarkTotalUs = 0, perfPresentationMarkMaxUs = 0;
+        static unsigned int perfFrames = 0, perfSlow16 = 0, perfSlow33 = 0, perfSlow50 = 0;
+        static int perfSlowLayerIndex = -1;
+
+        if ( perfWindowStartUs == 0 ) perfWindowStartUs = perfRenderFrameStartUs;
+        ++perfFrames;
+        perfFrameTotalUs += perfRenderFrameUs;
+        if ( perfRenderFrameUs > perfFrameMaxUs ) perfFrameMaxUs = perfRenderFrameUs;
+        perfSwapTotalUs += perfSwapUs;
+        if ( perfSwapUs > perfSwapMaxUs ) perfSwapMaxUs = perfSwapUs;
+        perfPrepTotalUs += perfPrepUs;
+        if ( perfPrepUs > perfPrepMaxUs ) perfPrepMaxUs = perfPrepUs;
+        perfBeginTotalUs += perfBeginFrameUs;
+        if ( perfBeginFrameUs > perfBeginMaxUs ) perfBeginMaxUs = perfBeginFrameUs;
+        perfLayersWallTotalUs += perfLayersWallUs;
+        if ( perfLayersWallUs > perfLayersWallMaxUs ) perfLayersWallMaxUs = perfLayersWallUs;
+        perfLayerSumTotalUs += perfLayerRenderSumUs;
+        if ( perfLayerMaxUs > perfLayerMaxUsWindow )
+        {
+            perfLayerMaxUsWindow = perfLayerMaxUs;
+            perfSlowLayerIndex = perfLayerMaxIndex;
+        }
+        perfTailTotalUs += perfTailUs;
+        if ( perfTailUs > perfTailMaxUs ) perfTailMaxUs = perfTailUs;
+        perfEndTotalUs += perfEndFrameUs;
+        if ( perfEndFrameUs > perfEndMaxUs ) perfEndMaxUs = perfEndFrameUs;
+        perfPresentationMarkTotalUs += perfPresentationMarkUs;
+        if ( perfPresentationMarkUs > perfPresentationMarkMaxUs ) perfPresentationMarkMaxUs = perfPresentationMarkUs;
+
+        if ( perfRenderFrameUs > 50000ULL ) ++perfSlow50;
+        else if ( perfRenderFrameUs > 33333ULL ) ++perfSlow33;
+        else if ( perfRenderFrameUs > 16667ULL ) ++perfSlow16;
+
+        const unsigned long long perfWindowElapsedUs = perfRenderFrameEndUs - perfWindowStartUs;
+        if ( perfWindowElapsedUs >= 1000000ULL && perfFrames > 0 )
+        {
+            const double perfFps = (double)perfFrames * 1000000.0 / (double)perfWindowElapsedUs;
+            LOGI("[PERF][RENDER] fps=%.1f frames=%u frame_us=%llu/%llu slow16/33/50=%u/%u/%u swap_us=%llu/%llu prep_us=%llu/%llu begin_us=%llu/%llu layers_wall_us=%llu/%llu layers_sum_us=%llu layer_max_us=%llu@%d tail_us=%llu/%llu end_us=%llu/%llu present_mark_us=%llu/%llu",
+                 perfFps, perfFrames,
+                 perfFrameTotalUs / perfFrames, perfFrameMaxUs,
+                 perfSlow16, perfSlow33, perfSlow50,
+                 perfSwapTotalUs / perfFrames, perfSwapMaxUs,
+                 perfPrepTotalUs / perfFrames, perfPrepMaxUs,
+                 perfBeginTotalUs / perfFrames, perfBeginMaxUs,
+                 perfLayersWallTotalUs / perfFrames, perfLayersWallMaxUs,
+                 perfLayerSumTotalUs / perfFrames,
+                 perfLayerMaxUsWindow, perfSlowLayerIndex,
+                 perfTailTotalUs / perfFrames, perfTailMaxUs,
+                 perfEndTotalUs / perfFrames, perfEndMaxUs,
+                 perfPresentationMarkTotalUs / perfFrames, perfPresentationMarkMaxUs);
+
+            perfWindowStartUs = perfRenderFrameEndUs;
+            perfFrameTotalUs = perfFrameMaxUs = 0;
+            perfSwapTotalUs = perfSwapMaxUs = 0;
+            perfPrepTotalUs = perfPrepMaxUs = 0;
+            perfBeginTotalUs = perfBeginMaxUs = 0;
+            perfLayersWallTotalUs = perfLayersWallMaxUs = 0;
+            perfLayerSumTotalUs = perfLayerMaxUsWindow = 0;
+            perfTailTotalUs = perfTailMaxUs = 0;
+            perfEndTotalUs = perfEndMaxUs = 0;
+            perfPresentationMarkTotalUs = perfPresentationMarkMaxUs = 0;
+            perfFrames = perfSlow16 = perfSlow33 = perfSlow50 = 0;
+            perfSlowLayerIndex = -1;
+        }
+    }
 #endif
 
 #ifdef DEBUGWATCH

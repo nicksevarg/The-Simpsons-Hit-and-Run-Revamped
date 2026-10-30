@@ -1844,13 +1844,17 @@ void Win32Platform::InitializeContext()
         #if defined(RAD_ANDROID)
         // VSYNC on + habilita cap a 60 (m_only60)
         mpContext->GetDisplay()->SetForceVSync(true, true);
-        // opcional (1 vez): pedir VSYNC al driver
-        SDL_GL_SetSwapInterval(1);
-		
-		// ESTO ES PARA VER LA RESOLUCION ACTUIAL 
-		int realW = mpContext->GetDisplay()->GetWidth();
-        int realH = mpContext->GetDisplay()->GetHeight();
-        rDebugPrintf("[RES] REAL display/backbuffer = %dx%d\n", realW, realH);
+        // Keep existing VSync behaviour unchanged; record SDL's result.
+        const int swapIntervalSetResult = SDL_GL_SetSwapInterval(1);
+        const int activeSwapInterval = SDL_GL_GetSwapInterval();
+        LOGI("[PERF][VSYNC] lockToVsync=%d forceVSync=1,1 setResult=%d activeInterval=%d error=%s",
+             init.lockToVsync ? 1 : 0, swapIntervalSetResult, activeSwapInterval,
+             swapIntervalSetResult == 0 ? "none" : SDL_GetError());
+
+        const int realW = mpContext->GetDisplay()->GetWidth();
+        const int realH = mpContext->GetDisplay()->GetHeight();
+        LOGI("[PERF][DISPLAY] requested=%dx%d backbuffer=%dx%d",
+             init.xsize, init.ysize, realW, realH);
         #endif
     }
     else
@@ -1860,13 +1864,16 @@ void Win32Platform::InitializeContext()
         #if defined(RAD_ANDROID)
         // por si InitDisplay recrea / resetea algo
         mpContext->GetDisplay()->SetForceVSync(true, true);
-        SDL_GL_SetSwapInterval(1);
-		
-		
-		// aqui lo repito para ver resolucion real
-		int realW = mpContext->GetDisplay()->GetWidth();
-        int realH = mpContext->GetDisplay()->GetHeight();
-        rDebugPrintf("[RES] REAL display/backbuffer = %dx%d\n", realW, realH);
+        const int swapIntervalSetResult = SDL_GL_SetSwapInterval(1);
+        const int activeSwapInterval = SDL_GL_GetSwapInterval();
+        LOGI("[PERF][VSYNC] reinit lockToVsync=%d forceVSync=1,1 setResult=%d activeInterval=%d error=%s",
+             init.lockToVsync ? 1 : 0, swapIntervalSetResult, activeSwapInterval,
+             swapIntervalSetResult == 0 ? "none" : SDL_GetError());
+
+        const int realW = mpContext->GetDisplay()->GetWidth();
+        const int realH = mpContext->GetDisplay()->GetHeight();
+        LOGI("[PERF][DISPLAY] reinit requested=%dx%d backbuffer=%dx%d",
+             init.xsize, init.ysize, realW, realH);
 		
         #endif
     }

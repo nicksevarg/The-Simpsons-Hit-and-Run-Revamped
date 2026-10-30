@@ -863,8 +863,26 @@ void Game::Run()
 #endif
 
     unsigned time = radTimeGetMilliseconds();
+#ifdef RAD_ANDROID
+    unsigned long long perfWindowStartUs = (unsigned long long)radTimeGetMicroseconds64();
+    unsigned long long perfLoopTotalUs = 0, perfLoopMaxUs = 0;
+    unsigned long long perfTouchTotalUs = 0, perfTouchMaxUs = 0;
+    unsigned long long perfUpdateTotalUs = 0, perfUpdateMaxUs = 0;
+    unsigned long long perfRenderTotalUs = 0, perfRenderMaxUs = 0;
+    unsigned long long perfServiceTotalUs = 0, perfServiceMaxUs = 0;
+    unsigned long long perfSoundTotalUs = 0, perfSoundMaxUs = 0;
+    unsigned long long perfLoadTotalUs = 0, perfLoadMaxUs = 0;
+    unsigned int perfWindowFrames = 0;
+    unsigned int perfSlow16Frames = 0, perfSlow33Frames = 0, perfSlow50Frames = 0;
+#endif
     while( !mExitNow )
     {
+#ifdef RAD_ANDROID
+        const unsigned long long perfLoopStartUs = (unsigned long long)radTimeGetMicroseconds64();
+        unsigned long long perfPhaseStartUs = perfLoopStartUs;
+        unsigned long long perfTouchUs = 0, perfUpdateUs = 0, perfRenderUs = 0;
+        unsigned long long perfServiceUs = 0, perfSoundUs = 0, perfLoadUs = 0;
+#endif
         DEMOPROFILE( g_DemoProfiler.Start(PROFILE_CHANNEL_ALL); )
 
         BEGIN_PROFILER_FRAME();
@@ -875,8 +893,10 @@ void Game::Run()
         unsigned elapsed = newTime - time;
         time = newTime;
         #ifdef RAD_ANDROID
+        perfPhaseStartUs = (unsigned long long)radTimeGetMicroseconds64();
         UpdateTouchContextResolverFromGame();
         TouchHudSystem::GetInstance().Update( elapsed );
+        perfTouchUs = (unsigned long long)radTimeGetMicroseconds64() - perfPhaseStartUs;
         #endif
        
 
@@ -924,6 +944,9 @@ void Game::Run()
         // Service the GameFlow and RenderFlow.
         //
 
+#ifdef RAD_ANDROID
+        perfPhaseStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
         if ( !mpPlatform->PausedForErrors() )
         {
             DEMOPROFILE( g_DemoProfiler.Start(PROFILE_CHANNEL_AI); )
@@ -933,9 +956,15 @@ void Game::Run()
 
             if( !mExitNow )
             {
+#ifdef RAD_ANDROID
+                const unsigned long long perfRenderStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
                 DEMOPROFILE( g_DemoProfiler.Start(PROFILE_CHANNEL_RENDER); )
                 mpRenderFlow->OnTimerDone(elapsed, NULL);
                 DEMOPROFILE( g_DemoProfiler.Stop(PROFILE_CHANNEL_RENDER); )
+#ifdef RAD_ANDROID
+                perfRenderUs = (unsigned long long)radTimeGetMicroseconds64() - perfRenderStartUs;
+#endif
             }
         }
         else if (mpPlatform->IsControllerError()) // if controller unplugged
@@ -951,10 +980,22 @@ void Game::Run()
             GCManager::GetInstance()->OnTimerDone( elapsed, NULL );
 #endif
         }
+#ifdef RAD_ANDROID
+        {
+            const unsigned long long perfUpdateEndUs = (unsigned long long)radTimeGetMicroseconds64();
+            const unsigned long long perfUpdateAndRenderUs = perfUpdateEndUs - perfPhaseStartUs;
+            perfUpdateUs = perfUpdateAndRenderUs > perfRenderUs
+                ? perfUpdateAndRenderUs - perfRenderUs : 0;
+            perfPhaseStartUs = perfUpdateEndUs;
+        }
+#endif
 
         //
         // Service FTech subsystems.
         //
+#ifdef RAD_ANDROID
+        perfPhaseStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
         ::radFileService();
         ::radDbgComService();
         ::radDebugConsoleService();
@@ -963,6 +1004,10 @@ void Game::Run()
         {
             ::radMemoryMonitorService();
         }
+#ifdef RAD_ANDROID
+        perfServiceUs = (unsigned long long)radTimeGetMicroseconds64() - perfPhaseStartUs;
+        perfPhaseStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
 
         //
         // Service the sound renderer.
@@ -978,12 +1023,19 @@ void Game::Run()
             //
             SoundManager::GetInstance()->UpdateOncePerFrame( 0, NUM_CONTEXTS, false, true );
         }
+#ifdef RAD_ANDROID
+        perfSoundUs = (unsigned long long)radTimeGetMicroseconds64() - perfPhaseStartUs;
+        perfPhaseStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
 
         //
         // Spin Pure3D async loading.
         //
         DEMOPROFILE( g_DemoProfiler.Start(PROFILE_CHANNEL_LOAD); )
         p3d::loadManager->SwitchTask();
+#ifdef RAD_ANDROID
+        perfLoadUs = (unsigned long long)radTimeGetMicroseconds64() - perfPhaseStartUs;
+#endif
         DEMOPROFILE( g_DemoProfiler.Stop(PROFILE_CHANNEL_LOAD); )
 
         ++mFrameCount;
@@ -1025,6 +1077,66 @@ void Game::Run()
         END_PROFILE( "GameLoop" )
 
         END_PROFILER_FRAME();
+
+#ifdef RAD_ANDROID
+        {
+            const unsigned long long perfLoopEndUs = (unsigned long long)radTimeGetMicroseconds64();
+            const unsigned long long perfLoopUs = perfLoopEndUs - perfLoopStartUs;
+
+            ++perfWindowFrames;
+            perfLoopTotalUs += perfLoopUs;
+            if ( perfLoopUs > perfLoopMaxUs ) perfLoopMaxUs = perfLoopUs;
+            perfTouchTotalUs += perfTouchUs;
+            if ( perfTouchUs > perfTouchMaxUs ) perfTouchMaxUs = perfTouchUs;
+            perfUpdateTotalUs += perfUpdateUs;
+            if ( perfUpdateUs > perfUpdateMaxUs ) perfUpdateMaxUs = perfUpdateUs;
+            perfRenderTotalUs += perfRenderUs;
+            if ( perfRenderUs > perfRenderMaxUs ) perfRenderMaxUs = perfRenderUs;
+            perfServiceTotalUs += perfServiceUs;
+            if ( perfServiceUs > perfServiceMaxUs ) perfServiceMaxUs = perfServiceUs;
+            perfSoundTotalUs += perfSoundUs;
+            if ( perfSoundUs > perfSoundMaxUs ) perfSoundMaxUs = perfSoundUs;
+            perfLoadTotalUs += perfLoadUs;
+            if ( perfLoadUs > perfLoadMaxUs ) perfLoadMaxUs = perfLoadUs;
+
+            if ( perfLoopUs > 50000ULL ) ++perfSlow50Frames;
+            else if ( perfLoopUs > 33333ULL ) ++perfSlow33Frames;
+            else if ( perfLoopUs > 16667ULL ) ++perfSlow16Frames;
+
+            const unsigned long long perfWindowElapsedUs = perfLoopEndUs - perfWindowStartUs;
+            if ( perfWindowElapsedUs >= 1000000ULL && perfWindowFrames > 0 )
+            {
+                const double perfFps = (double)perfWindowFrames * 1000000.0 / (double)perfWindowElapsedUs;
+                const unsigned long long perfMeasuredUs = perfTouchTotalUs + perfUpdateTotalUs +
+                    perfRenderTotalUs + perfServiceTotalUs + perfSoundTotalUs + perfLoadTotalUs;
+                const unsigned long long perfOtherUs = perfLoopTotalUs > perfMeasuredUs
+                    ? perfLoopTotalUs - perfMeasuredUs : 0;
+
+                LOGI("[PERF][GAME] fps=%.1f frames=%u loop_us=%llu/%llu slow16/33/50=%u/%u/%u touch_us=%llu/%llu update_us=%llu/%llu render_us=%llu/%llu service_us=%llu/%llu sound_us=%llu/%llu load_us=%llu/%llu other_us=%llu",
+                     perfFps, perfWindowFrames,
+                     perfLoopTotalUs / perfWindowFrames, perfLoopMaxUs,
+                     perfSlow16Frames, perfSlow33Frames, perfSlow50Frames,
+                     perfTouchTotalUs / perfWindowFrames, perfTouchMaxUs,
+                     perfUpdateTotalUs / perfWindowFrames, perfUpdateMaxUs,
+                     perfRenderTotalUs / perfWindowFrames, perfRenderMaxUs,
+                     perfServiceTotalUs / perfWindowFrames, perfServiceMaxUs,
+                     perfSoundTotalUs / perfWindowFrames, perfSoundMaxUs,
+                     perfLoadTotalUs / perfWindowFrames, perfLoadMaxUs,
+                     perfOtherUs / perfWindowFrames);
+
+                perfWindowStartUs = perfLoopEndUs;
+                perfLoopTotalUs = perfLoopMaxUs = 0;
+                perfTouchTotalUs = perfTouchMaxUs = 0;
+                perfUpdateTotalUs = perfUpdateMaxUs = 0;
+                perfRenderTotalUs = perfRenderMaxUs = 0;
+                perfServiceTotalUs = perfServiceMaxUs = 0;
+                perfSoundTotalUs = perfSoundMaxUs = 0;
+                perfLoadTotalUs = perfLoadMaxUs = 0;
+                perfWindowFrames = 0;
+                perfSlow16Frames = perfSlow33Frames = perfSlow50Frames = 0;
+            }
+        }
+#endif
     }
 }
 
