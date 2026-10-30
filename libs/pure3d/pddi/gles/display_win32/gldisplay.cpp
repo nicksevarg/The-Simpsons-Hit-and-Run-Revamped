@@ -16,6 +16,7 @@
 #include<math.h>
 #include<stdlib.h>
 #include<vector>
+#include<string>
 
 #if defined(RAD_ANDROID)
 #include <jni.h>
@@ -52,47 +53,6 @@ static bool gSHARIrisTransitionActive = false;
 static bool gSHARBloomEnabled = true;
 static bool gSHARCloudShadowsEnabled = true;
 static bool gSHARGraphicsEffectTogglesLoaded = false;
-
-// Diagnostic-only A/B test: keep the complete effects composite enabled for
-// 30 seconds, then direct-resolve the scene without cel outlines, bloom,
-// cloud-shadow composition or motion blur for 30 seconds. The cycle repeats.
-static const Uint32 gSHARDiagnosticCelCompositeIntervalMs = 30000U;
-static bool gSHARDiagnosticCelCompositeInitialized = false;
-static bool gSHARDiagnosticCelCompositeBypassed = false;
-static Uint32 gSHARDiagnosticCelCompositePhaseStartTicks = 0;
-
-bool IsSHARDiagnosticCelCompositeBypassed(void)
-{
-    const Uint32 now = SDL_GetTicks();
-    if (!gSHARDiagnosticCelCompositeInitialized)
-    {
-        gSHARDiagnosticCelCompositeInitialized = true;
-        gSHARDiagnosticCelCompositeBypassed = false;
-        gSHARDiagnosticCelCompositePhaseStartTicks = now;
-        SDL_Log("[PERF][CEL_AB] mode=COMPOSITE_ON interval_ms=%u; bypass mode uses direct scene resolve and excludes cel outlines, bloom, cloud-shadow composition and motion blur",
-            (unsigned int)gSHARDiagnosticCelCompositeIntervalMs);
-    }
-    else
-    {
-        const Uint32 elapsed = now - gSHARDiagnosticCelCompositePhaseStartTicks;
-        if (elapsed >= gSHARDiagnosticCelCompositeIntervalMs)
-        {
-            const Uint32 intervals = elapsed / gSHARDiagnosticCelCompositeIntervalMs;
-            if ((intervals & 1U) != 0U)
-                gSHARDiagnosticCelCompositeBypassed = !gSHARDiagnosticCelCompositeBypassed;
-
-            gSHARDiagnosticCelCompositePhaseStartTicks +=
-                intervals * gSHARDiagnosticCelCompositeIntervalMs;
-
-            SDL_Log("[PERF][CEL_AB] mode=%s interval_ms=%u elapsed_intervals=%u",
-                gSHARDiagnosticCelCompositeBypassed ? "DIRECT_RESOLVE" : "COMPOSITE_ON",
-                (unsigned int)gSHARDiagnosticCelCompositeIntervalMs,
-                (unsigned int)intervals);
-        }
-    }
-
-    return gSHARDiagnosticCelCompositeBypassed;
-}
 
 static void SHARLogAndroidEGLContextState(const char* eventName)
 {
@@ -443,6 +403,7 @@ static float GetSHARMotionBlurTimeScale()
 }
 
 GLuint gCelPostProgram = 0;
+GLuint gCelLitePostProgram = 0;
 GLuint gCelPostTexture = 0;
 GLuint gCelPostVbo = 0;
 GLuint gCelFallbackProgram = 0;
@@ -526,6 +487,45 @@ GLint gCelPostVehicleMaskEnabledLocation = -1;
 GLint gCelPostVehicleMaskPositionLocation = -1;
 GLint gCelPostVehicleMaskSizeLocation = -1;
 GLint gCelPostVehicleMotionIntensityLocation = -1;
+GLint gCelLitePostSceneLocation = -1;
+GLint gCelLitePostTexelLocation = -1;
+GLint gCelLitePostOutlineTexelSizeLocation = -1;
+GLint gCelLitePostFineDetailEnabledLocation = -1;
+GLint gCelLitePostScreenSpaceOutlineEnabledLocation = -1;
+GLint gCelLitePostBloomLocation = -1;
+GLint gCelLitePostBloomStrengthLocation = -1;
+GLint gCelLitePostDepthLocation = -1;
+GLint gCelLitePostDepthAvailableLocation = -1;
+GLint gCelLitePostDepthEdgeDetectionAvailableLocation = -1;
+GLint gCelLitePostCloudShadowEnabledLocation = -1;
+GLint gCelLitePostCloudShadowTimeLocation = -1;
+GLint gCelLitePostCloudShadowStrengthLocation = -1;
+GLint gCelLitePostCelEffectsLocation = -1;
+GLint gCelLitePostMotionBlurEnabledLocation = -1;
+GLint gCelLitePostMotionBlurValidLocation = -1;
+GLint gCelLitePostMotionBlurScaleLocation = -1;
+GLint gCelLitePostCurrentCameraPositionLocation = -1;
+GLint gCelLitePostCurrentCameraRightLocation = -1;
+GLint gCelLitePostCurrentCameraUpLocation = -1;
+GLint gCelLitePostCurrentCameraForwardLocation = -1;
+GLint gCelLitePostPreviousCameraPositionLocation = -1;
+GLint gCelLitePostPreviousCameraRightLocation = -1;
+GLint gCelLitePostPreviousCameraUpLocation = -1;
+GLint gCelLitePostPreviousCameraForwardLocation = -1;
+GLint gCelLitePostCurrentTanHalfFovXLocation = -1;
+GLint gCelLitePostCurrentTanHalfFovYLocation = -1;
+GLint gCelLitePostPreviousTanHalfFovXLocation = -1;
+GLint gCelLitePostPreviousTanHalfFovYLocation = -1;
+GLint gCelLitePostCurrentNearPlaneLocation = -1;
+GLint gCelLitePostCurrentFarPlaneLocation = -1;
+GLint gCelLitePostPreviousNearPlaneLocation = -1;
+GLint gCelLitePostCharacterMaskEnabledLocation = -1;
+GLint gCelLitePostCharacterMaskPositionLocation = -1;
+GLint gCelLitePostCharacterMaskSizeLocation = -1;
+GLint gCelLitePostVehicleMaskEnabledLocation = -1;
+GLint gCelLitePostVehicleMaskPositionLocation = -1;
+GLint gCelLitePostVehicleMaskSizeLocation = -1;
+GLint gCelLitePostVehicleMotionIntensityLocation = -1;
 
 GLuint gCelBloomExtractProgram = 0;
 GLuint gCelBloomBlurProgram = 0;
@@ -1790,6 +1790,7 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    vec4 scene = texture2D(sceneTex, texcoord);\n"
             "    scene.rgb = applyCameraMotionBlur(texcoord, scene.rgb);\n"
             "    vec3 finalColour = scene.rgb;\n"
+            "#ifndef SHAR_LITE_COMPOSITE\n"
             "    if (celEffectsEnabled > 0.5) {\n"
             "\n"
             "    // The object-level toon and expanded-mesh silhouette passes are already in scene.rgb.\n"
@@ -1928,6 +1929,14 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    }\n"
             "    // This world pass runs before GUI/touch rendering; skip the effect during iris transitions.\n"
             "    if (cloudShadowEnabled > 0.5) finalColour = applyWorldCloudShadow(texcoord, finalColour);\n"
+            "#else\n"
+            "    // LITE uses a separate shader variant: no screen-space cel contours,\n"
+            "    // facial detection, fine-detail sampling, cel grading or dithering.\n"
+            "    if (bloomStrength > 0.0)\n"
+            "        finalColour += texture2D(bloomTex, texcoord).rgb * bloomStrength;\n"
+            "    if (cloudShadowEnabled > 0.5)\n"
+            "        finalColour = applyWorldCloudShadow(texcoord, finalColour);\n"
+            "#endif\n"
             "    gl_FragColor = vec4(clamp(finalColour, 0.0, 1.0), 1.0);\n"
             "}\n";
 
@@ -2016,6 +2025,62 @@ static bool EnsureCelPostProcessResources(int width, int height)
         gCelPostVehicleMaskPositionLocation = glGetUniformLocation(gCelPostProgram, "vehicleMaskPosition");
         gCelPostVehicleMaskSizeLocation = glGetUniformLocation(gCelPostProgram, "vehicleMaskSize");
         gCelPostVehicleMotionIntensityLocation = glGetUniformLocation(gCelPostProgram, "vehicleMotionIntensity");
+
+
+        if (gCelLitePostProgram == 0)
+        {
+            const std::string liteFragmentSource =
+                std::string("#define SHAR_LITE_COMPOSITE 1\n") + fragmentSource;
+            gCelLitePostProgram = CreateCelPostProgram(
+                vertexSource, liteFragmentSource.c_str(), "LITE effects composite");
+            if (gCelLitePostProgram != 0)
+            {
+                gCelLitePostSceneLocation = glGetUniformLocation(gCelLitePostProgram, "sceneTex");
+                gCelLitePostTexelLocation = glGetUniformLocation(gCelLitePostProgram, "texelSize");
+                gCelLitePostOutlineTexelSizeLocation = glGetUniformLocation(gCelLitePostProgram, "outlineTexelSize");
+                gCelLitePostFineDetailEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "fineDetailEnabled");
+                gCelLitePostScreenSpaceOutlineEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "screenSpaceOutlinesEnabled");
+                gCelLitePostBloomLocation = glGetUniformLocation(gCelLitePostProgram, "bloomTex");
+                gCelLitePostBloomStrengthLocation = glGetUniformLocation(gCelLitePostProgram, "bloomStrength");
+                gCelLitePostDepthLocation = glGetUniformLocation(gCelLitePostProgram, "depthTex");
+                gCelLitePostDepthAvailableLocation = glGetUniformLocation(gCelLitePostProgram, "depthTextureAvailable");
+                gCelLitePostDepthEdgeDetectionAvailableLocation = glGetUniformLocation(gCelLitePostProgram, "depthEdgeDetectionAvailable");
+                gCelLitePostCloudShadowEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "cloudShadowEnabled");
+                gCelLitePostCloudShadowTimeLocation = glGetUniformLocation(gCelLitePostProgram, "cloudShadowTime");
+                gCelLitePostCloudShadowStrengthLocation = glGetUniformLocation(gCelLitePostProgram, "cloudShadowStrengthMultiplier");
+                gCelLitePostCelEffectsLocation = glGetUniformLocation(gCelLitePostProgram, "celEffectsEnabled");
+                gCelLitePostMotionBlurEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "motionBlurEnabled");
+                gCelLitePostMotionBlurValidLocation = glGetUniformLocation(gCelLitePostProgram, "motionBlurCameraValid");
+                gCelLitePostMotionBlurScaleLocation = glGetUniformLocation(gCelLitePostProgram, "motionBlurTimeScale");
+                gCelLitePostCurrentCameraPositionLocation = glGetUniformLocation(gCelLitePostProgram, "currentCameraPosition");
+                gCelLitePostCurrentCameraRightLocation = glGetUniformLocation(gCelLitePostProgram, "currentCameraRight");
+                gCelLitePostCurrentCameraUpLocation = glGetUniformLocation(gCelLitePostProgram, "currentCameraUp");
+                gCelLitePostCurrentCameraForwardLocation = glGetUniformLocation(gCelLitePostProgram, "currentCameraForward");
+                gCelLitePostPreviousCameraPositionLocation = glGetUniformLocation(gCelLitePostProgram, "previousCameraPosition");
+                gCelLitePostPreviousCameraRightLocation = glGetUniformLocation(gCelLitePostProgram, "previousCameraRight");
+                gCelLitePostPreviousCameraUpLocation = glGetUniformLocation(gCelLitePostProgram, "previousCameraUp");
+                gCelLitePostPreviousCameraForwardLocation = glGetUniformLocation(gCelLitePostProgram, "previousCameraForward");
+                gCelLitePostCurrentTanHalfFovXLocation = glGetUniformLocation(gCelLitePostProgram, "currentTanHalfFovX");
+                gCelLitePostCurrentTanHalfFovYLocation = glGetUniformLocation(gCelLitePostProgram, "currentTanHalfFovY");
+                gCelLitePostPreviousTanHalfFovXLocation = glGetUniformLocation(gCelLitePostProgram, "previousTanHalfFovX");
+                gCelLitePostPreviousTanHalfFovYLocation = glGetUniformLocation(gCelLitePostProgram, "previousTanHalfFovY");
+                gCelLitePostCurrentNearPlaneLocation = glGetUniformLocation(gCelLitePostProgram, "currentNearPlane");
+                gCelLitePostCurrentFarPlaneLocation = glGetUniformLocation(gCelLitePostProgram, "currentFarPlane");
+                gCelLitePostPreviousNearPlaneLocation = glGetUniformLocation(gCelLitePostProgram, "previousNearPlane");
+                gCelLitePostCharacterMaskEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "characterMaskEnabled");
+                gCelLitePostCharacterMaskPositionLocation = glGetUniformLocation(gCelLitePostProgram, "characterMaskPosition");
+                gCelLitePostCharacterMaskSizeLocation = glGetUniformLocation(gCelLitePostProgram, "characterMaskSize");
+                gCelLitePostVehicleMaskEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "vehicleMaskEnabled");
+                gCelLitePostVehicleMaskPositionLocation = glGetUniformLocation(gCelLitePostProgram, "vehicleMaskPosition");
+                gCelLitePostVehicleMaskSizeLocation = glGetUniformLocation(gCelLitePostProgram, "vehicleMaskSize");
+                gCelLitePostVehicleMotionIntensityLocation = glGetUniformLocation(gCelLitePostProgram, "vehicleMotionIntensity");
+            }
+            else
+            {
+                SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                    "[GRAPHICS] LITE effects composite unavailable; using the compatibility path");
+            }
+        }
 
         glGenTextures(1, &gCelPostTexture);
 
@@ -2488,10 +2553,6 @@ static void ApplyCelPostProcess(int width, int height)
     SetSHARCharacterMaskModelPass(false);
     SetSHARCharacterMaskWorldEnabled(false);
 
-    const float motionBlurTimeScale = GetSHARMotionBlurTimeScale();
-    SHARMotionBlurCameraState currentMotionBlurCamera = {};
-    const bool haveCurrentMotionBlurCamera = CaptureSHARMotionBlurCamera(&currentMotionBlurCamera);
-
     if (gSHARFrameWidth > 0 && gSHARFrameHeight > 0)
     {
         width = gSHARFrameWidth;
@@ -2499,6 +2560,8 @@ static void ApplyCelPostProcess(int width, int height)
     }
 
     const bool celEffectsEnabled = IsCelShadingEnabled();
+    const bool celShadingFull = IsSHARCelShadingFull();
+    const bool liteCelShading = !celShadingFull;
     const bool motionBlurRequested = IsMotionBlurEnabled();
     const bool bloomRequested = IsSHARBloomEnabled();
     const bool cloudShadowsUserEnabled = IsSHARCloudShadowsEnabled();
@@ -2506,6 +2569,17 @@ static void ApplyCelPostProcess(int width, int height)
     // Do not key this effect off the iris-transition flag: the world behind the expanding
     // iris is already the exterior again, and toggling shadows here caused a visible blink.
     const bool cloudShadowLevelAllowed = IsSHARWorldCloudShadowLevelAllowed();
+    // Camera reconstruction is required only by motion blur or active cloud shadows.
+    // This leaves the no-effects LITE route free of unnecessary camera queries.
+    const bool needMotionBlurCamera =
+        !liteCelShading || motionBlurRequested ||
+        (cloudShadowsUserEnabled && cloudShadowLevelAllowed && gCelDepthTextureActive);
+    const float motionBlurTimeScale =
+        (!liteCelShading || motionBlurRequested) ? GetSHARMotionBlurTimeScale() : 1.0f;
+    SHARMotionBlurCameraState currentMotionBlurCamera = {};
+    const bool haveCurrentMotionBlurCamera =
+        needMotionBlurCamera && CaptureSHARMotionBlurCamera(&currentMotionBlurCamera);
+
     // Use full-strength cloud shadows on supported levels.
     const float cloudShadowStrengthMultiplier = 1.0f;
     const bool cloudShadowsActive =
@@ -2519,19 +2593,20 @@ static void ApplyCelPostProcess(int width, int height)
         return;
     }
 
-    if (IsSHARDiagnosticCelCompositeBypassed())
+    const bool motionBlurCameraValid =
+        motionBlurRequested && gCelDepthTextureActive && haveCurrentMotionBlurCamera &&
+        IsSHARMotionBlurHistoryUsable(currentMotionBlurCamera, width, height);
+
+    // LITE has already rendered object toon lighting and expanded silhouettes
+    // into the scene texture. With all optional effects disabled, resolve it
+    // directly instead of running either full-screen effects shader.
+    if (liteCelShading && !bloomRequested && !cloudShadowsActive && !motionBlurRequested)
     {
-        // Preserve the rendered scene and GUI, but skip the combined cel/bloom/
-        // cloud-shadow/motion-blur composite for this diagnostic A/B interval.
         ResolveSceneToScreen(width, height);
         CommitSHARMotionBlurCameraHistory(currentMotionBlurCamera,
             haveCurrentMotionBlurCamera, width, height);
         return;
     }
-
-    const bool motionBlurCameraValid =
-        motionBlurRequested && gCelDepthTextureActive && haveCurrentMotionBlurCamera &&
-        IsSHARMotionBlurHistoryUsable(currentMotionBlurCamera, width, height);
 
     if (!celEffectsEnabled && !motionBlurRequested && !cloudShadowsActive && !bloomRequested)
     {
@@ -2638,21 +2713,61 @@ static void ApplyCelPostProcess(int width, int height)
     int outputHeight = height;
     QueryDefaultFramebufferSize(&outputWidth, &outputHeight);
 
-    // Final pass: combine scene, bloom and distance-aware screen-space outlines.
-    // If depth textures are unavailable, bloom and the rest of post-processing continue normally.
+    // FULL keeps its original post-process program. LITE selects a separately
+    // compiled variant containing only the optional effects it actually uses.
+    const bool useLitePostProgram = liteCelShading && gCelLitePostProgram != 0;
+    const GLint postSceneLocation = useLitePostProgram ? gCelLitePostSceneLocation : gCelPostSceneLocation;
+    const GLint postTexelLocation = useLitePostProgram ? gCelLitePostTexelLocation : gCelPostTexelLocation;
+    const GLint postOutlineTexelSizeLocation = useLitePostProgram ? gCelLitePostOutlineTexelSizeLocation : gCelPostOutlineTexelSizeLocation;
+    const GLint postFineDetailEnabledLocation = useLitePostProgram ? gCelLitePostFineDetailEnabledLocation : gCelPostFineDetailEnabledLocation;
+    const GLint postScreenSpaceOutlineEnabledLocation = useLitePostProgram ? gCelLitePostScreenSpaceOutlineEnabledLocation : gCelPostScreenSpaceOutlineEnabledLocation;
+    const GLint postBloomLocation = useLitePostProgram ? gCelLitePostBloomLocation : gCelPostBloomLocation;
+    const GLint postBloomStrengthLocation = useLitePostProgram ? gCelLitePostBloomStrengthLocation : gCelPostBloomStrengthLocation;
+    const GLint postDepthLocation = useLitePostProgram ? gCelLitePostDepthLocation : gCelPostDepthLocation;
+    const GLint postDepthAvailableLocation = useLitePostProgram ? gCelLitePostDepthAvailableLocation : gCelPostDepthAvailableLocation;
+    const GLint postDepthEdgeDetectionAvailableLocation = useLitePostProgram ? gCelLitePostDepthEdgeDetectionAvailableLocation : gCelPostDepthEdgeDetectionAvailableLocation;
+    const GLint postCloudShadowEnabledLocation = useLitePostProgram ? gCelLitePostCloudShadowEnabledLocation : gCelPostCloudShadowEnabledLocation;
+    const GLint postCloudShadowTimeLocation = useLitePostProgram ? gCelLitePostCloudShadowTimeLocation : gCelPostCloudShadowTimeLocation;
+    const GLint postCloudShadowStrengthLocation = useLitePostProgram ? gCelLitePostCloudShadowStrengthLocation : gCelPostCloudShadowStrengthLocation;
+    const GLint postCelEffectsLocation = useLitePostProgram ? gCelLitePostCelEffectsLocation : gCelPostCelEffectsLocation;
+    const GLint postMotionBlurEnabledLocation = useLitePostProgram ? gCelLitePostMotionBlurEnabledLocation : gCelPostMotionBlurEnabledLocation;
+    const GLint postMotionBlurValidLocation = useLitePostProgram ? gCelLitePostMotionBlurValidLocation : gCelPostMotionBlurValidLocation;
+    const GLint postMotionBlurScaleLocation = useLitePostProgram ? gCelLitePostMotionBlurScaleLocation : gCelPostMotionBlurScaleLocation;
+    const GLint postCurrentCameraPositionLocation = useLitePostProgram ? gCelLitePostCurrentCameraPositionLocation : gCelPostCurrentCameraPositionLocation;
+    const GLint postCurrentCameraRightLocation = useLitePostProgram ? gCelLitePostCurrentCameraRightLocation : gCelPostCurrentCameraRightLocation;
+    const GLint postCurrentCameraUpLocation = useLitePostProgram ? gCelLitePostCurrentCameraUpLocation : gCelPostCurrentCameraUpLocation;
+    const GLint postCurrentCameraForwardLocation = useLitePostProgram ? gCelLitePostCurrentCameraForwardLocation : gCelPostCurrentCameraForwardLocation;
+    const GLint postPreviousCameraPositionLocation = useLitePostProgram ? gCelLitePostPreviousCameraPositionLocation : gCelPostPreviousCameraPositionLocation;
+    const GLint postPreviousCameraRightLocation = useLitePostProgram ? gCelLitePostPreviousCameraRightLocation : gCelPostPreviousCameraRightLocation;
+    const GLint postPreviousCameraUpLocation = useLitePostProgram ? gCelLitePostPreviousCameraUpLocation : gCelPostPreviousCameraUpLocation;
+    const GLint postPreviousCameraForwardLocation = useLitePostProgram ? gCelLitePostPreviousCameraForwardLocation : gCelPostPreviousCameraForwardLocation;
+    const GLint postCurrentTanHalfFovXLocation = useLitePostProgram ? gCelLitePostCurrentTanHalfFovXLocation : gCelPostCurrentTanHalfFovXLocation;
+    const GLint postCurrentTanHalfFovYLocation = useLitePostProgram ? gCelLitePostCurrentTanHalfFovYLocation : gCelPostCurrentTanHalfFovYLocation;
+    const GLint postPreviousTanHalfFovXLocation = useLitePostProgram ? gCelLitePostPreviousTanHalfFovXLocation : gCelPostPreviousTanHalfFovXLocation;
+    const GLint postPreviousTanHalfFovYLocation = useLitePostProgram ? gCelLitePostPreviousTanHalfFovYLocation : gCelPostPreviousTanHalfFovYLocation;
+    const GLint postCurrentNearPlaneLocation = useLitePostProgram ? gCelLitePostCurrentNearPlaneLocation : gCelPostCurrentNearPlaneLocation;
+    const GLint postCurrentFarPlaneLocation = useLitePostProgram ? gCelLitePostCurrentFarPlaneLocation : gCelPostCurrentFarPlaneLocation;
+    const GLint postPreviousNearPlaneLocation = useLitePostProgram ? gCelLitePostPreviousNearPlaneLocation : gCelPostPreviousNearPlaneLocation;
+    const GLint postCharacterMaskEnabledLocation = useLitePostProgram ? gCelLitePostCharacterMaskEnabledLocation : gCelPostCharacterMaskEnabledLocation;
+    const GLint postCharacterMaskPositionLocation = useLitePostProgram ? gCelLitePostCharacterMaskPositionLocation : gCelPostCharacterMaskPositionLocation;
+    const GLint postCharacterMaskSizeLocation = useLitePostProgram ? gCelLitePostCharacterMaskSizeLocation : gCelPostCharacterMaskSizeLocation;
+    const GLint postVehicleMaskEnabledLocation = useLitePostProgram ? gCelLitePostVehicleMaskEnabledLocation : gCelPostVehicleMaskEnabledLocation;
+    const GLint postVehicleMaskPositionLocation = useLitePostProgram ? gCelLitePostVehicleMaskPositionLocation : gCelPostVehicleMaskPositionLocation;
+    const GLint postVehicleMaskSizeLocation = useLitePostProgram ? gCelLitePostVehicleMaskSizeLocation : gCelPostVehicleMaskSizeLocation;
+    const GLint postVehicleMotionIntensityLocation = useLitePostProgram ? gCelLitePostVehicleMotionIntensityLocation : gCelPostVehicleMotionIntensityLocation;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, outputWidth, outputHeight);
-    glUseProgram(gCelPostProgram);
+    glUseProgram(useLitePostProgram ? gCelLitePostProgram : gCelPostProgram);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, gCelPostTexture);
-    glUniform1i(gCelPostSceneLocation, 0);
-    if (gCelPostTexelLocation >= 0)
-        glUniform2f(gCelPostTexelLocation, 1.0f / (float)width, 1.0f / (float)height);
+    glUniform1i(postSceneLocation, 0);
+    if (postTexelLocation >= 0)
+        glUniform2f(postTexelLocation, 1.0f / (float)width, 1.0f / (float)height);
 
     // Keep 480p/720p at their existing tuning. Use a fixed 1.00x sampling
     // distance at 1080p and above so fine contours are not skipped at high resolution.
-    if (gCelPostOutlineTexelSizeLocation >= 0)
+    if (postOutlineTexelSizeLocation >= 0)
     {
         float outlineScale = 1.0f;
         if (height <= 480)
@@ -2674,109 +2789,108 @@ static void ApplyCelPostProcess(int width, int height)
             outlineScale *= (float)height / (float)outputHeight;
         }
 
-        glUniform2f(gCelPostOutlineTexelSizeLocation,
+        glUniform2f(postOutlineTexelSizeLocation,
             outlineScale / (float)width, outlineScale / (float)height);
     }
-    const bool celShadingFull = IsSHARCelShadingFull();
-    if (gCelPostFineDetailEnabledLocation >= 0)
-        glUniform1f(gCelPostFineDetailEnabledLocation,
+    if (postFineDetailEnabledLocation >= 0)
+        glUniform1f(postFineDetailEnabledLocation,
             (celShadingFull && height > 1080) ? 1.0f : 0.0f);
-    if (gCelPostScreenSpaceOutlineEnabledLocation >= 0)
-        glUniform1f(gCelPostScreenSpaceOutlineEnabledLocation,
+    if (postScreenSpaceOutlineEnabledLocation >= 0)
+        glUniform1f(postScreenSpaceOutlineEnabledLocation,
             celShadingFull ? 1.0f : 0.0f);
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, bloomReady ? gCelBloomTexture : 0);
-    if (gCelPostBloomLocation >= 0)
-        glUniform1i(gCelPostBloomLocation, 1);
-    if (gCelPostBloomStrengthLocation >= 0)
-        glUniform1f(gCelPostBloomStrengthLocation, bloomReady ? 1.30f : 0.0f);
+    if (postBloomLocation >= 0)
+        glUniform1i(postBloomLocation, 1);
+    if (postBloomStrengthLocation >= 0)
+        glUniform1f(postBloomStrengthLocation, bloomReady ? 1.30f : 0.0f);
 
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, gCelDepthTextureActive ? gCelRenderDepthTexture : gCelPostTexture);
-    if (gCelPostDepthLocation >= 0)
-        glUniform1i(gCelPostDepthLocation, 2);
-    if (gCelPostDepthAvailableLocation >= 0)
-        glUniform1f(gCelPostDepthAvailableLocation, gCelDepthTextureActive ? 1.0f : 0.0f);
-    if (gCelPostDepthEdgeDetectionAvailableLocation >= 0)
-        glUniform1f(gCelPostDepthEdgeDetectionAvailableLocation,
+    if (postDepthLocation >= 0)
+        glUniform1i(postDepthLocation, 2);
+    if (postDepthAvailableLocation >= 0)
+        glUniform1f(postDepthAvailableLocation, gCelDepthTextureActive ? 1.0f : 0.0f);
+    if (postDepthEdgeDetectionAvailableLocation >= 0)
+        glUniform1f(postDepthEdgeDetectionAvailableLocation,
             (gCelDepthTextureActive &&
              haveCurrentMotionBlurCamera &&
              currentMotionBlurCamera.nearPlane > 0.0f &&
              currentMotionBlurCamera.farPlane > currentMotionBlurCamera.nearPlane) ? 1.0f : 0.0f);
-    if (gCelPostCloudShadowEnabledLocation >= 0)
-        glUniform1f(gCelPostCloudShadowEnabledLocation, cloudShadowsActive ? 1.0f : 0.0f);
-    if (gCelPostCloudShadowTimeLocation >= 0)
+    if (postCloudShadowEnabledLocation >= 0)
+        glUniform1f(postCloudShadowEnabledLocation, cloudShadowsActive ? 1.0f : 0.0f);
+    if (postCloudShadowTimeLocation >= 0)
     {
         static Uint32 cloudShadowStartTicks = SDL_GetTicks();
         const Uint32 cloudShadowElapsedTicks = SDL_GetTicks() - cloudShadowStartTicks;
-        glUniform1f(gCelPostCloudShadowTimeLocation,
+        glUniform1f(postCloudShadowTimeLocation,
             (float)cloudShadowElapsedTicks * 0.001f);
     }
-    if (gCelPostCloudShadowStrengthLocation >= 0)
-        glUniform1f(gCelPostCloudShadowStrengthLocation, cloudShadowStrengthMultiplier);
+    if (postCloudShadowStrengthLocation >= 0)
+        glUniform1f(postCloudShadowStrengthLocation, cloudShadowStrengthMultiplier);
 
-    if (gCelPostCelEffectsLocation >= 0)
-        glUniform1f(gCelPostCelEffectsLocation, celEffectsEnabled ? 1.0f : 0.0f);
-    if (gCelPostMotionBlurEnabledLocation >= 0)
-        glUniform1f(gCelPostMotionBlurEnabledLocation, motionBlurRequested ? 1.0f : 0.0f);
-    if (gCelPostMotionBlurValidLocation >= 0)
-        glUniform1f(gCelPostMotionBlurValidLocation, motionBlurCameraValid ? 1.0f : 0.0f);
-    if (gCelPostMotionBlurScaleLocation >= 0)
-        glUniform1f(gCelPostMotionBlurScaleLocation, motionBlurTimeScale);
+    if (postCelEffectsLocation >= 0)
+        glUniform1f(postCelEffectsLocation, celEffectsEnabled ? 1.0f : 0.0f);
+    if (postMotionBlurEnabledLocation >= 0)
+        glUniform1f(postMotionBlurEnabledLocation, motionBlurRequested ? 1.0f : 0.0f);
+    if (postMotionBlurValidLocation >= 0)
+        glUniform1f(postMotionBlurValidLocation, motionBlurCameraValid ? 1.0f : 0.0f);
+    if (postMotionBlurScaleLocation >= 0)
+        glUniform1f(postMotionBlurScaleLocation, motionBlurTimeScale);
 
     if (haveCurrentMotionBlurCamera)
     {
-        if (gCelPostCurrentCameraPositionLocation >= 0)
-            glUniform3f(gCelPostCurrentCameraPositionLocation, currentMotionBlurCamera.position[0], currentMotionBlurCamera.position[1], currentMotionBlurCamera.position[2]);
-        if (gCelPostCurrentCameraRightLocation >= 0)
-            glUniform3f(gCelPostCurrentCameraRightLocation, currentMotionBlurCamera.right[0], currentMotionBlurCamera.right[1], currentMotionBlurCamera.right[2]);
-        if (gCelPostCurrentCameraUpLocation >= 0)
-            glUniform3f(gCelPostCurrentCameraUpLocation, currentMotionBlurCamera.up[0], currentMotionBlurCamera.up[1], currentMotionBlurCamera.up[2]);
-        if (gCelPostCurrentCameraForwardLocation >= 0)
-            glUniform3f(gCelPostCurrentCameraForwardLocation, currentMotionBlurCamera.forward[0], currentMotionBlurCamera.forward[1], currentMotionBlurCamera.forward[2]);
-        if (gCelPostCurrentTanHalfFovXLocation >= 0)
-            glUniform1f(gCelPostCurrentTanHalfFovXLocation, currentMotionBlurCamera.tanHalfFovX);
-        if (gCelPostCurrentTanHalfFovYLocation >= 0)
-            glUniform1f(gCelPostCurrentTanHalfFovYLocation, currentMotionBlurCamera.tanHalfFovY);
-        if (gCelPostCurrentNearPlaneLocation >= 0)
-            glUniform1f(gCelPostCurrentNearPlaneLocation, currentMotionBlurCamera.nearPlane);
-        if (gCelPostCurrentFarPlaneLocation >= 0)
-            glUniform1f(gCelPostCurrentFarPlaneLocation, currentMotionBlurCamera.farPlane);
+        if (postCurrentCameraPositionLocation >= 0)
+            glUniform3f(postCurrentCameraPositionLocation, currentMotionBlurCamera.position[0], currentMotionBlurCamera.position[1], currentMotionBlurCamera.position[2]);
+        if (postCurrentCameraRightLocation >= 0)
+            glUniform3f(postCurrentCameraRightLocation, currentMotionBlurCamera.right[0], currentMotionBlurCamera.right[1], currentMotionBlurCamera.right[2]);
+        if (postCurrentCameraUpLocation >= 0)
+            glUniform3f(postCurrentCameraUpLocation, currentMotionBlurCamera.up[0], currentMotionBlurCamera.up[1], currentMotionBlurCamera.up[2]);
+        if (postCurrentCameraForwardLocation >= 0)
+            glUniform3f(postCurrentCameraForwardLocation, currentMotionBlurCamera.forward[0], currentMotionBlurCamera.forward[1], currentMotionBlurCamera.forward[2]);
+        if (postCurrentTanHalfFovXLocation >= 0)
+            glUniform1f(postCurrentTanHalfFovXLocation, currentMotionBlurCamera.tanHalfFovX);
+        if (postCurrentTanHalfFovYLocation >= 0)
+            glUniform1f(postCurrentTanHalfFovYLocation, currentMotionBlurCamera.tanHalfFovY);
+        if (postCurrentNearPlaneLocation >= 0)
+            glUniform1f(postCurrentNearPlaneLocation, currentMotionBlurCamera.nearPlane);
+        if (postCurrentFarPlaneLocation >= 0)
+            glUniform1f(postCurrentFarPlaneLocation, currentMotionBlurCamera.farPlane);
     }
 
-    if (gCelPostCharacterMaskEnabledLocation >= 0)
-        glUniform1f(gCelPostCharacterMaskEnabledLocation, gSHARMotionBlurCharacterSubject.valid ? 1.0f : 0.0f);
-    if (gCelPostCharacterMaskPositionLocation >= 0 && gSHARMotionBlurCharacterSubject.valid)
-        glUniform3f(gCelPostCharacterMaskPositionLocation, gSHARMotionBlurCharacterSubject.position[0], gSHARMotionBlurCharacterSubject.position[1], gSHARMotionBlurCharacterSubject.position[2]);
-    if (gCelPostCharacterMaskSizeLocation >= 0 && gSHARMotionBlurCharacterSubject.valid)
-        glUniform2f(gCelPostCharacterMaskSizeLocation, gSHARMotionBlurCharacterSubject.halfWidth, gSHARMotionBlurCharacterSubject.halfHeight);
-    if (gCelPostVehicleMaskEnabledLocation >= 0)
-        glUniform1f(gCelPostVehicleMaskEnabledLocation, gSHARMotionBlurVehicleSubject.valid ? 1.0f : 0.0f);
-    if (gCelPostVehicleMaskPositionLocation >= 0 && gSHARMotionBlurVehicleSubject.valid)
-        glUniform3f(gCelPostVehicleMaskPositionLocation, gSHARMotionBlurVehicleSubject.position[0], gSHARMotionBlurVehicleSubject.position[1], gSHARMotionBlurVehicleSubject.position[2]);
-    if (gCelPostVehicleMaskSizeLocation >= 0 && gSHARMotionBlurVehicleSubject.valid)
-        glUniform2f(gCelPostVehicleMaskSizeLocation, gSHARMotionBlurVehicleSubject.halfWidth, gSHARMotionBlurVehicleSubject.halfHeight);
-    if (gCelPostVehicleMotionIntensityLocation >= 0)
-        glUniform1f(gCelPostVehicleMotionIntensityLocation,
+    if (postCharacterMaskEnabledLocation >= 0)
+        glUniform1f(postCharacterMaskEnabledLocation, gSHARMotionBlurCharacterSubject.valid ? 1.0f : 0.0f);
+    if (postCharacterMaskPositionLocation >= 0 && gSHARMotionBlurCharacterSubject.valid)
+        glUniform3f(postCharacterMaskPositionLocation, gSHARMotionBlurCharacterSubject.position[0], gSHARMotionBlurCharacterSubject.position[1], gSHARMotionBlurCharacterSubject.position[2]);
+    if (postCharacterMaskSizeLocation >= 0 && gSHARMotionBlurCharacterSubject.valid)
+        glUniform2f(postCharacterMaskSizeLocation, gSHARMotionBlurCharacterSubject.halfWidth, gSHARMotionBlurCharacterSubject.halfHeight);
+    if (postVehicleMaskEnabledLocation >= 0)
+        glUniform1f(postVehicleMaskEnabledLocation, gSHARMotionBlurVehicleSubject.valid ? 1.0f : 0.0f);
+    if (postVehicleMaskPositionLocation >= 0 && gSHARMotionBlurVehicleSubject.valid)
+        glUniform3f(postVehicleMaskPositionLocation, gSHARMotionBlurVehicleSubject.position[0], gSHARMotionBlurVehicleSubject.position[1], gSHARMotionBlurVehicleSubject.position[2]);
+    if (postVehicleMaskSizeLocation >= 0 && gSHARMotionBlurVehicleSubject.valid)
+        glUniform2f(postVehicleMaskSizeLocation, gSHARMotionBlurVehicleSubject.halfWidth, gSHARMotionBlurVehicleSubject.halfHeight);
+    if (postVehicleMotionIntensityLocation >= 0)
+        glUniform1f(postVehicleMotionIntensityLocation,
             gSHARMotionBlurVehicleSubject.valid ? gSHARMotionBlurVehicleSubject.motionIntensity : 0.0f);
 
     if (motionBlurCameraValid)
     {
-        if (gCelPostPreviousCameraPositionLocation >= 0)
-            glUniform3f(gCelPostPreviousCameraPositionLocation, gSHARPreviousMotionBlurCamera.position[0], gSHARPreviousMotionBlurCamera.position[1], gSHARPreviousMotionBlurCamera.position[2]);
-        if (gCelPostPreviousCameraRightLocation >= 0)
-            glUniform3f(gCelPostPreviousCameraRightLocation, gSHARPreviousMotionBlurCamera.right[0], gSHARPreviousMotionBlurCamera.right[1], gSHARPreviousMotionBlurCamera.right[2]);
-        if (gCelPostPreviousCameraUpLocation >= 0)
-            glUniform3f(gCelPostPreviousCameraUpLocation, gSHARPreviousMotionBlurCamera.up[0], gSHARPreviousMotionBlurCamera.up[1], gSHARPreviousMotionBlurCamera.up[2]);
-        if (gCelPostPreviousCameraForwardLocation >= 0)
-            glUniform3f(gCelPostPreviousCameraForwardLocation, gSHARPreviousMotionBlurCamera.forward[0], gSHARPreviousMotionBlurCamera.forward[1], gSHARPreviousMotionBlurCamera.forward[2]);
-        if (gCelPostPreviousTanHalfFovXLocation >= 0)
-            glUniform1f(gCelPostPreviousTanHalfFovXLocation, gSHARPreviousMotionBlurCamera.tanHalfFovX);
-        if (gCelPostPreviousTanHalfFovYLocation >= 0)
-            glUniform1f(gCelPostPreviousTanHalfFovYLocation, gSHARPreviousMotionBlurCamera.tanHalfFovY);
-        if (gCelPostPreviousNearPlaneLocation >= 0)
-            glUniform1f(gCelPostPreviousNearPlaneLocation, gSHARPreviousMotionBlurCamera.nearPlane);
+        if (postPreviousCameraPositionLocation >= 0)
+            glUniform3f(postPreviousCameraPositionLocation, gSHARPreviousMotionBlurCamera.position[0], gSHARPreviousMotionBlurCamera.position[1], gSHARPreviousMotionBlurCamera.position[2]);
+        if (postPreviousCameraRightLocation >= 0)
+            glUniform3f(postPreviousCameraRightLocation, gSHARPreviousMotionBlurCamera.right[0], gSHARPreviousMotionBlurCamera.right[1], gSHARPreviousMotionBlurCamera.right[2]);
+        if (postPreviousCameraUpLocation >= 0)
+            glUniform3f(postPreviousCameraUpLocation, gSHARPreviousMotionBlurCamera.up[0], gSHARPreviousMotionBlurCamera.up[1], gSHARPreviousMotionBlurCamera.up[2]);
+        if (postPreviousCameraForwardLocation >= 0)
+            glUniform3f(postPreviousCameraForwardLocation, gSHARPreviousMotionBlurCamera.forward[0], gSHARPreviousMotionBlurCamera.forward[1], gSHARPreviousMotionBlurCamera.forward[2]);
+        if (postPreviousTanHalfFovXLocation >= 0)
+            glUniform1f(postPreviousTanHalfFovXLocation, gSHARPreviousMotionBlurCamera.tanHalfFovX);
+        if (postPreviousTanHalfFovYLocation >= 0)
+            glUniform1f(postPreviousTanHalfFovYLocation, gSHARPreviousMotionBlurCamera.tanHalfFovY);
+        if (postPreviousNearPlaneLocation >= 0)
+            glUniform1f(postPreviousNearPlaneLocation, gSHARPreviousMotionBlurCamera.nearPlane);
     }
 
     glActiveTexture(GL_TEXTURE0);
