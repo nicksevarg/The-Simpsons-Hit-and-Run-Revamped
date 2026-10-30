@@ -79,6 +79,7 @@
 
 #ifdef RAD_ANDROID
 extern void SHARMarkFrameRenderedForPresentation(void);
+extern bool IsSHARDiagnosticCelCompositeBypassed(void);
 #endif
 
 #include <presentation/presentation.h>
@@ -115,7 +116,76 @@ extern void SHARMarkFrameRenderedForPresentation(void);
   #define LOGI(...) do { std::printf(__VA_ARGS__); std::printf("\n"); std::fflush(stdout); } while(0)
   #define LOGE(...) do { std::printf(__VA_ARGS__); std::printf("\n"); std::fflush(stdout); } while(0)
 #endif
-//******************************************************************************
+
+#ifdef RAD_ANDROID
+static void SHARRecordCelCompositeABFrame(
+    bool compositeBypassed,
+    unsigned long long frameStartUs,
+    unsigned long long frameEndUs,
+    unsigned long long frameUs,
+    unsigned long long swapUs,
+    unsigned long long layersWallUs,
+    unsigned long long celPreUs)
+{
+    static bool initialized = false;
+    static bool activeBypassed = false;
+    static unsigned long long intervalStartUs = 0;
+    static unsigned long long frames = 0;
+    static unsigned long long frameTotalUs = 0;
+    static unsigned long long frameMaxUs = 0;
+    static unsigned long long swapTotalUs = 0;
+    static unsigned long long layersTotalUs = 0;
+    static unsigned long long celPreTotalUs = 0;
+
+    if (!initialized)
+    {
+        initialized = true;
+        activeBypassed = compositeBypassed;
+        intervalStartUs = frameStartUs;
+        LOGI("[PERF][CEL_AB] mode=%s interval_ms=30000",
+            activeBypassed ? "DIRECT_RESOLVE" : "COMPOSITE_ON");
+    }
+    else if (activeBypassed != compositeBypassed)
+    {
+        const unsigned long long elapsedUs =
+            frameStartUs > intervalStartUs ? frameStartUs - intervalStartUs : 0;
+        const double intervalFps = elapsedUs > 0 ?
+            (double)frames * 1000000.0 / (double)elapsedUs : 0.0;
+
+        LOGI("[PERF][CEL_AB] result mode=%s frames=%llu elapsed_ms=%llu fps=%.1f frame_us=%llu/%llu swap_us=%llu layers_wall_us=%llu cel_pre_us=%llu",
+            activeBypassed ? "DIRECT_RESOLVE" : "COMPOSITE_ON",
+            frames,
+            elapsedUs / 1000ULL,
+            intervalFps,
+            frames > 0 ? frameTotalUs / frames : 0,
+            frameMaxUs,
+            frames > 0 ? swapTotalUs / frames : 0,
+            frames > 0 ? layersTotalUs / frames : 0,
+            frames > 0 ? celPreTotalUs / frames : 0);
+
+        activeBypassed = compositeBypassed;
+        intervalStartUs = frameStartUs;
+        frames = 0;
+        frameTotalUs = frameMaxUs = 0;
+        swapTotalUs = layersTotalUs = celPreTotalUs = 0;
+
+        LOGI("[PERF][CEL_AB] mode=%s interval_ms=30000",
+            activeBypassed ? "DIRECT_RESOLVE" : "COMPOSITE_ON");
+    }
+
+    ++frames;
+    frameTotalUs += frameUs;
+    if (frameUs > frameMaxUs)
+        frameMaxUs = frameUs;
+    swapTotalUs += swapUs;
+    layersTotalUs += layersWallUs;
+    celPreTotalUs += celPreUs;
+
+    (void)frameEndUs;
+}
+#endif
+
+//****************************************************************************** 
 //
 // Global Data, Local Data, Local Classes
 //
@@ -758,6 +828,10 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
 #endif
     END_PROFILE("Swap Buffers");
 
+#ifdef RAD_ANDROID
+    const bool perfCelCompositeBypassed = IsSHARDiagnosticCelCompositeBypassed();
+#endif
+
 #if defined( RAD_XBOX ) || defined ( RAD_GAMECUBE ) || defined( RAD_WIN32 )
     LoadingManager *lm = GetLoadingManager();
     PresentationManager *pm = GetPresentationManager();
@@ -983,6 +1057,15 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
     {
         const unsigned long long perfRenderFrameEndUs = (unsigned long long)radTimeGetMicroseconds64();
         const unsigned long long perfRenderFrameUs = perfRenderFrameEndUs - perfRenderFrameStartUs;
+
+        SHARRecordCelCompositeABFrame(
+            perfCelCompositeBypassed,
+            perfRenderFrameStartUs,
+            perfRenderFrameEndUs,
+            perfRenderFrameUs,
+            perfSwapUs,
+            perfLayersWallUs,
+            perfCelPreUs);
 
         static unsigned long long perfWindowStartUs = 0;
         static unsigned long long perfFrameTotalUs = 0, perfFrameMaxUs = 0;

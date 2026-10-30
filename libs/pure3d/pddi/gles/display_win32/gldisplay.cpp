@@ -52,6 +52,75 @@ static bool gSHARBloomEnabled = true;
 static bool gSHARCloudShadowsEnabled = true;
 static bool gSHARGraphicsEffectTogglesLoaded = false;
 
+// Diagnostic-only A/B test: keep the complete effects composite enabled for
+// 30 seconds, then direct-resolve the scene without cel outlines, bloom,
+// cloud-shadow composition or motion blur for 30 seconds. The cycle repeats.
+static const Uint32 gSHARDiagnosticCelCompositeIntervalMs = 30000U;
+static bool gSHARDiagnosticCelCompositeInitialized = false;
+static bool gSHARDiagnosticCelCompositeBypassed = false;
+static Uint32 gSHARDiagnosticCelCompositePhaseStartTicks = 0;
+
+bool IsSHARDiagnosticCelCompositeBypassed(void)
+{
+    const Uint32 now = SDL_GetTicks();
+    if (!gSHARDiagnosticCelCompositeInitialized)
+    {
+        gSHARDiagnosticCelCompositeInitialized = true;
+        gSHARDiagnosticCelCompositeBypassed = false;
+        gSHARDiagnosticCelCompositePhaseStartTicks = now;
+        SDL_Log("[PERF][CEL_AB] mode=COMPOSITE_ON interval_ms=%u; bypass mode uses direct scene resolve and excludes cel outlines, bloom, cloud-shadow composition and motion blur",
+            (unsigned int)gSHARDiagnosticCelCompositeIntervalMs);
+    }
+    else
+    {
+        const Uint32 elapsed = now - gSHARDiagnosticCelCompositePhaseStartTicks;
+        if (elapsed >= gSHARDiagnosticCelCompositeIntervalMs)
+        {
+            const Uint32 intervals = elapsed / gSHARDiagnosticCelCompositeIntervalMs;
+            if ((intervals & 1U) != 0U)
+                gSHARDiagnosticCelCompositeBypassed = !gSHARDiagnosticCelCompositeBypassed;
+
+            gSHARDiagnosticCelCompositePhaseStartTicks +=
+                intervals * gSHARDiagnosticCelCompositeIntervalMs;
+
+            SDL_Log("[PERF][CEL_AB] mode=%s interval_ms=%u elapsed_intervals=%u",
+                gSHARDiagnosticCelCompositeBypassed ? "DIRECT_RESOLVE" : "COMPOSITE_ON",
+                (unsigned int)gSHARDiagnosticCelCompositeIntervalMs,
+                (unsigned int)intervals);
+        }
+    }
+
+    return gSHARDiagnosticCelCompositeBypassed;
+}
+
+static void SHARLogAndroidEGLContextState(const char* eventName)
+{
+    const EGLDisplay currentDisplay = eglGetCurrentDisplay();
+    const EGLContext currentContext = eglGetCurrentContext();
+    const EGLSurface drawSurface = eglGetCurrentSurface(EGL_DRAW);
+    const EGLSurface readSurface = eglGetCurrentSurface(EGL_READ);
+    const SDL_GLContext sdlContext = SDL_GL_GetCurrentContext();
+
+    const char* version = "(no current EGL context)";
+    if (currentContext != EGL_NO_CONTEXT)
+    {
+        const GLubyte* versionString = glGetString(GL_VERSION);
+        if (versionString != NULL)
+            version = reinterpret_cast<const char*>(versionString);
+        else
+            version = "(glGetString returned null)";
+    }
+
+    SDL_Log("[GRAPHICS][LIFECYCLE] event=%s sdl_context=%p egl_display=%p egl_context=%p egl_draw=%p egl_read=%p gl_version=%s",
+        eventName != NULL ? eventName : "unknown",
+        reinterpret_cast<void*>(sdlContext),
+        reinterpret_cast<void*>(currentDisplay),
+        reinterpret_cast<void*>(currentContext),
+        reinterpret_cast<void*>(drawSurface),
+        reinterpret_cast<void*>(readSurface),
+        version);
+}
+
 static bool ReadSHARGraphicsToggleFile(const char* filename, bool defaultValue)
 {
     const char* basePath = SDL_AndroidGetApplicationExternalFilesPath();
@@ -2334,6 +2403,7 @@ static void RecreateSHARTexture(GLuint& texture)
 
 static void ResetAndroidPostProcess()
 {
+    SHARLogAndroidEGLContextState("postprocess-resource-reset");
     InvalidateSHARTrackedColorWriteMaskCache();
     InvalidateCelRenderTargetValidationCache();
     // Detach the old texture storage from FBOs before replacing texture names.
@@ -2431,6 +2501,16 @@ static void ApplyCelPostProcess(int width, int height)
     {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         CommitSHARMotionBlurCameraHistory(currentMotionBlurCamera, false, width, height);
+        return;
+    }
+
+    if (IsSHARDiagnosticCelCompositeBypassed())
+    {
+        // Preserve the rendered scene and GUI, but skip the combined cel/bloom/
+        // cloud-shadow/motion-blur composite for this diagnostic A/B interval.
+        ResolveSceneToScreen(width, height);
+        CommitSHARMotionBlurCameraHistory(currentMotionBlurCamera,
+            haveCurrentMotionBlurCamera, width, height);
         return;
     }
 
@@ -3776,6 +3856,10 @@ void pglDisplay::CommitPendingResize()
         return;
     }
 
+    SDL_Log("[GRAPHICS][LIFECYCLE] event=render-target-resize serial=%d old=%dx%d new=%dx%d",
+        serial, winWidth, winHeight, requestedWidth, requestedHeight);
+    SHARLogAndroidEGLContextState("render-target-resize");
+
     winWidth = requestedWidth;
     winHeight = requestedHeight;
     committedSerial = serial;
@@ -3823,6 +3907,9 @@ pglDisplay ::pglDisplay(pddiDisplayInfo* info)
 pglDisplay ::~pglDisplay()
 {
 #ifdef RAD_ANDROID
+    SHARLogAndroidEGLContextState("display-destroy");
+    SDL_Log("[GRAPHICS][LIFECYCLE] event=display-destroy stored_context=%p window=%p",
+        reinterpret_cast<void*>(hRC), reinterpret_cast<void*>(win));
     InvalidateSHARTrackedColorWriteMaskCache();
     InvalidateCelRenderTargetValidationCache();
     if (gCelRenderDepth)
@@ -3887,6 +3974,8 @@ long pglDisplay ::ProcessWindowMessage(SDL_Window* win, const SDL_WindowEvent* e
         case SDL_WINDOWEVENT_SIZE_CHANGED:
         {
 #if defined(RAD_ANDROID)
+            SDL_Log("[GRAPHICS][LIFECYCLE] event=sdl-window-size-changed data=%dx%d committed_render=%dx%d",
+                event->data1, event->data2, winWidth, winHeight);
             // Android Surface callbacks run on the UI thread. Do not mutate
             // active PDDI dimensions or call OpenGL here; the GL thread commits
             // the latest confirmed target from BeginFrame().
@@ -4058,7 +4147,14 @@ bool pglDisplay ::InitDisplay(const pddiDisplayInit* init)
     winBitDepth = bpp;
 
     if (hRC)
+    {
+#ifdef RAD_ANDROID
+        SHARLogAndroidEGLContextState("display-init-reused-context");
+        SDL_Log("[GRAPHICS][LIFECYCLE] event=display-init-reused-context stored_context=%p window=%p size=%dx%d",
+            reinterpret_cast<void*>(hRC), reinterpret_cast<void*>(win), winWidth, winHeight);
+#endif
         return true;
+    }
 
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, bpp == 16 ? 5 : 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, bpp == 16 ? 6 : 8);
@@ -4152,6 +4248,9 @@ bool pglDisplay ::InitDisplay(const pddiDisplayInit* init)
     SDL_Log("OpenGL - Vendor: %s, Renderer: %s, Version: %s",glVendor,glRenderer,glVersion);
 #ifdef RAD_ANDROID
     SHARLogGraphicsCapabilities();
+    SHARLogAndroidEGLContextState("display-context-created");
+    SDL_Log("[GRAPHICS][LIFECYCLE] event=display-context-created stored_context=%p window=%p size=%dx%d",
+        reinterpret_cast<void*>(hRC), reinterpret_cast<void*>(win), winWidth, winHeight);
 #endif
 
 #if defined RAD_DEBUG && !defined RAD_VITA
@@ -4401,7 +4500,22 @@ void pglDisplay::SwapBuffers(void)
             sPresentPerfFrames > 0)
         {
             const double ticksToUs = 1000000.0 / (double)sPresentPerfFrequency;
-            SDL_Log("[PERF][PRESENT] frames=%llu fresh=%llu post_us=%llu/%llu gl_swap_us=%llu/%llu fps_cap_us=%llu/%llu",
+            const EGLDisplay currentDisplay = eglGetCurrentDisplay();
+            const EGLContext currentContext = eglGetCurrentContext();
+            const EGLSurface drawSurface = eglGetCurrentSurface(EGL_DRAW);
+            const EGLSurface readSurface = eglGetCurrentSurface(EGL_READ);
+            const SDL_GLContext sdlContext = SDL_GL_GetCurrentContext();
+            const char* glVersion = "(no current EGL context)";
+            if (currentContext != EGL_NO_CONTEXT)
+            {
+                const GLubyte* versionString = glGetString(GL_VERSION);
+                if (versionString != NULL)
+                    glVersion = reinterpret_cast<const char*>(versionString);
+                else
+                    glVersion = "(glGetString returned null)";
+            }
+
+            SDL_Log("[PERF][PRESENT] frames=%llu fresh=%llu post_us=%llu/%llu gl_swap_us=%llu/%llu fps_cap_us=%llu/%llu stored_context=%p window=%p sdl_context=%p egl_display=%p egl_context=%p egl_draw=%p egl_read=%p gl_version=%s",
                 (unsigned long long)sPresentPerfFrames,
                 (unsigned long long)sPresentPerfFreshFrames,
                 (unsigned long long)((double)sPresentPerfPostTotalTicks / (double)sPresentPerfFrames * ticksToUs),
@@ -4409,7 +4523,15 @@ void pglDisplay::SwapBuffers(void)
                 (unsigned long long)((double)sPresentPerfSwapTotalTicks / (double)sPresentPerfFrames * ticksToUs),
                 (unsigned long long)((double)sPresentPerfSwapMaxTicks * ticksToUs),
                 (unsigned long long)((double)sPresentPerfCapTotalTicks / (double)sPresentPerfFrames * ticksToUs),
-                (unsigned long long)((double)sPresentPerfCapMaxTicks * ticksToUs));
+                (unsigned long long)((double)sPresentPerfCapMaxTicks * ticksToUs),
+                reinterpret_cast<void*>(hRC),
+                reinterpret_cast<void*>(win),
+                reinterpret_cast<void*>(sdlContext),
+                reinterpret_cast<void*>(currentDisplay),
+                reinterpret_cast<void*>(currentContext),
+                reinterpret_cast<void*>(drawSurface),
+                reinterpret_cast<void*>(readSurface),
+                glVersion);
 
             sPresentPerfWindowStartTicks = presentNowTicks;
             sPresentPerfFrames = 0;
