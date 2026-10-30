@@ -23,6 +23,9 @@
 #include <EGL/egl.h>
 #include <sys/stat.h>
 
+extern int gSHARRequestedOpenGLESVersionMajor;
+extern int gSHARActiveOpenGLESVersionMajor;
+
 bool IsCelShadingEnabled();
 bool IsSHARFrontendMenuCelPassActive();
 bool IsMotionBlurEnabled();
@@ -380,6 +383,17 @@ GLint gCelFallbackTextureLocation = -1;
 static int gSHARFrameWidth = 0;
 static int gSHARFrameHeight = 0;
 static bool gCelWorldInFbo = false;
+
+// Optional post-processing uses VAOs. Resolve GLES 3.0 core functions or the
+// GLES 2.0 OES extension rather than assuming OES entry points always exist.
+static bool gSHARVertexArrayObjectsSupported = false;
+static bool gSHARVertexArrayOESAdvertised = false;
+static bool gSHARDepthTextureOESAdvertised = false;
+static bool gSHARFramebufferSupportAvailable = false;
+static const char* gSHARVertexArrayProvider = "unavailable";
+static PFNGLGENVERTEXARRAYSOESPROC gSHARGenVertexArraysProc = NULL;
+static PFNGLBINDVERTEXARRAYOESPROC gSHARBindVertexArrayProc = NULL;
+static PFNGLDELETEVERTEXARRAYSOESPROC gSHARDeleteVertexArraysProc = NULL;
 // Tracks whether full-frame filters have already run before touch controls.
 static bool gSHARPostProcessAppliedBeforeTouchHud = false;
 // Set at RenderManager::ContextUpdate's end; prevents applying post-processing
@@ -518,6 +532,270 @@ int gCRTFailedHeight = 0;
 // allow a 128 MiB test budget while retaining per-target GL allocation checks.
 static const size_t SHAR_POSTPROCESS_BUDGET_BYTES =
     (size_t)128 * 1024 * 1024;
+
+static void SHARConfigureVertexArrayFunctions(int actualMajor)
+{
+    gSHARGenVertexArraysProc = NULL;
+    gSHARBindVertexArrayProc = NULL;
+    gSHARDeleteVertexArraysProc = NULL;
+    gSHARVertexArrayProvider = "unavailable";
+
+    // Vertex array objects are core in GLES 3.0; GLES 2.0 devices may expose
+    // the same API through GL_OES_vertex_array_object.
+    if (actualMajor >= 3)
+    {
+        gSHARGenVertexArraysProc =
+            reinterpret_cast<PFNGLGENVERTEXARRAYSOESPROC>(SDL_GL_GetProcAddress("glGenVertexArrays"));
+        gSHARBindVertexArrayProc =
+            reinterpret_cast<PFNGLBINDVERTEXARRAYOESPROC>(SDL_GL_GetProcAddress("glBindVertexArray"));
+        gSHARDeleteVertexArraysProc =
+            reinterpret_cast<PFNGLDELETEVERTEXARRAYSOESPROC>(SDL_GL_GetProcAddress("glDeleteVertexArrays"));
+
+        if (gSHARGenVertexArraysProc != NULL &&
+            gSHARBindVertexArrayProc != NULL &&
+            gSHARDeleteVertexArraysProc != NULL)
+        {
+            gSHARVertexArrayProvider = "OpenGL ES 3.x core";
+        }
+    }
+
+    gSHARVertexArrayOESAdvertised =
+        SDL_GL_ExtensionSupported("GL_OES_vertex_array_object") == SDL_TRUE ||
+        GLAD_GL_OES_vertex_array_object != 0;
+
+    if (gSHARGenVertexArraysProc == NULL ||
+        gSHARBindVertexArrayProc == NULL ||
+        gSHARDeleteVertexArraysProc == NULL)
+    {
+        if (gSHARVertexArrayOESAdvertised)
+        {
+            gSHARGenVertexArraysProc = glad_glGenVertexArraysOES != NULL
+                ? glad_glGenVertexArraysOES
+                : reinterpret_cast<PFNGLGENVERTEXARRAYSOESPROC>(SDL_GL_GetProcAddress("glGenVertexArraysOES"));
+            gSHARBindVertexArrayProc = glad_glBindVertexArrayOES != NULL
+                ? glad_glBindVertexArrayOES
+                : reinterpret_cast<PFNGLBINDVERTEXARRAYOESPROC>(SDL_GL_GetProcAddress("glBindVertexArrayOES"));
+            gSHARDeleteVertexArraysProc = glad_glDeleteVertexArraysOES != NULL
+                ? glad_glDeleteVertexArraysOES
+                : reinterpret_cast<PFNGLDELETEVERTEXARRAYSOESPROC>(SDL_GL_GetProcAddress("glDeleteVertexArraysOES"));
+
+            if (gSHARGenVertexArraysProc != NULL &&
+                gSHARBindVertexArrayProc != NULL &&
+                gSHARDeleteVertexArraysProc != NULL)
+            {
+                gSHARVertexArrayProvider = "GL_OES_vertex_array_object";
+            }
+        }
+    }
+
+    gSHARVertexArrayObjectsSupported =
+        gSHARGenVertexArraysProc != NULL &&
+        gSHARBindVertexArrayProc != NULL &&
+        gSHARDeleteVertexArraysProc != NULL;
+}
+
+static void SHARBindVertexArray(GLuint array)
+{
+    if (gSHARVertexArrayObjectsSupported && gSHARBindVertexArrayProc != NULL)
+        gSHARBindVertexArrayProc(array);
+}
+
+static void SHARGenVertexArrays(GLsizei count, GLuint* arrays)
+{
+    if (arrays == NULL)
+        return;
+
+    if (gSHARVertexArrayObjectsSupported && gSHARGenVertexArraysProc != NULL)
+    {
+        gSHARGenVertexArraysProc(count, arrays);
+        return;
+    }
+
+    for (GLsizei i = 0; i < count; ++i)
+        arrays[i] = 0;
+}
+
+static GLint SHARGetBoundVertexArray()
+{
+    GLint array = 0;
+    if (gSHARVertexArrayObjectsSupported)
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING_OES, &array);
+    return array;
+}
+
+static bool SHARValidateFramebufferSupport()
+{
+    if (glad_glGenFramebuffers == NULL ||
+        glad_glBindFramebuffer == NULL ||
+        glad_glFramebufferTexture2D == NULL ||
+        glad_glCheckFramebufferStatus == NULL ||
+        glad_glDeleteFramebuffers == NULL ||
+        glad_glGenRenderbuffers == NULL ||
+        glad_glBindRenderbuffer == NULL ||
+        glad_glRenderbufferStorage == NULL ||
+        glad_glFramebufferRenderbuffer == NULL ||
+        glad_glDeleteRenderbuffers == NULL ||
+        glad_glGenTextures == NULL ||
+        glad_glBindTexture == NULL ||
+        glad_glTexParameteri == NULL ||
+        glad_glTexImage2D == NULL ||
+        glad_glDeleteTextures == NULL ||
+        glad_glGetIntegerv == NULL ||
+        glad_glActiveTexture == NULL ||
+        glad_glGetError == NULL)
+    {
+        return false;
+    }
+
+    // Isolate this capability probe from earlier startup GL errors.
+    while (glGetError() != GL_NO_ERROR)
+    {
+    }
+
+    GLint previousFramebuffer = 0;
+    GLint previousRenderbuffer = 0;
+    GLint previousActiveTexture = GL_TEXTURE0;
+    GLint previousTexture = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    glGetIntegerv(GL_RENDERBUFFER_BINDING, &previousRenderbuffer);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+
+    GLuint framebuffer = 0;
+    GLuint colourTexture = 0;
+    GLuint depthRenderbuffer = 0;
+    glGenFramebuffers(1, &framebuffer);
+    glGenTextures(1, &colourTexture);
+    glGenRenderbuffers(1, &depthRenderbuffer);
+
+    GLenum status = 0;
+    if (framebuffer != 0 && colourTexture != 0 && depthRenderbuffer != 0)
+    {
+        glBindTexture(GL_TEXTURE_2D, colourTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        glFramebufferTexture2D(
+            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colourTexture, 0);
+
+        glBindRenderbuffer(GL_RENDERBUFFER, depthRenderbuffer);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, 4, 4);
+        glFramebufferRenderbuffer(
+            GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRenderbuffer);
+
+        status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    }
+
+    const GLenum error = glGetError();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)previousFramebuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, (GLuint)previousRenderbuffer);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)previousTexture);
+    glActiveTexture((GLenum)previousActiveTexture);
+
+    if (framebuffer != 0)
+        glDeleteFramebuffers(1, &framebuffer);
+    if (depthRenderbuffer != 0)
+        glDeleteRenderbuffers(1, &depthRenderbuffer);
+    if (colourTexture != 0)
+        glDeleteTextures(1, &colourTexture);
+
+    return framebuffer != 0 &&
+        colourTexture != 0 &&
+        depthRenderbuffer != 0 &&
+        status == GL_FRAMEBUFFER_COMPLETE &&
+        error == GL_NO_ERROR;
+}
+
+static void SHARLogGraphicsCapabilities()
+{
+    const GLubyte* vendorString = glGetString(GL_VENDOR);
+    const GLubyte* rendererString = glGetString(GL_RENDERER);
+    const GLubyte* versionString = glGetString(GL_VERSION);
+
+    int actualMajor = 0;
+    int actualMinor = 0;
+    if (versionString != NULL)
+    {
+        const char* versionNumbers = reinterpret_cast<const char*>(versionString);
+        const char* esPrefix = strstr(versionNumbers, "OpenGL ES");
+        if (esPrefix != NULL)
+            versionNumbers = esPrefix + strlen("OpenGL ES");
+        while (*versionNumbers != '\0' &&
+               (*versionNumbers < '0' || *versionNumbers > '9'))
+        {
+            ++versionNumbers;
+        }
+        if (sscanf(versionNumbers, "%d.%d", &actualMajor, &actualMinor) != 2)
+        {
+            actualMajor = 0;
+            actualMinor = 0;
+        }
+    }
+
+    gSHARDepthTextureOESAdvertised =
+        SDL_GL_ExtensionSupported("GL_OES_depth_texture") == SDL_TRUE;
+    // GLES 3.0 includes depth textures in core; GLES 2.0 requires the OES extension.
+    gCelDepthTextureExtensionAvailable =
+        actualMajor >= 3 || gSHARDepthTextureOESAdvertised;
+    gCelDepthExtensionChecked = true;
+
+    SHARConfigureVertexArrayFunctions(actualMajor);
+    gSHARFramebufferSupportAvailable = SHARValidateFramebufferSupport();
+
+    SDL_Log("[GRAPHICS] Requested OpenGL ES: %d.0",
+        gSHARRequestedOpenGLESVersionMajor);
+    if (gSHARActiveOpenGLESVersionMajor != gSHARRequestedOpenGLESVersionMajor)
+        SDL_Log("[GRAPHICS] SDL selected ES %d.0 before context creation",
+            gSHARActiveOpenGLESVersionMajor);
+
+    if (actualMajor > 0)
+        SDL_Log("[GRAPHICS] Actual OpenGL ES: %d.%d (%s)",
+            actualMajor, actualMinor,
+            versionString != NULL ? reinterpret_cast<const char*>(versionString) : "unknown");
+    else
+        SDL_Log("[GRAPHICS] Actual OpenGL ES: unknown (%s)",
+            versionString != NULL ? reinterpret_cast<const char*>(versionString) : "no version string");
+
+    SDL_Log("[GRAPHICS] Vendor: %s",
+        vendorString != NULL ? reinterpret_cast<const char*>(vendorString) : "unknown");
+    SDL_Log("[GRAPHICS] Renderer: %s",
+        rendererString != NULL ? reinterpret_cast<const char*>(rendererString) : "unknown");
+
+    if (actualMajor >= 3)
+        SDL_Log("[GRAPHICS] OES_depth_texture: NOT REQUIRED (depth textures are GLES 3.x core)");
+    else if (gSHARDepthTextureOESAdvertised)
+        SDL_Log("[GRAPHICS] OES_depth_texture: SUPPORTED");
+    else
+        SDL_Log("[GRAPHICS] OES_depth_texture: NOT SUPPORTED (using depth renderbuffer fallback)");
+
+    if (gSHARVertexArrayOESAdvertised)
+        SDL_Log("[GRAPHICS] OES_vertex_array_object: SUPPORTED");
+    else if (actualMajor >= 3 && gSHARVertexArrayObjectsSupported)
+        SDL_Log("[GRAPHICS] OES_vertex_array_object: NOT ADVERTISED; using GLES 3.x core VAOs");
+    else
+        SDL_Log("[GRAPHICS] OES_vertex_array_object: NOT SUPPORTED");
+
+    if (gSHARVertexArrayObjectsSupported)
+        SDL_Log("[GRAPHICS] Vertex array objects: READY (%s)", gSHARVertexArrayProvider);
+    else
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+            "[GRAPHICS] Vertex array objects: UNAVAILABLE (optional fullscreen post-processing will be bypassed)");
+
+    SDL_Log("[GRAPHICS] Framebuffer support: %s (colour + depth attachment test)",
+        gSHARFramebufferSupportAvailable ? "OK" : "UNAVAILABLE");
+
+    if (!gSHARFramebufferSupportAvailable)
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+            "[GRAPHICS] Cel/bloom offscreen rendering will be bypassed");
+}
+
 // Driver limits are constant for the lifetime of a GL context. Cache them so
 // repeated target checks avoid redundant glGetIntegerv calls.
 static GLint gSHARCachedMaxTextureSize = 0;
@@ -803,6 +1081,8 @@ static GLuint CreateCelPostProgram(const char* vertexSource, const char* fragmen
     GLuint fs = CompileCelPostShader(GL_FRAGMENT_SHADER, fragmentSource);
     if (vs == 0 || fs == 0)
     {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GRAPHICS] %s shader compilation: FAILED",
+            label ? label : "Optional post-process");
         if (vs) glDeleteShader(vs);
         if (fs) glDeleteShader(fs);
         return 0;
@@ -827,8 +1107,15 @@ static GLuint CreateCelPostProgram(const char* vertexSource, const char* fragmen
             SDL_LogError(SDL_LOG_CATEGORY_RENDER, "%s shader program link failed: %s",
                 label ? label : "Cel post-process", log.data());
         }
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GRAPHICS] %s shader program link: FAILED",
+            label ? label : "Optional post-process");
         glDeleteProgram(program);
         program = 0;
+    }
+    else
+    {
+        SDL_Log("[GRAPHICS] %s shader compilation/link: OK",
+            label ? label : "Optional post-process");
     }
 
     glDeleteShader(vs);
@@ -1564,8 +1851,11 @@ static bool EnsureCelPostProcessResources(int width, int height)
         GLuint fs = CompileCelPostShader(GL_FRAGMENT_SHADER, fragmentSource);
         if (vs == 0 || fs == 0)
         {
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GRAPHICS] Cel shader compilation: FAILED");
             if (vs) glDeleteShader(vs);
             if (fs) glDeleteShader(fs);
+            gCelPostFailedWidth = width;
+            gCelPostFailedHeight = height;
             return false;
         }
 
@@ -1588,13 +1878,17 @@ static bool EnsureCelPostProcessResources(int width, int height)
                 SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Cel post-process program link failed: %s", log.data());
             }
 
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER, "[GRAPHICS] Cel shader program link: FAILED");
             glDeleteProgram(gCelPostProgram);
             gCelPostProgram = 0;
             glDeleteShader(vs);
             glDeleteShader(fs);
+            gCelPostFailedWidth = width;
+            gCelPostFailedHeight = height;
             return false;
         }
 
+        SDL_Log("[GRAPHICS] Cel shader compilation/link: OK");
         glDeleteShader(vs);
         glDeleteShader(fs);
 
@@ -1738,7 +2032,11 @@ static bool EnsureCelBloomResources(int width, int height)
 
         gCelBloomExtractProgram = CreateCelPostProgram(vertexSource, extractFragment, "Cel bloom bright-pass");
         if (gCelBloomExtractProgram == 0)
+        {
+            gCelBloomFailedWidth = bloomWidth;
+            gCelBloomFailedHeight = bloomHeight;
             return false;
+        }
 
         gCelBloomExtractSceneLocation = glGetUniformLocation(gCelBloomExtractProgram, "sceneTex");
         gCelBloomExtractTexelLocation = glGetUniformLocation(gCelBloomExtractProgram, "sourceTexelSize");
@@ -1764,7 +2062,11 @@ static bool EnsureCelBloomResources(int width, int height)
 
         gCelBloomBlurProgram = CreateCelPostProgram(vertexSource, blurFragment, "Cel bloom Gaussian blur");
         if (gCelBloomBlurProgram == 0)
+        {
+            gCelBloomFailedWidth = bloomWidth;
+            gCelBloomFailedHeight = bloomHeight;
             return false;
+        }
 
         gCelBloomBlurSourceLocation = glGetUniformLocation(gCelBloomBlurProgram, "sourceTex");
         gCelBloomBlurStepLocation = glGetUniformLocation(gCelBloomBlurProgram, "blurStep");
@@ -1854,7 +2156,7 @@ static bool EnsureCelBloomResources(int width, int height)
 
 static void DrawCelPostFullscreenQuad()
 {
-    glBindVertexArrayOES(0);
+    SHARBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, gCelPostVbo);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (const void*)0);
@@ -1948,7 +2250,7 @@ static void ResolveSceneToScreen(int width, int height)
     glGetIntegerv(GL_CURRENT_PROGRAM, &oldProgram);
     glGetIntegerv(GL_ACTIVE_TEXTURE, &oldActiveTexture);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &oldArrayBuffer);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING_OES, &oldVao);
+    oldVao = SHARGetBoundVertexArray();
     glGetIntegerv(GL_VIEWPORT, oldViewport);
     glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &oldTexture0);
@@ -1980,7 +2282,7 @@ static void ResolveSceneToScreen(int width, int height)
         if (gCelFallbackTextureLocation >= 0)
             glUniform1i(gCelFallbackTextureLocation, 0);
         // Keep the game-owned VAO untouched while configuring the fallback quad.
-        glBindVertexArrayOES(0);
+        SHARBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, gCelFallbackVbo);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (const void*)0);
@@ -1995,7 +2297,7 @@ static void ResolveSceneToScreen(int width, int height)
 
     // Restore the original VAO's attribute-enable state, without having
     // changed its vertex pointer or buffer association during fallback drawing.
-    glBindVertexArrayOES((GLuint)oldVao);
+    SHARBindVertexArray((GLuint)oldVao);
     if (oldAttrib0Enabled)
         glEnableVertexAttribArray(0);
     else
@@ -2189,7 +2491,7 @@ static void ApplyCelPostProcess(int width, int height)
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureUnit2);
     glActiveTexture((GLenum)previousActiveTexture);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING_OES, &previousVao);
+    previousVao = SHARGetBoundVertexArray();
     glGetVertexAttribiv(0, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &previousAttrib0Enabled);
 
     glDisable(GL_DEPTH_TEST);
@@ -2384,7 +2686,7 @@ static void ApplyCelPostProcess(int width, int height)
     else
         glDisableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)previousArrayBuffer);
-    glBindVertexArrayOES((GLuint)previousVao);
+    SHARBindVertexArray((GLuint)previousVao);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, (GLuint)previousTextureUnit0);
@@ -2460,6 +2762,12 @@ bool BeginCelPostProcessFrame(int width, int height)
     SetSHARCharacterMaskModelPass(false);
     SetSHARCharacterMaskWorldEnabled(false);
 
+    if (!gSHARVertexArrayObjectsSupported || !gSHARFramebufferSupportAvailable)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return false;
+    }
+
     if (!BindCelRenderTarget(width, height))
     {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -2514,7 +2822,7 @@ static int gSHARFrontendFineDetailFailedHeight = 0;
 
 static bool EnsureSHARFrontendFineDetailResources(int width, int height)
 {
-    if (width <= 0 || height <= 0)
+    if (!gSHARVertexArrayObjectsSupported || width <= 0 || height <= 0)
         return false;
 
     if (gSHARFrontendFineDetailFailedWidth == width &&
@@ -2599,7 +2907,7 @@ static bool EnsureSHARFrontendFineDetailResources(int width, int height)
     }
 
     if (gSHARFrontendFineDetailVao == 0)
-        glGenVertexArraysOES(1, &gSHARFrontendFineDetailVao);
+        SHARGenVertexArrays(1, &gSHARFrontendFineDetailVao);
 
     if (gSHARFrontendFineDetailTexture == 0)
         glGenTextures(1, &gSHARFrontendFineDetailTexture);
@@ -2687,7 +2995,7 @@ void ApplySHARFrontendMenuFineDetail()
     glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureUnit0);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING_OES, &previousVao);
+    previousVao = SHARGetBoundVertexArray();
     glGetBooleanv(GL_COLOR_WRITEMASK, previousColorMask);
     previousDepthEnabled = glIsEnabled(GL_DEPTH_TEST);
     previousBlendEnabled = glIsEnabled(GL_BLEND);
@@ -2729,7 +3037,7 @@ void ApplySHARFrontendMenuFineDetail()
 
         // Use a dedicated VAO so the renderer's own/default attribute pointer is
         // untouched. Scrooby can reuse that pointer on the next frame.
-        glBindVertexArrayOES(gSHARFrontendFineDetailVao);
+        SHARBindVertexArray(gSHARFrontendFineDetailVao);
         glBindBuffer(GL_ARRAY_BUFFER, gSHARFrontendFineDetailVbo);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (const void*)0);
@@ -2747,7 +3055,7 @@ void ApplySHARFrontendMenuFineDetail()
         }
     }
 
-    glBindVertexArrayOES((GLuint)previousVao);
+    SHARBindVertexArray((GLuint)previousVao);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)previousArrayBuffer);
 
     if (previousDepthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
@@ -2932,7 +3240,14 @@ static void ApplyFrameSharpening(int width, int height)
             glGenTextures(1, &gFrameSharpenTexture);
         }
     }
-    if (gFrameSharpenProgram == 0 || gFrameSharpenTexture == 0 || gFrameSharpenVbo == 0)
+    if (gFrameSharpenProgram == 0)
+    {
+        gFrameSharpenFailedWidth = width;
+        gFrameSharpenFailedHeight = height;
+        ApplyCRTFilter(width, height, true);
+        return;
+    }
+    if (gFrameSharpenTexture == 0 || gFrameSharpenVbo == 0)
     {
         ApplyCRTFilter(width, height, true);
         return;
@@ -2948,7 +3263,7 @@ static void ApplyFrameSharpening(int width, int height)
     glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D,&oldTexture0);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING,&oldArray);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING_OES,&oldVao);
+    oldVao = SHARGetBoundVertexArray();
     glGetVertexAttribiv(0,GL_VERTEX_ATTRIB_ARRAY_ENABLED,&oldAttrib);
     const GLboolean depth=glIsEnabled(GL_DEPTH_TEST), blend=glIsEnabled(GL_BLEND);
     const GLboolean cull=glIsEnabled(GL_CULL_FACE), scissor=glIsEnabled(GL_SCISSOR_TEST);
@@ -3001,7 +3316,7 @@ static void ApplyFrameSharpening(int width, int height)
 
     if (oldAttrib) glEnableVertexAttribArray(0); else glDisableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER,(GLuint)oldArray);
-    glBindVertexArrayOES((GLuint)oldVao);
+    SHARBindVertexArray((GLuint)oldVao);
     glUseProgram((GLuint)oldProgram);
     glViewport(oldViewport[0],oldViewport[1],oldViewport[2],oldViewport[3]);
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,(GLuint)oldTexture0);
@@ -3099,7 +3414,13 @@ static void ApplyCRTFilter(int width, int height, bool saturationOnly)
             glGenTextures(1, &gCRTTexture);
         }
     }
-    if (gCRTProgram == 0 || gCRTTexture == 0 || gCRTVbo == 0)
+    if (gCRTProgram == 0)
+    {
+        gCRTFailedWidth = width;
+        gCRTFailedHeight = height;
+        return;
+    }
+    if (gCRTTexture == 0 || gCRTVbo == 0)
         return;
 
     GLint oldFbo=0, oldViewport[4]={0,0,width,height}, oldProgram=0, oldActive=GL_TEXTURE0;
@@ -3112,7 +3433,7 @@ static void ApplyCRTFilter(int width, int height, bool saturationOnly)
     glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D,&oldTexture0);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING,&oldArray);
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING_OES,&oldVao);
+    oldVao = SHARGetBoundVertexArray();
     glGetVertexAttribiv(0,GL_VERTEX_ATTRIB_ARRAY_ENABLED,&oldAttrib);
     const GLboolean depth=glIsEnabled(GL_DEPTH_TEST), blend=glIsEnabled(GL_BLEND);
     const GLboolean cull=glIsEnabled(GL_CULL_FACE), scissor=glIsEnabled(GL_SCISSOR_TEST);
@@ -3172,7 +3493,7 @@ static void ApplyCRTFilter(int width, int height, bool saturationOnly)
 
     if (oldAttrib) glEnableVertexAttribArray(0); else glDisableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER,(GLuint)oldArray);
-    glBindVertexArrayOES((GLuint)oldVao);
+    SHARBindVertexArray((GLuint)oldVao);
     glUseProgram((GLuint)oldProgram);
     glViewport(oldViewport[0],oldViewport[1],oldViewport[2],oldViewport[3]);
     glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,(GLuint)oldTexture0);
@@ -3195,6 +3516,12 @@ void ApplySHARPostProcessingBeforeTouchHud()
 {
     if (gSHARPostProcessAppliedBeforeTouchHud)
         return;
+
+    if (!gSHARVertexArrayObjectsSupported)
+    {
+        gSHARPostProcessAppliedBeforeTouchHud = true;
+        return;
+    }
 
     int outputWidth = gSHARFrameWidth > 0 ? gSHARFrameWidth : 0;
     int outputHeight = gSHARFrameHeight > 0 ? gSHARFrameHeight : 0;
@@ -3755,8 +4082,31 @@ bool pglDisplay ::InitDisplay(const pddiDisplayInit* init)
 
     prevRC = SDL_GL_GetCurrentContext();
     hRC = SDL_GL_CreateContext(win);
+#ifdef RAD_ANDROID
+    if (hRC == NULL && gSHARActiveOpenGLESVersionMajor >= 3)
+    {
+        const char* es3Error = SDL_GetError();
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+            "[GRAPHICS] OpenGL ES 3.0 context creation failed: %s; retrying with ES 2.0",
+            es3Error != NULL ? es3Error : "unknown SDL/EGL error");
+
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+        gSHARActiveOpenGLESVersionMajor = 2;
+        hRC = SDL_GL_CreateContext(win);
+        if (hRC != NULL)
+            SDL_Log("[GRAPHICS] OpenGL ES 2.0 fallback context created successfully");
+    }
+
+    if (hRC == NULL)
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER,
+            "[GRAPHICS] OpenGL ES context creation failed: %s", SDL_GetError());
+#else
     if (!hRC)
         SDL_Log("SDL_GL_CreateContext() error: %s", SDL_GetError());
+#endif
     PDDIASSERT(hRC);
 
 #ifdef RAD_CG
@@ -3798,6 +4148,9 @@ bool pglDisplay ::InitDisplay(const pddiDisplayInit* init)
     extBGRA = CheckExtension("GL_EXT_bgra") || CheckExtension("GL_EXT_texture_format_BGRA8888");
 
     SDL_Log("OpenGL - Vendor: %s, Renderer: %s, Version: %s",glVendor,glRenderer,glVersion);
+#ifdef RAD_ANDROID
+    SHARLogGraphicsCapabilities();
+#endif
 
 #if defined RAD_DEBUG && !defined RAD_VITA
     glEnable(GL_DEBUG_OUTPUT_KHR);

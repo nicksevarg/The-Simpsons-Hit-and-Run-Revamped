@@ -176,6 +176,12 @@ void* Win32Platform::mhMutex = NULL;
 #endif
 bool Win32Platform::mShowCursor = true;
 
+#if defined(RAD_ANDROID)
+// Preserve the preferred context version and the version currently requested from SDL.
+int gSHARRequestedOpenGLESVersionMajor = 3;
+int gSHARActiveOpenGLESVersionMajor = 3;
+#endif
+
 //The Adlib font.  <sigh>
 unsigned char gFont[] = 
 #include <font/defaultfont.h>
@@ -341,6 +347,8 @@ bool Win32Platform::InitializeWindow()
 #ifdef RAD_ANDROID
 
     // Attempt #1 : GLES3
+    gSHARRequestedOpenGLESVersionMajor = 3;
+    gSHARActiveOpenGLESVersionMajor = 3;
 #if SDL_MAJOR_VERSION < 3
     SDL_GL_ResetAttributes();
 #endif
@@ -413,6 +421,7 @@ bool Win32Platform::InitializeWindow()
         rDebugPrintf( "SDL_CreateWindow GLES3 failed: %s\n", SDL_GetError() );
 
         // Attempt #2 : GLES2
+        gSHARActiveOpenGLESVersionMajor = 2;
 #if SDL_MAJOR_VERSION < 3
         SDL_GL_ResetAttributes();
 #endif
