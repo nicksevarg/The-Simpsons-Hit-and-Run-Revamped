@@ -13,6 +13,7 @@
 // System Includes
 //========================================
 #include <raddebug.hpp>
+#include <radtime.hpp>
 #include <p3d/view.hpp>
 #include <p3d/billboardobject.hpp>
 
@@ -36,11 +37,169 @@
 #include <input/inputmanager.h>
 #endif
 #ifdef RAD_ANDROID
+#include <SDL.h>
+#include <SDL_system.h>
+#include <sys/stat.h>
+#include <cstdio>
+#include <cstring>
 #include <presentation/fmvplayer/fmvplayer.h>
 #include <input/touch/touchhudrenderer.h>
 void ApplySHARPostProcessingBeforeTouchHud();
 void ApplySHARFrontendMenuFineDetail();
 bool IsSHARFrontendMenuCelPassActive();
+
+enum SHARFrontendPerfStage
+{
+    SHAR_FE_BACKGROUND = 0,
+    SHAR_FE_FOREGROUND,
+    SHAR_FE_DRAW_FRAME,
+    SHAR_FE_FINE_DETAIL,
+    SHAR_FE_POST_PROCESS,
+    SHAR_FE_TOUCH_HUD,
+    SHAR_FE_COIN_EFFECTS,
+    SHAR_FE_STAGE_COUNT
+};
+
+static bool gSHARFrontendDiagnosticConfigLoaded = false;
+static bool gSHARFrontendSkipBackground = false;
+static unsigned long long gSHARFrontendPerfWindowStartUs = 0;
+static unsigned long long gSHARFrontendPerfTotals[SHAR_FE_STAGE_COUNT] = {};
+static unsigned long long gSHARFrontendPerfMaxima[SHAR_FE_STAGE_COUNT] = {};
+static unsigned int gSHARFrontendPerfCalls[SHAR_FE_STAGE_COUNT] = {};
+static unsigned int gSHARFrontendPerfFrames = 0;
+static unsigned int gSHARFrontendPerfSplitFrames = 0;
+static unsigned int gSHARFrontendPerfFullFrames = 0;
+static unsigned int gSHARFrontendPerfBackgroundSkippedFrames = 0;
+
+static void SHARLoadFrontendDiagnosticConfig()
+{
+    if (gSHARFrontendDiagnosticConfigLoaded)
+        return;
+
+    gSHARFrontendDiagnosticConfigLoaded = true;
+    const char* basePath = SDL_AndroidGetApplicationExternalFilesPath();
+    if (basePath == NULL || basePath[0] == '\0')
+    {
+        LOGI("[PERF][FRONTEND] diagnostic config unavailable; using normal background rendering");
+        return;
+    }
+
+    char directory[512];
+    int length = snprintf(directory, sizeof(directory), "%s/Graphics", basePath);
+    if (length < 0 || length >= static_cast<int>(sizeof(directory)))
+        return;
+
+    struct stat directoryInfo;
+    if (stat(directory, &directoryInfo) != 0)
+        mkdir(directory, 0777);
+
+    char path[512];
+    length = snprintf(path, sizeof(path), "%s/Simpsons_frontend_diagnostics.txt", directory);
+    if (length < 0 || length >= static_cast<int>(sizeof(path)))
+        return;
+
+    FILE* file = fopen(path, "r");
+    if (file == NULL)
+    {
+        file = fopen(path, "w");
+        if (file != NULL)
+        {
+            fprintf(file, "# Simpsons Hit & Run - Revamped! [Front-end diagnostics]\n");
+            fprintf(file, "# Set skip_frontend_background=true to temporarily bypass Scrooby background drawing.\n");
+            fprintf(file, "# Leave false for the normal rendering path. Restart the game after editing.\n");
+            fprintf(file, "skip_frontend_background=false\n");
+            fclose(file);
+        }
+        LOGI("[PERF][FRONTEND] created diagnostic config; skip_frontend_background=false path=%s", path);
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        char* value = strchr(line, '=');
+        if (value == NULL)
+            continue;
+
+        *value++ = '\0';
+        while (*value == ' ' || *value == '\t')
+            ++value;
+
+        if (strcmp(line, "skip_frontend_background") != 0)
+            continue;
+
+        gSHARFrontendSkipBackground =
+            strncmp(value, "true", 4) == 0 ||
+            strncmp(value, "TRUE", 4) == 0 ||
+            strncmp(value, "yes", 3) == 0 ||
+            strncmp(value, "YES", 3) == 0 ||
+            *value == '1' ||
+            strncmp(value, "on", 2) == 0 ||
+            strncmp(value, "ON", 2) == 0;
+        break;
+    }
+
+    fclose(file);
+    LOGI("[PERF][FRONTEND] diagnostic config skip_frontend_background=%s path=%s",
+         gSHARFrontendSkipBackground ? "true" : "false", path);
+}
+
+static void SHARRecordFrontendStage(int stage, unsigned long long startUs)
+{
+    if (stage < 0 || stage >= SHAR_FE_STAGE_COUNT)
+        return;
+
+    const unsigned long long nowUs = (unsigned long long)radTimeGetMicroseconds64();
+    const unsigned long long elapsedUs = nowUs >= startUs ? nowUs - startUs : 0;
+    gSHARFrontendPerfTotals[stage] += elapsedUs;
+    if (elapsedUs > gSHARFrontendPerfMaxima[stage])
+        gSHARFrontendPerfMaxima[stage] = elapsedUs;
+    ++gSHARFrontendPerfCalls[stage];
+}
+
+static unsigned long long SHARFrontendStageAverage(int stage)
+{
+    return gSHARFrontendPerfCalls[stage] > 0 ?
+        gSHARFrontendPerfTotals[stage] / gSHARFrontendPerfCalls[stage] : 0;
+}
+
+static void SHARLogFrontendPerf()
+{
+    const unsigned long long nowUs = (unsigned long long)radTimeGetMicroseconds64();
+    if (gSHARFrontendPerfWindowStartUs == 0)
+        gSHARFrontendPerfWindowStartUs = nowUs;
+
+    ++gSHARFrontendPerfFrames;
+    if (nowUs - gSHARFrontendPerfWindowStartUs < 1000000ULL)
+        return;
+
+    LOGI("[PERF][FRONTEND] frames=%u split=%u full=%u bg_skipped=%u "
+         "background_us=%llu/%llu foreground_us=%llu/%llu drawframe_us=%llu/%llu "
+         "fine_detail_us=%llu/%llu post_us=%llu/%llu touch_us=%llu/%llu coin_us=%llu/%llu",
+         gSHARFrontendPerfFrames,
+         gSHARFrontendPerfSplitFrames,
+         gSHARFrontendPerfFullFrames,
+         gSHARFrontendPerfBackgroundSkippedFrames,
+         SHARFrontendStageAverage(SHAR_FE_BACKGROUND), gSHARFrontendPerfMaxima[SHAR_FE_BACKGROUND],
+         SHARFrontendStageAverage(SHAR_FE_FOREGROUND), gSHARFrontendPerfMaxima[SHAR_FE_FOREGROUND],
+         SHARFrontendStageAverage(SHAR_FE_DRAW_FRAME), gSHARFrontendPerfMaxima[SHAR_FE_DRAW_FRAME],
+         SHARFrontendStageAverage(SHAR_FE_FINE_DETAIL), gSHARFrontendPerfMaxima[SHAR_FE_FINE_DETAIL],
+         SHARFrontendStageAverage(SHAR_FE_POST_PROCESS), gSHARFrontendPerfMaxima[SHAR_FE_POST_PROCESS],
+         SHARFrontendStageAverage(SHAR_FE_TOUCH_HUD), gSHARFrontendPerfMaxima[SHAR_FE_TOUCH_HUD],
+         SHARFrontendStageAverage(SHAR_FE_COIN_EFFECTS), gSHARFrontendPerfMaxima[SHAR_FE_COIN_EFFECTS]);
+
+    gSHARFrontendPerfWindowStartUs = nowUs;
+    for (int i = 0; i < SHAR_FE_STAGE_COUNT; ++i)
+    {
+        gSHARFrontendPerfTotals[i] = 0;
+        gSHARFrontendPerfMaxima[i] = 0;
+        gSHARFrontendPerfCalls[i] = 0;
+    }
+    gSHARFrontendPerfFrames = 0;
+    gSHARFrontendPerfSplitFrames = 0;
+    gSHARFrontendPerfFullFrames = 0;
+    gSHARFrontendPerfBackgroundSkippedFrames = 0;
+}
 #endif
 
 
@@ -316,6 +475,10 @@ void FrontEndRenderLayer::Render()
         return;
     }
 
+#ifdef RAD_ANDROID
+    SHARLoadFrontendDiagnosticConfig();
+#endif
+
     for( unsigned int view = 0; view < mNumViews; view++ )
     {
         rAssert( !IsDead() );
@@ -330,7 +493,15 @@ void FrontEndRenderLayer::Render()
         HeapMgr()->PushHeap( GMA_TEMP );
 
         if( !GetCoinManager()->DrawAfterGui() )
+        {
+#ifdef RAD_ANDROID
+            const unsigned long long coinStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
             DrawCoinObject();
+#ifdef RAD_ANDROID
+            SHARRecordFrontendStage(SHAR_FE_COIN_EFFECTS, coinStartUs);
+#endif
+        }
 
         if( mpScroobyApp != NULL )
         {
@@ -350,17 +521,42 @@ void FrontEndRenderLayer::Render()
             const bool hasMenuCameraSet =
                 celPassActive && screen != NULL && menu3dPage != NULL;
 
-
-            if( hasMenuCameraSet )
+            if (gSHARFrontendSkipBackground)
+            {
+                // Diagnostic-only path: retain Scrooby's foreground (including
+                // the language selector) while bypassing background drawables.
+                const float frameDelta = static_cast<float>(g_scroobySimulationTime);
+                ++gSHARFrontendPerfBackgroundSkippedFrames;
+                const unsigned long long foregroundStartUs =
+                    (unsigned long long)radTimeGetMicroseconds64();
+                mpScroobyApp->DrawForeground(frameDelta);
+                SHARRecordFrontendStage(SHAR_FE_FOREGROUND, foregroundStartUs);
+                ++gSHARFrontendPerfSplitFrames;
+            }
+            else if( hasMenuCameraSet )
             {
                 const float frameDelta = static_cast<float>( g_scroobySimulationTime );
+                unsigned long long stageStartUs =
+                    (unsigned long long)radTimeGetMicroseconds64();
                 mpScroobyApp->DrawBackground( frameDelta );
+                SHARRecordFrontendStage(SHAR_FE_BACKGROUND, stageStartUs);
+
+                stageStartUs = (unsigned long long)radTimeGetMicroseconds64();
                 ApplySHARFrontendMenuFineDetail();
+                SHARRecordFrontendStage(SHAR_FE_FINE_DETAIL, stageStartUs);
+
+                stageStartUs = (unsigned long long)radTimeGetMicroseconds64();
                 mpScroobyApp->DrawForeground( frameDelta );
+                SHARRecordFrontendStage(SHAR_FE_FOREGROUND, stageStartUs);
+                ++gSHARFrontendPerfSplitFrames;
             }
             else
             {
+                const unsigned long long drawFrameStartUs =
+                    (unsigned long long)radTimeGetMicroseconds64();
                 mpScroobyApp->DrawFrame( static_cast<float>( g_scroobySimulationTime ) );
+                SHARRecordFrontendStage(SHAR_FE_DRAW_FRAME, drawFrameStartUs);
+                ++gSHARFrontendPerfFullFrames;
             }
 #else
             mpScroobyApp->DrawFrame( static_cast<float>( g_scroobySimulationTime ) );
@@ -372,13 +568,28 @@ void FrontEndRenderLayer::Render()
 #endif
 
         if( GetCoinManager()->DrawAfterGui() )
+        {
+#ifdef RAD_ANDROID
+            const unsigned long long coinStartUs = (unsigned long long)radTimeGetMicroseconds64();
+#endif
             DrawCoinObject();
-        
-        
-        #ifdef RAD_ANDROID
-        ApplySHARPostProcessingBeforeTouchHud();
-        TouchHudRenderer::GetInstance().Render(); // Render touch controls after full-frame filters.
-        #endif
+#ifdef RAD_ANDROID
+            SHARRecordFrontendStage(SHAR_FE_COIN_EFFECTS, coinStartUs);
+#endif
+        }
+
+#ifdef RAD_ANDROID
+        {
+            const unsigned long long postStartUs = (unsigned long long)radTimeGetMicroseconds64();
+            ApplySHARPostProcessingBeforeTouchHud();
+            SHARRecordFrontendStage(SHAR_FE_POST_PROCESS, postStartUs);
+        }
+        {
+            const unsigned long long touchStartUs = (unsigned long long)radTimeGetMicroseconds64();
+            TouchHudRenderer::GetInstance().Render(); // Render touch controls after full-frame filters.
+            SHARRecordFrontendStage(SHAR_FE_TOUCH_HUD, touchStartUs);
+        }
+#endif
         HeapMgr()->PopHeap( GMA_TEMP );
 
         mpView[ view ]->EndRender();
@@ -390,6 +601,9 @@ void FrontEndRenderLayer::Render()
     mDebugRenderTime = radTimeGetMicroseconds() - mDebugRenderTime;
 #endif
 
+#ifdef RAD_ANDROID
+    SHARLogFrontendPerf();
+#endif
     END_PROFILE( "FE Render" );
 }
 

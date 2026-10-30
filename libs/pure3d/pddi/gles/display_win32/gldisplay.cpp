@@ -4250,6 +4250,21 @@ void SHARMarkFrameRenderedForPresentation(void)
 void pglDisplay::SwapBuffers(void)
 {
 #ifdef RAD_ANDROID
+    static Uint64 sPresentPerfFrequency = 0;
+    static Uint64 sPresentPerfWindowStartTicks = 0;
+    static Uint64 sPresentPerfFrames = 0;
+    static Uint64 sPresentPerfFreshFrames = 0;
+    static Uint64 sPresentPerfPostTotalTicks = 0, sPresentPerfPostMaxTicks = 0;
+    static Uint64 sPresentPerfSwapTotalTicks = 0, sPresentPerfSwapMaxTicks = 0;
+    static Uint64 sPresentPerfCapTotalTicks = 0, sPresentPerfCapMaxTicks = 0;
+
+    if (sPresentPerfFrequency == 0)
+        sPresentPerfFrequency = SDL_GetPerformanceFrequency();
+
+    Uint64 presentPostTicks = 0;
+    Uint64 presentSwapTicks = 0;
+    Uint64 presentCapTicks = 0;
+
     // RenderManager finishes a frame before marking it ready. SwapBuffers runs
     // at the start of the next render cycle, so don't filter or present stale
     // buffers when the renderer has not produced a new frame.
@@ -4259,11 +4274,15 @@ void pglDisplay::SwapBuffers(void)
     {
         // Apply optional filters before touch controls if they have not already
         // run in a touch-HUD rendering path.
+        Uint64 presentStageStartTicks = SDL_GetPerformanceCounter();
         ApplySHARPostProcessingBeforeTouchHud();
+        presentPostTicks = SDL_GetPerformanceCounter() - presentStageStartTicks;
 
         // Global saturation is folded into the pre-HUD sharpening pass, so there
         // is no separate full-screen saturation pass during presentation.
+        presentStageStartTicks = SDL_GetPerformanceCounter();
         SDL_GL_SwapWindow(win);
+        presentSwapTicks = SDL_GetPerformanceCounter() - presentStageStartTicks;
     }
 #else
     SDL_GL_SwapWindow(win);
@@ -4285,6 +4304,7 @@ void pglDisplay::SwapBuffers(void)
         sCapFreq = SDL_GetPerformanceFrequency();
     }
 
+    const Uint64 presentCapStartTicks = SDL_GetPerformanceCounter();
     if (m_only60)
     {
         const int configuredFPS = gSHARAndroidTargetFPS;
@@ -4353,6 +4373,51 @@ void pglDisplay::SwapBuffers(void)
          * we do not want to carry an old timestamp.
          */
         sLastFrameTime = 0;
+    }
+
+    presentCapTicks = SDL_GetPerformanceCounter() - presentCapStartTicks;
+
+    if (sPresentPerfFrequency > 0)
+    {
+        const Uint64 presentNowTicks = SDL_GetPerformanceCounter();
+        if (sPresentPerfWindowStartTicks == 0)
+            sPresentPerfWindowStartTicks = presentNowTicks;
+
+        ++sPresentPerfFrames;
+        if (hasFreshFrame)
+            ++sPresentPerfFreshFrames;
+
+        sPresentPerfPostTotalTicks += presentPostTicks;
+        if (presentPostTicks > sPresentPerfPostMaxTicks)
+            sPresentPerfPostMaxTicks = presentPostTicks;
+        sPresentPerfSwapTotalTicks += presentSwapTicks;
+        if (presentSwapTicks > sPresentPerfSwapMaxTicks)
+            sPresentPerfSwapMaxTicks = presentSwapTicks;
+        sPresentPerfCapTotalTicks += presentCapTicks;
+        if (presentCapTicks > sPresentPerfCapMaxTicks)
+            sPresentPerfCapMaxTicks = presentCapTicks;
+
+        if (presentNowTicks - sPresentPerfWindowStartTicks >= sPresentPerfFrequency &&
+            sPresentPerfFrames > 0)
+        {
+            const double ticksToUs = 1000000.0 / (double)sPresentPerfFrequency;
+            SDL_Log("[PERF][PRESENT] frames=%llu fresh=%llu post_us=%llu/%llu gl_swap_us=%llu/%llu fps_cap_us=%llu/%llu",
+                (unsigned long long)sPresentPerfFrames,
+                (unsigned long long)sPresentPerfFreshFrames,
+                (unsigned long long)((double)sPresentPerfPostTotalTicks / (double)sPresentPerfFrames * ticksToUs),
+                (unsigned long long)((double)sPresentPerfPostMaxTicks * ticksToUs),
+                (unsigned long long)((double)sPresentPerfSwapTotalTicks / (double)sPresentPerfFrames * ticksToUs),
+                (unsigned long long)((double)sPresentPerfSwapMaxTicks * ticksToUs),
+                (unsigned long long)((double)sPresentPerfCapTotalTicks / (double)sPresentPerfFrames * ticksToUs),
+                (unsigned long long)((double)sPresentPerfCapMaxTicks * ticksToUs));
+
+            sPresentPerfWindowStartTicks = presentNowTicks;
+            sPresentPerfFrames = 0;
+            sPresentPerfFreshFrames = 0;
+            sPresentPerfPostTotalTicks = sPresentPerfPostMaxTicks = 0;
+            sPresentPerfSwapTotalTicks = sPresentPerfSwapMaxTicks = 0;
+            sPresentPerfCapTotalTicks = sPresentPerfCapMaxTicks = 0;
+        }
     }
 #endif
 

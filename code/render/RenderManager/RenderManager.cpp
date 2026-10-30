@@ -726,7 +726,8 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
     const unsigned long long perfRenderFrameStartUs = (unsigned long long)radTimeGetMicroseconds64();
     unsigned long long perfSwapUs = 0, perfPrepUs = 0, perfBeginFrameUs = 0;
     unsigned long long perfLayersWallUs = 0, perfLayerRenderSumUs = 0;
-    unsigned long long perfLayerMaxUs = 0, perfTailUs = 0, perfEndFrameUs = 0;
+    unsigned long long perfLayerMaxUs = 0, perfCelPreUs = 0;
+    unsigned long long perfTailUs = 0, perfEndFrameUs = 0;
     unsigned long long perfPresentationMarkUs = 0;
     int perfLayerMaxIndex = -1;
 #endif
@@ -828,10 +829,14 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
          */
         if (i == RenderEnums::GUI)
         {
+            const unsigned long long perfCelPreStartUs =
+                (unsigned long long)radTimeGetMicroseconds64();
             ApplyCelPostProcessBeforeGui(
                 p3d::display->GetWidth(),
                 p3d::display->GetHeight()
             );
+            perfCelPreUs =
+                (unsigned long long)radTimeGetMicroseconds64() - perfCelPreStartUs;
         }
 #endif
 
@@ -986,6 +991,7 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
         static unsigned long long perfBeginTotalUs = 0, perfBeginMaxUs = 0;
         static unsigned long long perfLayersWallTotalUs = 0, perfLayersWallMaxUs = 0;
         static unsigned long long perfLayerSumTotalUs = 0, perfLayerMaxUsWindow = 0;
+        static unsigned long long perfCelPreTotalUs = 0, perfCelPreMaxUs = 0;
         static unsigned long long perfTailTotalUs = 0, perfTailMaxUs = 0;
         static unsigned long long perfEndTotalUs = 0, perfEndMaxUs = 0;
         static unsigned long long perfPresentationMarkTotalUs = 0, perfPresentationMarkMaxUs = 0;
@@ -1004,6 +1010,8 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
         if ( perfBeginFrameUs > perfBeginMaxUs ) perfBeginMaxUs = perfBeginFrameUs;
         perfLayersWallTotalUs += perfLayersWallUs;
         if ( perfLayersWallUs > perfLayersWallMaxUs ) perfLayersWallMaxUs = perfLayersWallUs;
+        perfCelPreTotalUs += perfCelPreUs;
+        if ( perfCelPreUs > perfCelPreMaxUs ) perfCelPreMaxUs = perfCelPreUs;
         perfLayerSumTotalUs += perfLayerRenderSumUs;
         if ( perfLayerMaxUs > perfLayerMaxUsWindow )
         {
@@ -1025,7 +1033,7 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
         if ( perfWindowElapsedUs >= 1000000ULL && perfFrames > 0 )
         {
             const double perfFps = (double)perfFrames * 1000000.0 / (double)perfWindowElapsedUs;
-            LOGI("[PERF][RENDER] fps=%.1f frames=%u frame_us=%llu/%llu slow16/33/50=%u/%u/%u swap_us=%llu/%llu prep_us=%llu/%llu begin_us=%llu/%llu layers_wall_us=%llu/%llu layers_sum_us=%llu layer_max_us=%llu@%d tail_us=%llu/%llu end_us=%llu/%llu present_mark_us=%llu/%llu",
+            LOGI("[PERF][RENDER] fps=%.1f frames=%u frame_us=%llu/%llu slow16/33/50=%u/%u/%u swap_us=%llu/%llu prep_us=%llu/%llu begin_us=%llu/%llu layers_wall_us=%llu/%llu layers_sum_us=%llu layer_max_us=%llu@%d cel_pre_us=%llu/%llu tail_us=%llu/%llu end_us=%llu/%llu present_mark_us=%llu/%llu",
                  perfFps, perfFrames,
                  perfFrameTotalUs / perfFrames, perfFrameMaxUs,
                  perfSlow16, perfSlow33, perfSlow50,
@@ -1035,6 +1043,7 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
                  perfLayersWallTotalUs / perfFrames, perfLayersWallMaxUs,
                  perfLayerSumTotalUs / perfFrames,
                  perfLayerMaxUsWindow, perfSlowLayerIndex,
+                 perfCelPreTotalUs / perfFrames, perfCelPreMaxUs,
                  perfTailTotalUs / perfFrames, perfTailMaxUs,
                  perfEndTotalUs / perfFrames, perfEndMaxUs,
                  perfPresentationMarkTotalUs / perfFrames, perfPresentationMarkMaxUs);
@@ -1046,6 +1055,7 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
             perfBeginTotalUs = perfBeginMaxUs = 0;
             perfLayersWallTotalUs = perfLayersWallMaxUs = 0;
             perfLayerSumTotalUs = perfLayerMaxUsWindow = 0;
+            perfCelPreTotalUs = perfCelPreMaxUs = 0;
             perfTailTotalUs = perfTailMaxUs = 0;
             perfEndTotalUs = perfEndMaxUs = 0;
             perfPresentationMarkTotalUs = perfPresentationMarkMaxUs = 0;
