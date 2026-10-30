@@ -971,7 +971,6 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
         perfStageStartUs = perfAfterEndFrameUs;
     }
     SHARMarkFrameRenderedForPresentation();
-#ifdef RAD_ANDROID
     {
         const unsigned long long perfAfterPresentationMarkUs = (unsigned long long)radTimeGetMicroseconds64();
         perfPresentationMarkUs = perfAfterPresentationMarkUs - perfStageStartUs;
