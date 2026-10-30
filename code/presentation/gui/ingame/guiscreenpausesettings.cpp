@@ -58,6 +58,8 @@
 
 // Rendering toggles exposed by the GLES renderer.
 bool IsCelShadingEnabled();
+bool IsSHARCelShadingFull();
+void SetSHARCelShadingFull(bool full);
 void SetCelShadingEnabled(bool enabled);
 bool IsCRTFilterEnabled();
 void SetCRTFilterEnabled(bool enabled);
@@ -1095,16 +1097,17 @@ MEMTRACK_PUSH_GROUP( "CGuiScreenPauseSettings" );
                 pGraphicsValue->SetBoundingBoxSize( width, height );
                 pGraphicsValue->SetPositionOfCenter( centerX, centerY );
 
-                const char* sharpeningValues[6] =
+                const char* anisotropicValues[5] =
                 {
-                    "OFF", "20%", "40%", "60%", "80%", "MAX"
+                    "OFF", "4x", "8x", "12x", "16x"
                 };
-                for( int valueIndex = 0; valueIndex < 6; ++valueIndex )
+                for( int valueIndex = 0; valueIndex < 5; ++valueIndex )
                 {
-                    pGraphicsValue->AddHardCodedString( sharpeningValues[valueIndex] );
+                    pGraphicsValue->AddHardCodedString( anisotropicValues[valueIndex] );
                 }
 
-                pGraphicsValue->SetIndex( 0 );
+                // 4x remains the default enabled anisotropic-filtering level.
+                pGraphicsValue->SetIndex( 1 );
                 pGraphicsValue->SetVisible( false );
                 m_pGraphicsSharpeningValue = pGraphicsValue;
             }
@@ -1159,7 +1162,7 @@ MEMTRACK_PUSH_GROUP( "CGuiScreenPauseSettings" );
 
                 const char* sharpeningValues[5] =
                 {
-                    "20%", "40%", "60%", "80%", "MAX"
+                    "OFF", "40%", "60%", "80%", "MAX"
                 };
                 for( int valueIndex = 0; valueIndex < 5; ++valueIndex )
                     pGraphicsValue->AddHardCodedString( sharpeningValues[valueIndex] );
@@ -1239,15 +1242,12 @@ void CGuiScreenPauseSettings::ConfigureAndroidGraphicsMenu()
         "More Options.."
     };
 
-    const bool celShadingEnabled = IsCelShadingEnabled();
+    const bool celShadingFull = IsSHARCelShadingFull();
+    // The old ON/OFF setting is replaced by LITE/FULL. Either quality mode
+    // requires the base object-level toon shading and silhouette pass.
+    SetSHARCelShadingFull( celShadingFull );
     const bool bloomEnabled = IsSHARBloomEnabled();
     const bool cloudShadowsEnabled = IsSHARCloudShadowsEnabled();
-
-    const char* sharpeningValues[6] =
-    {
-        "OFF", "20%", "40%", "60%", "80%", "MAX"
-    };
-    const int sharpeningLevel = GetFrameSharpeningLevel();
 
     if( gSHARGraphicsResolutionSelection < 0 ||
         gSHARGraphicsResolutionSelection >= SHAR_GRAPHICS_RESOLUTION_COUNT )
@@ -1357,15 +1357,23 @@ void CGuiScreenPauseSettings::ConfigureAndroidGraphicsMenu()
                     m_pMenu->SetSelectionValue( guiIndex, 0 );
                 }
             }
-            else if( i == 2 || i == 3 || i == 4 )
+            else if( i == 2 )
+            {
+                // LITE keeps object toon lighting and expanded-mesh silhouettes;
+                // FULL also enables the screen-space contour/detail passes.
+                value->SetVisible( true );
+                value->SetString( 0, "LITE" );
+                value->SetString( 1, "FULL" );
+                m_pMenu->SetSelectionValueCount( guiIndex, 2 );
+                m_pMenu->SetSelectionValue( guiIndex, celShadingFull ? 1 : 0 );
+            }
+            else if( i == 3 || i == 4 )
             {
                 value->SetVisible( true );
                 value->SetString( 0, "OFF" );
                 value->SetString( 1, "ON" );
                 m_pMenu->SetSelectionValueCount( guiIndex, 2 );
-                const bool enabled =
-                    ( i == 2 ) ? celShadingEnabled :
-                    ( i == 3 ) ? bloomEnabled : cloudShadowsEnabled;
+                const bool enabled = i == 3 ? bloomEnabled : cloudShadowsEnabled;
                 m_pMenu->SetSelectionValue( guiIndex, enabled ? 1 : 0 );
             }
             else if( i == 5 )
@@ -1421,7 +1429,13 @@ void CGuiScreenPauseSettings::ConfigureAndroidMoreGraphicsMenu()
     const bool crtEnabled = IsCRTFilterEnabled();
     const bool motionBlurEnabled = IsMotionBlurEnabled();
     const bool rimLightingEnabled = IsSHARRimLightingEnabled();
-    const int sharpeningLevel = GetFrameSharpeningLevel();
+    int sharpeningLevel = GetFrameSharpeningLevel();
+    if( sharpeningLevel == 1 )
+    {
+        // 20% is no longer exposed by the selector; migrate to the 40% minimum.
+        SetFrameSharpeningLevel( 2 );
+        sharpeningLevel = 2;
+    }
     const int anisotropicSelection = GetSHARAnisotropicFilteringSelection();
 
     for( int i = 0; i < 6; ++i )
@@ -1517,19 +1531,19 @@ void CGuiScreenPauseSettings::ConfigureAndroidMoreGraphicsMenu()
             }
             else if( i == 3 && m_pMoreGraphicsSharpeningValue != NULL )
             {
-                const char* values[5] = { "20%", "40%", "60%", "80%", "MAX" };
+                const char* values[5] = { "OFF", "40%", "60%", "80%", "MAX" };
                 for( int valueIndex = 0; valueIndex < 5; ++valueIndex )
                     value->SetString( valueIndex, values[valueIndex] );
                 m_pMenu->SetSelectionValueCount( guiIndex, 5 );
-                // Level 0 is legacy OFF; the five-choice selector represents
-                // levels 1..5 as 20%, 40%, 60%, 80%, and MAX.
+                // Level 0 is OFF; legacy 20% is normalized to the new 40% minimum.
                 int selection = sharpeningLevel > 0 ? sharpeningLevel - 1 : 0;
+                if( selection < 0 ) selection = 0;
                 if( selection > 4 ) selection = 4;
                 m_pMenu->SetSelectionValue( guiIndex, selection );
             }
             else if( i == 4 )
             {
-                const char* values[5] = { "2x", "4x", "8x", "12x", "16x" };
+                const char* values[5] = { "OFF", "4x", "8x", "12x", "16x" };
                 FeText* anisotropicValue = dynamic_cast<FeText*>( value );
 
                 // The dedicated selector is normally used, but the generated
@@ -2165,7 +2179,8 @@ void CGuiScreenPauseSettings::HandleMessage
                             else if( logicalMenuItem == MENU_ITEM_RADAR )
                             {
                                 if( param2 < 5 )
-                                    SetFrameSharpeningLevel( static_cast<int>( param2 ) + 1 );
+                                    SetFrameSharpeningLevel(
+                                        param2 == 0 ? 0 : static_cast<int>( param2 ) + 1 );
                             }
                             else if( logicalMenuItem == MENU_ITEM_INVERT_CAM_CONTROL )
                             {
@@ -2204,7 +2219,7 @@ void CGuiScreenPauseSettings::HandleMessage
                         }
                         else if( logicalMenuItem == MENU_ITEM_INTERSECT_NAV_SYSTEM )
                         {
-                            SetCelShadingEnabled( enabled );
+                            SetSHARCelShadingFull( param2 == 1 );
                         }
                         else if( logicalMenuItem == MENU_ITEM_RADAR )
                         {

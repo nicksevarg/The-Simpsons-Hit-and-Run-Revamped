@@ -24,8 +24,8 @@
 #include <microprofile.h>
 
 #if defined(RAD_ANDROID)
-static const int SHAR_ANISOTROPIC_FILTER_LEVELS[5] = { 2, 4, 8, 12, 16 };
-static int gSHARAnisotropicFilteringSelection = 0; // 2x on new installs
+static const int SHAR_ANISOTROPIC_FILTER_LEVELS[5] = { 1, 4, 8, 12, 16 };
+static int gSHARAnisotropicFilteringSelection = 1; // 4x on new installs
 static bool gSHARAnisotropicFilteringConfigurationLoaded = false;
 static bool gSHARAnisotropyCapabilityChecked = false;
 static bool gSHARAnisotropySupported = false;
@@ -63,11 +63,14 @@ static void WriteSHARAnisotropicFilteringConfiguration()
 
     fprintf(file, "# Simpsons Hit & Run - Revamped! [AF Settings]\n");
     fprintf(file, "# Improves the quality of textures at distant oblique angles.\n");
-    fprintf(file, "# Change with 2x/4x/8x/12x/16x values.\n");
+    fprintf(file, "# Change with OFF/4x/8x/12x/16x values.\n");
     fprintf(file, "# You can also use the in-game settings toggle.\n");
     fprintf(file, "# Changes to this file will be reflected upon restart.\n");
     fprintf(file, "\n");
-    fprintf(file, "anisotropy=%dx\n", SHAR_ANISOTROPIC_FILTER_LEVELS[gSHARAnisotropicFilteringSelection]);
+    if (gSHARAnisotropicFilteringSelection == 0)
+        fprintf(file, "anisotropy=OFF\n");
+    else
+        fprintf(file, "anisotropy=%dx\n", SHAR_ANISOTROPIC_FILTER_LEVELS[gSHARAnisotropicFilteringSelection]);
     fclose(file);
 }
 static void LoadSHARAnisotropicFilteringConfiguration()
@@ -92,12 +95,25 @@ static void LoadSHARAnisotropicFilteringConfiguration()
             continue;
         value += strlen("anisotropy=");
         const int requested = static_cast<int>(strtol(value, NULL, 10));
-        for( int i = 0; i < 5; ++i )
+        if (requested <= 1)
         {
-            if( requested == SHAR_ANISOTROPIC_FILTER_LEVELS[i] )
+            gSHARAnisotropicFilteringSelection = 0;
+        }
+        else if (requested == 2)
+        {
+            // Existing installations used 2x as their lowest enabled level.
+            // Normalize it to the new lowest enabled choice, 4x.
+            gSHARAnisotropicFilteringSelection = 1;
+        }
+        else
+        {
+            for( int i = 1; i < 5; ++i )
             {
-                gSHARAnisotropicFilteringSelection = i;
-                break;
+                if( requested == SHAR_ANISOTROPIC_FILTER_LEVELS[i] )
+                {
+                    gSHARAnisotropicFilteringSelection = i;
+                    break;
+                }
             }
         }
         break;
@@ -142,7 +158,8 @@ static void ApplySHARAnisotropicFilteringToBoundTexture( int selection )
         return;
     if( selection < 0 ) selection = 0;
     if( selection > 4 ) selection = 4;
-    GLfloat requested = static_cast<GLfloat>(SHAR_ANISOTROPIC_FILTER_LEVELS[selection]);
+    GLfloat requested = selection == 0 ? 1.0f :
+        static_cast<GLfloat>(SHAR_ANISOTROPIC_FILTER_LEVELS[selection]);
     if( requested > gSHARMaximumAnisotropy )
         requested = gSHARMaximumAnisotropy;
     glTexParameterf(GL_TEXTURE_2D, SHAR_GL_TEXTURE_MAX_ANISOTROPY_EXT, requested);

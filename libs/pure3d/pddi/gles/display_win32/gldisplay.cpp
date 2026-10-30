@@ -29,6 +29,7 @@ int gSHARRequestedOpenGLESVersionMajor = 3;
 int gSHARActiveOpenGLESVersionMajor = 3;
 
 bool IsCelShadingEnabled();
+bool IsSHARCelShadingFull();
 bool IsSHARFrontendMenuCelPassActive();
 bool IsMotionBlurEnabled();
 void SetSHARCharacterMaskWorldEnabled(bool enabled);
@@ -489,6 +490,7 @@ GLint gCelPostSceneLocation = -1;
 GLint gCelPostTexelLocation = -1;
 GLint gCelPostOutlineTexelSizeLocation = -1;
 GLint gCelPostFineDetailEnabledLocation = -1;
+GLint gCelPostScreenSpaceOutlineEnabledLocation = -1;
 GLint gCelPostBloomLocation = -1;
 GLint gCelPostBloomStrengthLocation = -1;
 GLint gCelPostDepthLocation = -1;
@@ -1561,6 +1563,7 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "uniform vec2 texelSize;\n"
             "uniform vec2 outlineTexelSize;\n"
             "uniform float fineDetailEnabled;\n"
+            "uniform float screenSpaceOutlinesEnabled;\n"
             "uniform float celEffectsEnabled;\n"
             "uniform float motionBlurEnabled;\n"
             "uniform float motionBlurCameraValid;\n"
@@ -1789,12 +1792,20 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    vec3 finalColour = scene.rgb;\n"
             "    if (celEffectsEnabled > 0.5) {\n"
             "\n"
-            "    // Existing screen-space cel outline detection.\n"
+            "    // The object-level toon and expanded-mesh silhouette passes are already in scene.rgb.\n"
+            "    // LITE skips only this additional screen-space contour stack.\n"
+            "    vec3 toonColour = scene.rgb;\n"
             "    float centreLuma = sceneLuma(scene.rgb);\n"
-            "    float leftLuma  = sceneLuma(texture2D(sceneTex, texcoord - vec2(outlineTexelSize.x, 0.0)).rgb);\n"
-            "    float rightLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(outlineTexelSize.x, 0.0)).rgb);\n"
-            "    float upLuma    = sceneLuma(texture2D(sceneTex, texcoord + vec2(0.0, outlineTexelSize.y)).rgb);\n"
-            "    float downLuma  = sceneLuma(texture2D(sceneTex, texcoord - vec2(0.0, outlineTexelSize.y)).rgb);\n"
+            "    float leftLuma = centreLuma;\n"
+            "    float rightLuma = centreLuma;\n"
+            "    float upLuma = centreLuma;\n"
+            "    float downLuma = centreLuma;\n"
+            "    if (screenSpaceOutlinesEnabled > 0.5) {\n"
+            "    // Existing screen-space cel outline detection.\n"
+            "    leftLuma  = sceneLuma(texture2D(sceneTex, texcoord - vec2(outlineTexelSize.x, 0.0)).rgb);\n"
+            "    rightLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(outlineTexelSize.x, 0.0)).rgb);\n"
+            "    upLuma    = sceneLuma(texture2D(sceneTex, texcoord + vec2(0.0, outlineTexelSize.y)).rgb);\n"
+            "    downLuma  = sceneLuma(texture2D(sceneTex, texcoord - vec2(0.0, outlineTexelSize.y)).rgb);\n"
             "    float edgeStrength = max(max(abs(centreLuma - leftLuma), abs(centreLuma - rightLuma)),\n"
             "                             max(abs(centreLuma - upLuma), abs(centreLuma - downLuma)));\n"
             "    float edge = smoothstep(0.10, 0.22, edgeStrength);\n"
@@ -1880,11 +1891,11 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "        texture2D(sceneTex, texcoord - vec2(0.0, outlineTexelSize.y)).rgb +\n"
             "        texture2D(sceneTex, texcoord + vec2(0.0, outlineTexelSize.y)).rgb) * 0.2;\n"
             "    float smoothAmount = 0.12 * smoothstep(0.025, 0.14, edgeStrength);\n"
-            "    vec3 toonColour = mix(scene.rgb, neighbourAverage, smoothAmount);\n"
+            "    toonColour = mix(scene.rgb, neighbourAverage, smoothAmount);\n"
             "\n"
             "    // Retain the existing full-scene toon edge darkening.\n"
             "    toonColour = mix(toonColour, toonColour * 0.35, edge);\n"
-            "\n"
+            "    }\n"
             "\n"
             "    // Add the blurred bright-pass texture produced by the multi-pass bloom pipeline.\n"
             "    vec3 bloomGlow = texture2D(bloomTex, texcoord).rgb;\n"
@@ -1892,7 +1903,9 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "\n"
             "    // Retain the existing screen-space sunlight/glare on top of the bloom.\n"
             "    float bright = max(centreLuma - 0.78, 0.0);\n"
-            "    bright = max(bright, max(max(leftLuma, rightLuma), max(upLuma, downLuma)) - 0.78);\n"
+            "    if (screenSpaceOutlinesEnabled > 0.5) {\n"
+            "        bright = max(bright, max(max(leftLuma, rightLuma), max(upLuma, downLuma)) - 0.78);\n"
+            "    }\n"
             "    bright = max(bright, 0.0);\n"
             "    float sunRegion = 1.0 - smoothstep(0.18, 0.70, distance(texcoord, vec2(0.5, 0.82)));\n"
             "    float glare = bright * sunRegion * 0.10 * step(0.001, bloomStrength);\n"
@@ -1967,6 +1980,8 @@ static bool EnsureCelPostProcessResources(int width, int height)
         gCelPostTexelLocation = glGetUniformLocation(gCelPostProgram, "texelSize");
         gCelPostOutlineTexelSizeLocation = glGetUniformLocation(gCelPostProgram, "outlineTexelSize");
         gCelPostFineDetailEnabledLocation = glGetUniformLocation(gCelPostProgram, "fineDetailEnabled");
+        gCelPostScreenSpaceOutlineEnabledLocation =
+            glGetUniformLocation(gCelPostProgram, "screenSpaceOutlinesEnabled");
         gCelPostBloomLocation = glGetUniformLocation(gCelPostProgram, "bloomTex");
         gCelPostBloomStrengthLocation = glGetUniformLocation(gCelPostProgram, "bloomStrength");
         gCelPostDepthLocation = glGetUniformLocation(gCelPostProgram, "depthTex");
@@ -2662,8 +2677,13 @@ static void ApplyCelPostProcess(int width, int height)
         glUniform2f(gCelPostOutlineTexelSizeLocation,
             outlineScale / (float)width, outlineScale / (float)height);
     }
+    const bool celShadingFull = IsSHARCelShadingFull();
     if (gCelPostFineDetailEnabledLocation >= 0)
-        glUniform1f(gCelPostFineDetailEnabledLocation, height > 1080 ? 1.0f : 0.0f);
+        glUniform1f(gCelPostFineDetailEnabledLocation,
+            (celShadingFull && height > 1080) ? 1.0f : 0.0f);
+    if (gCelPostScreenSpaceOutlineEnabledLocation >= 0)
+        glUniform1f(gCelPostScreenSpaceOutlineEnabledLocation,
+            celShadingFull ? 1.0f : 0.0f);
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, bloomReady ? gCelBloomTexture : 0);
@@ -3042,7 +3062,8 @@ static bool EnsureSHARFrontendFineDetailResources(int width, int height)
 
 void ApplySHARFrontendMenuFineDetail()
 {
-    if (!IsSHARFrontendMenuCelPassActive() || !IsCelShadingEnabled())
+    if (!IsSHARFrontendMenuCelPassActive() || !IsCelShadingEnabled() ||
+        !IsSHARCelShadingFull())
         return;
 
     int outputWidth = 0;

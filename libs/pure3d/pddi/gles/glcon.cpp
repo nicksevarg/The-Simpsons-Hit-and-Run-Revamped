@@ -151,6 +151,10 @@ void SetSHARObjectDimming(float brightness, float saturation)
 }
 #endif
 static bool gCelShadingConfigurationLoaded = false;
+// FULL preserves the existing screen-space contours; LITE keeps object toon
+// lighting and expanded-mesh silhouettes but skips the additional contour passes.
+static bool gSHARCelShadingFull = true;
+static bool gSHARCelShadingQualityConfigurationLoaded = false;
 // Fresh installs use the Remastered Settings sharpening default of 40%.
 // User-selected values are loaded from Simpsons_sharpening.txt and remain unchanged on existing installs.
 static float gFrameSharpenStrength = 0.4f;
@@ -174,6 +178,7 @@ static float gCRTContrast = 1.0f;
 static const char* CRT_CONFIGURATION_FILE_NAME = "Simpsons_crt_configuration.txt";
 static const char* MOTION_BLUR_CONFIGURATION_FILE_NAME = "Simpsons_motion_blur.txt";
 static const char* CEL_SHADING_CONFIGURATION_FILE_NAME = "Simpsons_cel_shading.txt";
+static const char* CEL_SHADING_QUALITY_CONFIGURATION_FILE_NAME = "Simpsons_cel_shading_quality.txt";
 static const char* SHARPENING_CONFIGURATION_FILE_NAME = "Simpsons_sharpening.txt";
 static const char* RIM_LIGHTING_CONFIGURATION_FILE_NAME = "Simpsons_rim_lighting.txt";
 
@@ -322,6 +327,73 @@ static void LoadCelShadingConfiguration()
         WriteCelShadingConfiguration();
         RemoveLegacyRootConfigurationIfMigrated(CEL_SHADING_CONFIGURATION_FILE_NAME, filePath);
     }
+}
+
+static void WriteSHARCelShadingQualityConfiguration()
+{
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(
+            filePath, sizeof(filePath), CEL_SHADING_QUALITY_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "w");
+    if (file == nullptr)
+        return;
+
+    fprintf(file, "# Simpsons Hit & Run - Revamped! [Cel Shading Quality]\n");
+    fprintf(file, "# LITE keeps object toon shading and silhouette outlines.\n");
+    fprintf(file, "# FULL enables the additional screen-space and living-room detail passes.\n");
+    fprintf(file, "# Change with lite/full values.\n");
+    fprintf(file, "# You can also use the in-game Graphics menu.\n");
+    fprintf(file, "\n");
+    fprintf(file, "cel_shading_quality=%s\n", gSHARCelShadingFull ? "full" : "lite");
+    fclose(file);
+}
+
+static void LoadSHARCelShadingQualityConfiguration()
+{
+    if (gSHARCelShadingQualityConfigurationLoaded)
+        return;
+
+    gSHARCelShadingQualityConfigurationLoaded = true;
+
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(
+            filePath, sizeof(filePath), CEL_SHADING_QUALITY_CONFIGURATION_FILE_NAME))
+        return;
+
+    FILE* file = fopen(filePath, "r");
+    if (file == nullptr)
+    {
+        WriteSHARCelShadingQualityConfiguration();
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file) != nullptr)
+    {
+        char* value = strstr(line, "cel_shading_quality=");
+        if (value == nullptr)
+            continue;
+
+        value += strlen("cel_shading_quality=");
+        while (*value == ' ' || *value == '\t')
+            ++value;
+
+        if (strncmp(value, "lite", 4) == 0 ||
+            strncmp(value, "LITE", 4) == 0 || *value == '0')
+        {
+            gSHARCelShadingFull = false;
+        }
+        else if (strncmp(value, "full", 4) == 0 ||
+                 strncmp(value, "FULL", 4) == 0 || *value == '1')
+        {
+            gSHARCelShadingFull = true;
+        }
+        break;
+    }
+
+    fclose(file);
 }
 
 static void WriteSharpeningConfiguration()
@@ -807,6 +879,33 @@ static void ApplyCelShadingState()
 {
     if (gCelShadingContext)
         gCelShadingContext->ApplyCelShadingState();
+}
+
+bool IsSHARCelShadingFull()
+{
+    LoadSHARCelShadingQualityConfiguration();
+    return gSHARCelShadingFull;
+}
+
+void SetSHARCelShadingFull(bool full)
+{
+    LoadSHARCelShadingQualityConfiguration();
+    LoadCelShadingConfiguration();
+
+    if (gSHARCelShadingFull != full)
+    {
+        gSHARCelShadingFull = full;
+        WriteSHARCelShadingQualityConfiguration();
+    }
+
+    // The new selector has no OFF state: both LITE and FULL require the base
+    // object-level toon lighting and silhouette-outline rendering to stay on.
+    if (!gCelShadingEnabled)
+    {
+        gCelShadingEnabled = true;
+        WriteCelShadingConfiguration();
+        ApplyCelShadingState();
+    }
 }
 
 bool IsSHARRimLightingEnabled()
