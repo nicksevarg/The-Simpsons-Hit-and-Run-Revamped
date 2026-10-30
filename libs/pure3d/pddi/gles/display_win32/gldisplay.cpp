@@ -23,8 +23,10 @@
 #include <EGL/egl.h>
 #include <sys/stat.h>
 
-extern int gSHARRequestedOpenGLESVersionMajor;
-extern int gSHARActiveOpenGLESVersionMajor;
+// Keep GLES context-version state in this renderer translation unit.
+// Android helper executables link libpddi without linking Win32Platform.cpp.
+int gSHARRequestedOpenGLESVersionMajor = 3;
+int gSHARActiveOpenGLESVersionMajor = 3;
 
 bool IsCelShadingEnabled();
 bool IsSHARFrontendMenuCelPassActive();

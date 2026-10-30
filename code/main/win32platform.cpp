@@ -177,9 +177,10 @@ void* Win32Platform::mhMutex = NULL;
 bool Win32Platform::mShowCursor = true;
 
 #if defined(RAD_ANDROID)
-// Preserve the preferred context version and the version currently requested from SDL.
-int gSHARRequestedOpenGLESVersionMajor = 3;
-int gSHARActiveOpenGLESVersionMajor = 3;
+// The GLES display implementation owns these values so every target linking
+// the renderer (including helper executables) resolves the shared state.
+extern int gSHARRequestedOpenGLESVersionMajor;
+extern int gSHARActiveOpenGLESVersionMajor;
 #endif
 
 //The Adlib font.  <sigh>
