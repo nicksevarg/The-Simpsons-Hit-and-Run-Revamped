@@ -1,4 +1,4 @@
-name: Build Simpsons H&R Switch Controller + README Baseline APK
+name: Graphics Optimization
 
 on:
   push:
@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   build:
+    name: Graphics Optimization APK
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -156,7 +157,7 @@ jobs:
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: Simpsons-HR-Revamped-Switch-Controller-README-Baseline
+          name: Simpsons-HR-Revamped-Graphics-Optimization-APK
           path: android-project/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -164,7 +165,7 @@ jobs:
       - name: Upload adaptive icon previews
         uses: actions/upload-artifact@v4
         with:
-          name: Simpsons-HR-Revamped-Crisp-Adaptive-Icon-Previews
+          name: Simpsons-HR-Revamped-Graphics-Optimization-Icon-Previews
           path: |
             adaptive-icon-preview.png
             adaptive-icon-preview-round.png
