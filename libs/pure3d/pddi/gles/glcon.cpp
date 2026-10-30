@@ -1061,6 +1061,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
 #else
     GLuint vertexShader = pglProgram::CompileShader(GL_VERTEX_SHADER,
         "precision highp float;\n"
+        "precision mediump int;\n"
 
         "attribute vec3 position;\n"
         "attribute vec3 normal;\n"
@@ -1100,6 +1101,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
     // each polygon instead of being interpolated from the triangle vertices.
     const std::string toonLighting =
         "precision mediump float;\n"
+        "precision mediump int;\n"
         "varying vec2 tc;\n"
         "varying vec4 cpri;\n"
         "varying vec3 toonNormal;\n"
@@ -1280,11 +1282,11 @@ pglContext::~pglContext()
         gCelShadingContext = nullptr;
 #endif
 
-    defaultShader->Release();
-    currentProgram->Release();
-    colorProgram->Release();
-    textureProgram->Release();
-    alphaTestProgram->Release();
+    if (defaultShader) defaultShader->Release();
+    if (currentProgram) currentProgram->Release();
+    if (colorProgram) colorProgram->Release();
+    if (textureProgram) textureProgram->Release();
+    if (alphaTestProgram) alphaTestProgram->Release();
 
     delete extContext;
     delete extGamma;
@@ -2021,6 +2023,8 @@ void pglContext::DrawPrimBuffer(pddiShader* mat, pddiPrimBuffer* buffer)
     pddiBaseShader* material = (pddiBaseShader*)mat;
     ADD_STAT(PDDI_STAT_MATERIAL_OPS, !material->IsCurrent());
     material->SetMaterial();
+    if (!currentProgram)
+        return;
     ((pglPrimBuffer*)buffer)->Display();
 }
 
@@ -2294,5 +2298,9 @@ void pglContext::SetTextureEnvironment(const pglTextureEnv* texEnv)
         SetShaderProgram(texEnv->alphaTest ? alphaTestProgram : textureProgram);
     else
         SetShaderProgram(colorProgram);
+    // A failed shader link leaves no active program. Skip this material rather
+    // than dereferencing a null program and crashing the SDL render thread.
+    if (!currentProgram)
+        return;
     currentProgram->SetTextureEnvironment(texEnv);
 }
