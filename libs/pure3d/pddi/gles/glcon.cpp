@@ -15,6 +15,7 @@ bool GetSHARMotionBlurCameraBasis(float* output);
 
 #ifdef RAD_ANDROID
 #include <SDL_system.h>
+#include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
