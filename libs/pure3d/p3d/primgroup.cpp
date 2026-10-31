@@ -283,6 +283,13 @@ void tPrimGroupStreamed::Display()
     // the skinning is done by tPrimGroupStreamed::Display();
     unsigned vertexFormat = mVertexList->GetFormat();
     vertexFormat &= ~(PDDI_V_INDICES | PDDI_V_WEIGHTS);
+#ifdef RAD_ANDROID
+    // This streaming path has no retained interleaved buffer in which to
+    // cache generated normals. Don't draw an unexpanded inverted hull.
+    if (IsSHAREnvironmentCelPassActive() && IsCelShadingOutlinePass() &&
+        !(vertexFormat & PDDI_V_NORMAL))
+        return;
+#endif
 
 #ifdef RAD_XBOX
     if(vertexProgram)
