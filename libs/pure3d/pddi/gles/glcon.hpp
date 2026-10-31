@@ -232,8 +232,10 @@ protected:
     bool environmentNormalsAttempted;
     bool environmentNormalsAvailable;
     bool environmentWindingDiagnosticsReported;
+    bool environmentMeshQualityDiagnosticsReported;
     bool GenerateEnvironmentNormals();
     bool DiagnoseEnvironmentWinding();
+    bool DiagnoseEnvironmentMeshQuality();
 #endif
     GLuint vertexBuffer;
     GLuint indexBuffer;

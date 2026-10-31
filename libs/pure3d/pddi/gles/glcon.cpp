@@ -23,6 +23,8 @@ bool GetSHARMotionBlurCameraBasis(float* output);
 #include <errno.h>
 #include <stdint.h>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 
 static bool gCelShadingEnabled = true;
@@ -239,7 +241,8 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
             fprintf(file, "# 2 = disable face culling during environment outline draws.\n");
             fprintf(file, "# 3 = disable both depth testing and face culling.\n");
             fprintf(file, "# 4 = opposite face culling (GL_FRONT), with depth testing enabled.\n");
-            fprintf(file, "# 5 = normal rendering plus mesh-winding diagnostic logs.\n");
+            fprintf(file, "# 5 = normal rendering plus indexed mesh-winding diagnostic logs.\n");
+            fprintf(file, "# 6 = normal rendering plus normal-coherence, duplicate-edge and stable-ID diagnostics.\n");
             fprintf(file, "outline_diagnostic_mode=0\n");
             fclose(file);
         }
@@ -261,8 +264,8 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
         {
             if (parsed < 0)
                 gSHAREnvironmentOutlineDiagnosticMode = 0;
-            else if (parsed > 5)
-                gSHAREnvironmentOutlineDiagnosticMode = 5;
+            else if (parsed > 6)
+                gSHAREnvironmentOutlineDiagnosticMode = 6;
             else
                 gSHAREnvironmentOutlineDiagnosticMode = static_cast<int>(parsed);
         }
@@ -2059,6 +2062,7 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     environmentNormalsAttempted = false;
     environmentNormalsAvailable = false;
     environmentWindingDiagnosticsReported = false;
+    environmentMeshQualityDiagnosticsReported = false;
 #endif
     vertexBuffer = indexBuffer = vertexArray = 0;
 
@@ -2305,6 +2309,345 @@ bool pglPrimBuffer::DiagnoseEnvironmentWinding()
     return true;
 }
 
+bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
+{
+    if (environmentMeshQualityDiagnosticsReported)
+        return true;
+    environmentMeshQualityDiagnosticsReported = true;
+
+    static unsigned reportedEnvironmentQualityMeshes = 0;
+    if (reportedEnvironmentQualityMeshes >= 96)
+        return true;
+    if (coord == NULL || allocated < 3)
+        return false;
+
+    const int elementCount = (indexCount > 0 && indices != NULL)
+        ? (int)indexCount : (int)total;
+    if (elementCount < 3)
+        return false;
+
+    struct QuantizedPoint
+    {
+        int64_t x, y, z;
+        bool operator==(const QuantizedPoint& other) const
+        {
+            return x == other.x && y == other.y && z == other.z;
+        }
+    };
+    struct QuantizedPointHash
+    {
+        size_t operator()(const QuantizedPoint& p) const
+        {
+            uint64_t hash = 1469598103934665603ULL;
+            const int64_t values[3] = { p.x, p.y, p.z };
+            for (int i = 0; i < 3; ++i)
+            {
+                const uint64_t value = static_cast<uint64_t>(values[i]);
+                for (unsigned byte = 0; byte < 8; ++byte)
+                {
+                    hash ^= (value >> (byte * 8)) & 0xffULL;
+                    hash *= 1099511628211ULL;
+                }
+            }
+            return static_cast<size_t>(hash ^ (hash >> 32));
+        }
+    };
+    struct GeometricEdge
+    {
+        QuantizedPoint low;
+        QuantizedPoint high;
+        bool operator==(const GeometricEdge& other) const
+        {
+            return low == other.low && high == other.high;
+        }
+    };
+    struct GeometricEdgeHash
+    {
+        size_t operator()(const GeometricEdge& edge) const
+        {
+            QuantizedPointHash pointHash;
+            const uint64_t a = static_cast<uint64_t>(pointHash(edge.low));
+            const uint64_t b = static_cast<uint64_t>(pointHash(edge.high));
+            const uint64_t combined = (a * 0x9e3779b185ebca87ULL) ^
+                                      (b + 0x9e3779b97f4a7c15ULL);
+            return static_cast<size_t>(combined ^ (combined >> 32));
+        }
+    };
+    struct GeometricEdgeUse
+    {
+        unsigned forward;
+        unsigned reverse;
+        std::unordered_set<uint64_t> indexedVariants;
+        GeometricEdgeUse() : forward(0), reverse(0) {}
+    };
+    struct NormalAccumulation
+    {
+        double x, y, z;
+        double totalMagnitude;
+        unsigned contributions;
+        NormalAccumulation() : x(0.0), y(0.0), z(0.0),
+                               totalMagnitude(0.0), contributions(0) {}
+    };
+
+    const auto quantizePoint = [](const float* position, QuantizedPoint* point) -> bool
+    {
+        if (!isfinite(position[0]) || !isfinite(position[1]) || !isfinite(position[2]))
+            return false;
+        // Quantize local positions to 0.0001 units to reconnect duplicated seam vertices.
+        point->x = static_cast<int64_t>(llround(static_cast<double>(position[0]) * 10000.0));
+        point->y = static_cast<int64_t>(llround(static_cast<double>(position[1]) * 10000.0));
+        point->z = static_cast<int64_t>(llround(static_cast<double>(position[2]) * 10000.0));
+        return true;
+    };
+    const auto pointLess = [](const QuantizedPoint& a, const QuantizedPoint& b) -> bool
+    {
+        if (a.x != b.x) return a.x < b.x;
+        if (a.y != b.y) return a.y < b.y;
+        return a.z < b.z;
+    };
+
+    std::unordered_map<GeometricEdge, GeometricEdgeUse, GeometricEdgeHash> geometricEdges;
+    std::unordered_map<QuantizedPoint, unsigned, QuantizedPointHash> vertexPositionUses;
+    geometricEdges.reserve(static_cast<size_t>(elementCount));
+    vertexPositionUses.reserve(static_cast<size_t>(allocated));
+    std::vector<NormalAccumulation> normalAccumulations(allocated);
+
+    // Stable FNV-1a ID over quantized positions and the primitive index stream.
+    // Unlike a pointer, this can identify equivalent mesh buffers in separate runs.
+    uint64_t fingerprint = 1469598103934665603ULL;
+    const auto hashValue = [&fingerprint](uint64_t value)
+    {
+        for (unsigned byte = 0; byte < 8; ++byte)
+        {
+            fingerprint ^= (value >> (byte * 8)) & 0xffULL;
+            fingerprint *= 1099511628211ULL;
+        }
+    };
+    hashValue(static_cast<uint64_t>(primType));
+    hashValue(static_cast<uint64_t>(vertexType));
+    hashValue(static_cast<uint64_t>(allocated));
+    hashValue(static_cast<uint64_t>(elementCount));
+
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        const float* position = (const float*)((const unsigned char*)coord + i * stride);
+        QuantizedPoint point;
+        if (quantizePoint(position, &point))
+        {
+            hashValue(static_cast<uint64_t>(point.x));
+            hashValue(static_cast<uint64_t>(point.y));
+            hashValue(static_cast<uint64_t>(point.z));
+            ++vertexPositionUses[point];
+        }
+        else
+        {
+            hashValue(0xffffffffffffffffULL);
+            hashValue(0xfffffffffffffffeULL);
+            hashValue(0xfffffffffffffffdULL);
+        }
+    }
+    for (int i = 0; i < elementCount; ++i)
+    {
+        const unsigned index = (indices != NULL) ? indices[i] : static_cast<unsigned>(i);
+        hashValue(static_cast<uint64_t>(index));
+    }
+
+    unsigned validTriangles = 0;
+    unsigned degenerateTriangles = 0;
+    unsigned invalidIndexTriangles = 0;
+    unsigned invalidPositionTriangles = 0;
+    unsigned collapsedPositionEdges = 0;
+
+    const auto addGeometricEdge = [&geometricEdges, &pointLess, &collapsedPositionEdges]
+        (unsigned indexA, unsigned indexB,
+         const QuantizedPoint& pointA, const QuantizedPoint& pointB)
+    {
+        if (pointA == pointB)
+        {
+            ++collapsedPositionEdges;
+            return;
+        }
+        GeometricEdge edge;
+        const bool forward = pointLess(pointA, pointB);
+        if (forward)
+        {
+            edge.low = pointA;
+            edge.high = pointB;
+        }
+        else
+        {
+            edge.low = pointB;
+            edge.high = pointA;
+        }
+        GeometricEdgeUse& use = geometricEdges[edge];
+        if (forward) ++use.forward;
+        else ++use.reverse;
+
+        const unsigned lowIndex = indexA < indexB ? indexA : indexB;
+        const unsigned highIndex = indexA < indexB ? indexB : indexA;
+        const uint64_t indexEdge = (static_cast<uint64_t>(lowIndex) << 32) |
+                                   static_cast<uint64_t>(highIndex);
+        use.indexedVariants.insert(indexEdge);
+    };
+
+    const auto addTriangle = [this, &quantizePoint, &normalAccumulations,
+                              &addGeometricEdge, &validTriangles,
+                              &degenerateTriangles, &invalidIndexTriangles,
+                              &invalidPositionTriangles]
+                             (unsigned a, unsigned b, unsigned c)
+    {
+        if (a >= allocated || b >= allocated || c >= allocated)
+        {
+            ++invalidIndexTriangles;
+            return;
+        }
+        if (a == b || b == c || a == c)
+        {
+            ++degenerateTriangles;
+            return;
+        }
+
+        const float* pa = (const float*)((const unsigned char*)coord + a * stride);
+        const float* pb = (const float*)((const unsigned char*)coord + b * stride);
+        const float* pc = (const float*)((const unsigned char*)coord + c * stride);
+        QuantizedPoint qa, qb, qc;
+        if (!quantizePoint(pa, &qa) || !quantizePoint(pb, &qb) ||
+            !quantizePoint(pc, &qc))
+        {
+            ++invalidPositionTriangles;
+            return;
+        }
+
+        const float abx = pb[0] - pa[0], aby = pb[1] - pa[1], abz = pb[2] - pa[2];
+        const float acx = pc[0] - pa[0], acy = pc[1] - pa[1], acz = pc[2] - pa[2];
+        const double nx = static_cast<double>(aby) * acz - static_cast<double>(abz) * acy;
+        const double ny = static_cast<double>(abz) * acx - static_cast<double>(abx) * acz;
+        const double nz = static_cast<double>(abx) * acy - static_cast<double>(aby) * acx;
+        const double lengthSquared = nx * nx + ny * ny + nz * nz;
+        if (lengthSquared <= 1.0e-12)
+        {
+            ++degenerateTriangles;
+            return;
+        }
+
+        const double magnitude = sqrt(lengthSquared);
+        const unsigned vertexIndices[3] = { a, b, c };
+        for (int vertex = 0; vertex < 3; ++vertex)
+        {
+            NormalAccumulation& accumulation = normalAccumulations[vertexIndices[vertex]];
+            accumulation.x += nx;
+            accumulation.y += ny;
+            accumulation.z += nz;
+            accumulation.totalMagnitude += magnitude;
+            ++accumulation.contributions;
+        }
+        addGeometricEdge(a, b, qa, qb);
+        addGeometricEdge(b, c, qb, qc);
+        addGeometricEdge(c, a, qc, qa);
+        ++validTriangles;
+    };
+
+    if (primType == PDDI_PRIM_TRIANGLES)
+    {
+        for (int i = 0; i + 2 < elementCount; i += 3)
+            addTriangle(indices ? indices[i] : static_cast<unsigned>(i),
+                        indices ? indices[i + 1] : static_cast<unsigned>(i + 1),
+                        indices ? indices[i + 2] : static_cast<unsigned>(i + 2));
+    }
+    else if (primType == PDDI_PRIM_TRISTRIP)
+    {
+        for (int i = 0; i + 2 < elementCount; ++i)
+        {
+            unsigned a = indices ? indices[i] : static_cast<unsigned>(i);
+            unsigned b = indices ? indices[i + 1] : static_cast<unsigned>(i + 1);
+            const unsigned c = indices ? indices[i + 2] : static_cast<unsigned>(i + 2);
+            if (i & 1) { const unsigned swap = a; a = b; b = swap; }
+            addTriangle(a, b, c);
+        }
+    }
+    else
+    {
+        return false;
+    }
+
+    unsigned duplicatePositionVertices = 0;
+    for (std::unordered_map<QuantizedPoint, unsigned, QuantizedPointHash>::const_iterator it =
+             vertexPositionUses.begin(); it != vertexPositionUses.end(); ++it)
+    {
+        if (it->second > 1)
+            duplicatePositionVertices += it->second - 1;
+    }
+
+    unsigned geometricBoundaryEdges = 0;
+    unsigned geometricSharedEdges = 0;
+    unsigned geometricWindingConflicts = 0;
+    unsigned geometricNonManifoldEdges = 0;
+    unsigned splitIndexEdges = 0;
+    for (std::unordered_map<GeometricEdge, GeometricEdgeUse, GeometricEdgeHash>::const_iterator it =
+             geometricEdges.begin(); it != geometricEdges.end(); ++it)
+    {
+        const unsigned totalUses = it->second.forward + it->second.reverse;
+        if (totalUses == 1) ++geometricBoundaryEdges;
+        else if (totalUses == 2) ++geometricSharedEdges;
+        else if (totalUses > 2) ++geometricNonManifoldEdges;
+        if (totalUses >= 2 &&
+            (it->second.forward == 0 || it->second.reverse == 0))
+            ++geometricWindingConflicts;
+        if (totalUses >= 2 && it->second.indexedVariants.size() > 1)
+            ++splitIndexEdges;
+    }
+
+    unsigned normalVertices = 0;
+    unsigned lowCoherenceVertices = 0;
+    unsigned mediumCoherenceVertices = 0;
+    unsigned zeroResultantVertices = 0;
+    double coherenceSum = 0.0;
+    double minimumCoherence = 1.0;
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        const NormalAccumulation& accumulation = normalAccumulations[i];
+        if (accumulation.contributions == 0 || accumulation.totalMagnitude <= 0.0)
+            continue;
+        const double resultant = sqrt(accumulation.x * accumulation.x +
+                                       accumulation.y * accumulation.y +
+                                       accumulation.z * accumulation.z);
+        double coherence = resultant / accumulation.totalMagnitude;
+        if (coherence > 1.0) coherence = 1.0;
+        if (coherence < 0.0) coherence = 0.0;
+        ++normalVertices;
+        coherenceSum += coherence;
+        if (coherence < minimumCoherence) minimumCoherence = coherence;
+        if (coherence < 0.25) ++lowCoherenceVertices;
+        else if (coherence < 0.50) ++mediumCoherenceVertices;
+        if (resultant <= 1.0e-8) ++zeroResultantVertices;
+    }
+
+    const double averageCoherence = normalVertices > 0
+        ? coherenceSum / normalVertices : 0.0;
+    if (normalVertices == 0) minimumCoherence = 0.0;
+
+    SDL_Log("[SHAR Outline MeshQuality] fingerprint=%016llX prim=%d vertexType=0x%X "
+            "vertices=%u elements=%d triangles=%u degenerateTriangles=%u "
+            "invalidIndexTriangles=%u invalidPositionTriangles=%u "
+            "duplicatePositionVertices=%u normalVertices=%u "
+            "lowCoherence(<0.25)=%u mediumCoherence(<0.50)=%u "
+            "zeroResultantNormals=%u avgNormalCoherence=%.4f minNormalCoherence=%.4f "
+            "geoBoundaryEdges=%u geoSharedEdges=%u geoWindingConflicts=%u "
+            "geoNonManifoldEdges=%u splitIndexEdges=%u collapsedPositionEdges=%u "
+            "positionTolerance=0.0001",
+            static_cast<unsigned long long>(fingerprint),
+            (int)primType, vertexType, allocated, elementCount, validTriangles,
+            degenerateTriangles, invalidIndexTriangles, invalidPositionTriangles,
+            duplicatePositionVertices, normalVertices, lowCoherenceVertices,
+            mediumCoherenceVertices, zeroResultantVertices,
+            averageCoherence, minimumCoherence, geometricBoundaryEdges,
+            geometricSharedEdges, geometricWindingConflicts,
+            geometricNonManifoldEdges, splitIndexEdges, collapsedPositionEdges);
+
+    ++reportedEnvironmentQualityMeshes;
+    return true;
+}
+
 bool pglPrimBuffer::GenerateEnvironmentNormals()
 {
     if (environmentNormalsAttempted)
@@ -2425,6 +2768,8 @@ void pglPrimBuffer::Display(void)
         if (gSHAREnvironmentOutlineDiagnosticMode == 4 ||
             gSHAREnvironmentOutlineDiagnosticMode == 5)
             DiagnoseEnvironmentWinding();
+        else if (gSHAREnvironmentOutlineDiagnosticMode == 6)
+            DiagnoseEnvironmentMeshQuality();
     }
 
     if (environmentOutlineGeometryPass &&
