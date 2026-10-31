@@ -21,6 +21,8 @@ bool GetSHARMotionBlurCameraBasis(float* output);
 #include <math.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <stdint.h>
+#include <unordered_map>
 
 
 static bool gCelShadingEnabled = true;
@@ -236,6 +238,8 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
             fprintf(file, "# 1 = disable depth testing during environment outline draws.\n");
             fprintf(file, "# 2 = disable face culling during environment outline draws.\n");
             fprintf(file, "# 3 = disable both depth testing and face culling.\n");
+            fprintf(file, "# 4 = opposite face culling (GL_FRONT), with depth testing enabled.\n");
+            fprintf(file, "# 5 = normal rendering plus mesh-winding diagnostic logs.\n");
             fprintf(file, "outline_diagnostic_mode=0\n");
             fclose(file);
         }
@@ -257,8 +261,8 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
         {
             if (parsed < 0)
                 gSHAREnvironmentOutlineDiagnosticMode = 0;
-            else if (parsed > 3)
-                gSHAREnvironmentOutlineDiagnosticMode = 3;
+            else if (parsed > 5)
+                gSHAREnvironmentOutlineDiagnosticMode = 5;
             else
                 gSHAREnvironmentOutlineDiagnosticMode = static_cast<int>(parsed);
         }
@@ -2054,6 +2058,7 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
 #ifdef RAD_ANDROID
     environmentNormalsAttempted = false;
     environmentNormalsAvailable = false;
+    environmentWindingDiagnosticsReported = false;
 #endif
     vertexBuffer = indexBuffer = vertexArray = 0;
 
@@ -2164,6 +2169,142 @@ void pglPrimBuffer::SetIndices(unsigned short* i, int count)
 }
 
 #ifdef RAD_ANDROID
+bool pglPrimBuffer::DiagnoseEnvironmentWinding()
+{
+    if (environmentWindingDiagnosticsReported)
+        return true;
+
+    environmentWindingDiagnosticsReported = true;
+    if (coord == NULL || allocated < 3)
+        return false;
+
+    const int elementCount = (indexCount > 0 && indices != NULL)
+        ? (int)indexCount : (int)total;
+    if (elementCount < 3)
+        return false;
+
+    struct EdgeUseCounts
+    {
+        unsigned forward;
+        unsigned reverse;
+        EdgeUseCounts() : forward(0), reverse(0) {}
+    };
+
+    std::unordered_map<uint64_t, EdgeUseCounts> edgeUses;
+    edgeUses.reserve((size_t)elementCount);
+
+    unsigned validTriangles = 0;
+    unsigned degenerateTriangles = 0;
+    unsigned invalidIndexTriangles = 0;
+
+    const auto addEdge = [&edgeUses](unsigned a, unsigned b)
+    {
+        const unsigned low = a < b ? a : b;
+        const unsigned high = a < b ? b : a;
+        const uint64_t key = (static_cast<uint64_t>(low) << 32) |
+                             static_cast<uint64_t>(high);
+        EdgeUseCounts& use = edgeUses[key];
+        if (a < b)
+            ++use.forward;
+        else
+            ++use.reverse;
+    };
+
+    const auto addTriangle = [this, &addEdge, &validTriangles,
+                              &degenerateTriangles, &invalidIndexTriangles]
+                             (unsigned a, unsigned b, unsigned c)
+    {
+        if (a >= allocated || b >= allocated || c >= allocated)
+        {
+            ++invalidIndexTriangles;
+            return;
+        }
+        if (a == b || b == c || a == c)
+        {
+            ++degenerateTriangles;
+            return;
+        }
+
+        const float* pa = (const float*)((const unsigned char*)coord + a * stride);
+        const float* pb = (const float*)((const unsigned char*)coord + b * stride);
+        const float* pc = (const float*)((const unsigned char*)coord + c * stride);
+        const float abx = pb[0] - pa[0], aby = pb[1] - pa[1], abz = pb[2] - pa[2];
+        const float acx = pc[0] - pa[0], acy = pc[1] - pa[1], acz = pc[2] - pa[2];
+        const float nx = aby * acz - abz * acy;
+        const float ny = abz * acx - abx * acz;
+        const float nz = abx * acy - aby * acx;
+        if (nx * nx + ny * ny + nz * nz <= 1.0e-12f)
+        {
+            ++degenerateTriangles;
+            return;
+        }
+
+        ++validTriangles;
+        addEdge(a, b);
+        addEdge(b, c);
+        addEdge(c, a);
+    };
+
+    if (primType == PDDI_PRIM_TRIANGLES)
+    {
+        for (int i = 0; i + 2 < elementCount; i += 3)
+            addTriangle(indices ? indices[i] : (unsigned)i,
+                        indices ? indices[i + 1] : (unsigned)(i + 1),
+                        indices ? indices[i + 2] : (unsigned)(i + 2));
+    }
+    else if (primType == PDDI_PRIM_TRISTRIP)
+    {
+        for (int i = 0; i + 2 < elementCount; ++i)
+        {
+            unsigned a = indices ? indices[i] : (unsigned)i;
+            unsigned b = indices ? indices[i + 1] : (unsigned)(i + 1);
+            const unsigned c = indices ? indices[i + 2] : (unsigned)(i + 2);
+            if (i & 1) { const unsigned swap = a; a = b; b = swap; }
+            addTriangle(a, b, c);
+        }
+    }
+    else
+    {
+        return false;
+    }
+
+    unsigned boundaryEdges = 0;
+    unsigned sharedEdges = 0;
+    unsigned windingConflictEdges = 0;
+    unsigned nonManifoldEdges = 0;
+    for (std::unordered_map<uint64_t, EdgeUseCounts>::const_iterator it = edgeUses.begin();
+         it != edgeUses.end(); ++it)
+    {
+        const unsigned totalUses = it->second.forward + it->second.reverse;
+        if (totalUses == 1)
+            ++boundaryEdges;
+        else if (totalUses >= 2)
+        {
+            ++sharedEdges;
+            if (it->second.forward == 0 || it->second.reverse == 0)
+                ++windingConflictEdges;
+            if (totalUses > 2)
+                ++nonManifoldEdges;
+        }
+    }
+
+    static unsigned reportedEnvironmentMeshes = 0;
+    if (reportedEnvironmentMeshes < 96)
+    {
+        SDL_Log("[SHAR Outline Winding] mesh=%p prim=%d vertexType=0x%X "
+                "vertices=%u elements=%d triangles=%u boundaryEdges=%u "
+                "sharedEdges=%u sameDirectionSharedEdges=%u nonManifoldEdges=%u "
+                "degenerateTriangles=%u invalidIndexTriangles=%u",
+                static_cast<void*>(this), (int)primType, vertexType,
+                allocated, elementCount, validTriangles, boundaryEdges,
+                sharedEdges, windingConflictEdges, nonManifoldEdges,
+                degenerateTriangles, invalidIndexTriangles);
+        ++reportedEnvironmentMeshes;
+    }
+
+    return true;
+}
+
 bool pglPrimBuffer::GenerateEnvironmentNormals()
 {
     if (environmentNormalsAttempted)
@@ -2276,10 +2417,15 @@ void pglPrimBuffer::Display(void)
 
 #ifdef RAD_ANDROID
     const bool environmentOutlineGeometryPass =
-        gSHAREnvironmentCelPassActive && gCelShadingEnabled &&
-        gCelShadingObjectEnabled && gCelShadingOutlinePass;
+        gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible &&
+        gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass;
     if (environmentOutlineGeometryPass)
+    {
         LoadSHAREnvironmentOutlineDiagnostics();
+        if (gSHAREnvironmentOutlineDiagnosticMode == 4 ||
+            gSHAREnvironmentOutlineDiagnosticMode == 5)
+            DiagnoseEnvironmentWinding();
+    }
 
     if (environmentOutlineGeometryPass &&
         !(vertexType & PDDI_V_NORMAL) && !GenerateEnvironmentNormals())
@@ -2388,6 +2534,7 @@ void pglPrimBuffer::Display(void)
     int outlineDiagnosticMode = 0;
     GLboolean depthTestWasEnabled = GL_FALSE;
     GLboolean cullWasEnabled = GL_FALSE;
+    GLint cullFaceModeWas = GL_BACK;
     const bool isEnvironmentOutlinePass =
         gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible &&
         gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass;
@@ -2396,17 +2543,27 @@ void pglPrimBuffer::Display(void)
         LoadSHAREnvironmentOutlineDiagnostics();
         outlineDiagnosticMode = gSHAREnvironmentOutlineDiagnosticMode;
 
-        if ((outlineDiagnosticMode & 1) != 0)
+        if (outlineDiagnosticMode == 1 || outlineDiagnosticMode == 3)
         {
             depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
             if (depthTestWasEnabled)
                 glDisable(GL_DEPTH_TEST);
         }
-        if ((outlineDiagnosticMode & 2) != 0)
+
+        if (outlineDiagnosticMode == 2 || outlineDiagnosticMode == 3)
         {
             cullWasEnabled = glIsEnabled(GL_CULL_FACE);
             if (cullWasEnabled)
                 glDisable(GL_CULL_FACE);
+        }
+        else if (outlineDiagnosticMode == 4)
+        {
+            cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+            glGetIntegerv(GL_CULL_FACE_MODE, &cullFaceModeWas);
+            // Inverted-hull outlines should expose the reverse-facing shell.
+            // This diagnostic culls front faces instead of the normal back faces.
+            glEnable(GL_CULL_FACE);
+            glCullFace(GL_FRONT);
         }
     }
 #endif
@@ -2421,10 +2578,23 @@ void pglPrimBuffer::Display(void)
     }
 
 #ifdef RAD_ANDROID
-    if ((outlineDiagnosticMode & 1) != 0 && depthTestWasEnabled)
+    if ((outlineDiagnosticMode == 1 || outlineDiagnosticMode == 3) &&
+        depthTestWasEnabled)
         glEnable(GL_DEPTH_TEST);
-    if ((outlineDiagnosticMode & 2) != 0 && cullWasEnabled)
-        glEnable(GL_CULL_FACE);
+
+    if (outlineDiagnosticMode == 2 || outlineDiagnosticMode == 3)
+    {
+        if (cullWasEnabled)
+            glEnable(GL_CULL_FACE);
+    }
+    else if (outlineDiagnosticMode == 4)
+    {
+        glCullFace((GLenum)cullFaceModeWas);
+        if (cullWasEnabled)
+            glEnable(GL_CULL_FACE);
+        else
+            glDisable(GL_CULL_FACE);
+    }
 #endif
 }
 

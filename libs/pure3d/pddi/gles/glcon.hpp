@@ -231,7 +231,9 @@ protected:
 #ifdef RAD_ANDROID
     bool environmentNormalsAttempted;
     bool environmentNormalsAvailable;
+    bool environmentWindingDiagnosticsReported;
     bool GenerateEnvironmentNormals();
+    bool DiagnoseEnvironmentWinding();
 #endif
     GLuint vertexBuffer;
     GLuint indexBuffer;
