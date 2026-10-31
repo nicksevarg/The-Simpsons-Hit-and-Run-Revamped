@@ -77,6 +77,7 @@ public:
     sim::PhysicsObject* pPhysObj();
     rmt::Matrix* pMatrix();
     tDrawable* pGeo();
+    void SetSHAREnvironmentCelEligible(bool eligible) { mSHAREnvironmentCelEligible = eligible; }
         
     //virtual void FetchGroundPlane();    // tell object to get itself a ground plane, through worldphysicsmanager, through groundplanepool
     //virtual void FreeGroundPlane();     // make this safe to call even when we don't have one?
@@ -110,6 +111,7 @@ protected:
     rmt::Matrix         mMatrix;
     tDrawable*          mpGeo;
     int                 mHideOnHitIndex;
+    bool                mSHAREnvironmentCelEligible;
     
 
     // need to hold this here, since the same object might be in more than one list..

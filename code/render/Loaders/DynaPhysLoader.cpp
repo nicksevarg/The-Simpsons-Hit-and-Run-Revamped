@@ -198,6 +198,7 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         rAssert(pCurDynaPhysDSG);
                         pCurDynaPhysDSG->SetName(name);
                         pCurDynaPhysDSG->mTranslucent = ( HasAlpha != 0 ) || pShadow;
+                        pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
                         pSimState = sim::SimState::CreateSimState(pCollObj,pPhysObj);
 
                         // I suppose this could have just as easily gone into LoadSetUp
@@ -338,6 +339,7 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         rAssert(pCurDynaPhysDSG);
         pCurDynaPhysDSG->SetName(objName);
         pCurDynaPhysDSG->mTranslucent = HasAlpha != 0;
+        pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
         pSimState = sim::SimState::CreateSimState(pCollObj, pPhysObj);
         pSimState->SetControl(sim::simAICtrl);
         pSimState->SetTransform(matrix);

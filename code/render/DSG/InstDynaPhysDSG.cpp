@@ -38,6 +38,33 @@
 #include <p3d/billboardobject.hpp>
 #include <p3d/anim/compositedrawable.hpp>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
+
 //************************************************************************
 //
 // Global Data, Local Data, Local Classes
@@ -70,7 +97,7 @@ const float INST_DYNA_MASS_IMPULSE_PARTICLE_BIAS = 5.0f;
 //
 //========================================================================
 InstDynaPhysDSG::InstDynaPhysDSG()
-:  /*mIsHit( false ), moved up to DynaPhysDSG*/ mpGeo( NULL ), mHideOnHitIndex( -1 )
+:  /*mIsHit( false ), moved up to DynaPhysDSG*/ mpGeo( NULL ), mHideOnHitIndex( -1 ), mSHAREnvironmentCelEligible( true )
 {
 
     // move to DynaPhysDSG
@@ -131,7 +158,14 @@ void InstDynaPhysDSG::Display()
         tCompositeDrawable* compDraw = static_cast<tCompositeDrawable*>( mpGeo );
         compDraw->GetDrawableElement( mHideOnHitIndex )->SetVisibility( !mIsHit );
     }
+#ifdef RAD_ANDROID
+    if (mSHAREnvironmentCelEligible)
+        DisplaySHAREnvironmentCelDrawable(mpGeo);
+    else
+        mpGeo->Display();
+#else
     mpGeo->Display();
+#endif
     p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
     if(CastsShadow())
     {
@@ -622,6 +656,7 @@ InstDynaPhysDSG* InstDynaPhysDSG::Clone(const char* Name, const rmt::Matrix& iMa
     rAssert(c);
     c->SetName(Name);
     c->mMatrix = iMatrix;
+    c->mSHAREnvironmentCelEligible = this->mSHAREnvironmentCelEligible;
     c->mpGeo = this->mpGeo;
     c->mpGeo->AddRef();
     c->SetCollisionAttributes(this->GetCollisionAttributes());

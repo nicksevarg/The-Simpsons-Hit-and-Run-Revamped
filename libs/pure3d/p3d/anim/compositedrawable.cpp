@@ -23,6 +23,11 @@
 #include <float.h>
 #include <string.h>
 
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentCelPassActive();
+bool IsCelShadingOutlinePass();
+#endif
+
 const int resizeElementSize = 2;
 const int defaultInitialElementSize = 5;
 
@@ -178,10 +183,15 @@ void tCompositeDrawable::Display(tPose* p)
             {
                 if (elements[i]->IsTranslucent())
                 {
-                    //if( BillboardQuadManager::sEnabled )    
-                    //    elements[i]->Display();
-                    //else 
-                        translucentObjects.Add(elements[i]->GetDrawable(), elements[i]->GetWorldMatrix(),elements[i]->SortOrder());            
+#ifdef RAD_ANDROID
+                    // Keep translucent effects out of the environment silhouette
+                    // pass. They are queued normally on the second draw, so blend
+                    // and alpha effects are rendered once with their original state.
+                    if (!(IsSHAREnvironmentCelPassActive() && IsCelShadingOutlinePass()))
+#endif
+                    {
+                        translucentObjects.Add(elements[i]->GetDrawable(), elements[i]->GetWorldMatrix(),elements[i]->SortOrder());
+                    }
                 }
                 else
                 {

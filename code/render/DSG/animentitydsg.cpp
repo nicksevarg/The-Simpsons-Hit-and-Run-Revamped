@@ -29,6 +29,33 @@
 
 #include <radtime.hpp>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
+
 //===========================================================================
 // Local Constants, Typedefs, and Macros
 //===========================================================================
@@ -149,7 +176,14 @@ void AnimEntityDSG::Display()
 	if ( mIsVisible )
 	{
         p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mTransformOffset);
+#ifdef RAD_ANDROID
+        if (!mTranslucent)
+            DisplaySHAREnvironmentCelDrawable(mpDrawable);
+        else
+            mpDrawable->Display();
+#else
         mpDrawable->Display();
+#endif
         p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
 	}
 
