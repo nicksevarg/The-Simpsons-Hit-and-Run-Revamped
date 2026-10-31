@@ -50,8 +50,8 @@ static int gSHARAndroidTargetFPS = 60;
 // between the closing and opening halves.
 static bool gSHARIrisTransitionActive = false;
 
-static bool gSHARBloomEnabled = true;
-static bool gSHARCloudShadowsEnabled = true;
+static bool gSHARBloomEnabled = false;
+static bool gSHARCloudShadowsEnabled = false;
 static bool gSHARGraphicsEffectTogglesLoaded = false;
 
 static void SHARLogAndroidEGLContextState(const char* eventName)
@@ -203,9 +203,9 @@ static void EnsureSHARGraphicsEffectTogglesLoaded()
     gSHARGraphicsEffectTogglesLoaded = true;
 
     gSHARBloomEnabled =
-        ReadSHARGraphicsToggleFile( "Simpsons_bloom.txt", true );
+        ReadSHARGraphicsToggleFile( "Simpsons_bloom.txt", false );
     gSHARCloudShadowsEnabled =
-        ReadSHARGraphicsToggleFile( "Simpsons_cloud_shadows.txt", true );
+        ReadSHARGraphicsToggleFile( "Simpsons_cloud_shadows.txt", false );
 }
 
 bool IsSHARBloomEnabled()
@@ -2561,7 +2561,8 @@ static void ApplyCelPostProcess(int width, int height)
 
     const bool celEffectsEnabled = IsCelShadingEnabled();
     const bool celShadingFull = IsSHARCelShadingFull();
-    const bool liteCelShading = !celShadingFull;
+    // OFF also uses the LITE effects shader whenever an optional effect still needs compositing.
+    const bool liteCelShading = !celShadingFull || !celEffectsEnabled;
     const bool motionBlurRequested = IsMotionBlurEnabled();
     const bool bloomRequested = IsSHARBloomEnabled();
     const bool cloudShadowsUserEnabled = IsSHARCloudShadowsEnabled();
@@ -2934,6 +2935,14 @@ static void ApplyCelPostProcess(int width, int height)
     CommitSHARMotionBlurCameraHistory(currentMotionBlurCamera, haveCurrentMotionBlurCamera, width, height);
 }
 
+}
+
+static float GetSHARGlobalSaturationFactor()
+{
+    // FULL adds 12.5% in its existing world composite and then receives the
+    // normal 20% global saturation pass. LITE skips that composite adjustment,
+    // so raise the existing pass to the same effective 35% without another pass.
+    return (IsCelShadingEnabled() && !IsSHARCelShadingFull()) ? 1.35f : 1.20f;
 }
 
 static void ApplyFrameSharpening(int width, int height);
@@ -3524,7 +3533,7 @@ static void ApplyFrameSharpening(int width, int height)
         glUniform1i(gFrameSharpenSceneLocation,0);
         if (gFrameSharpenTexelLocation>=0) glUniform2f(gFrameSharpenTexelLocation,1.0f/(float)width,1.0f/(float)height);
         if (gFrameSharpenStrengthLocation>=0) glUniform1f(gFrameSharpenStrengthLocation,strength);
-        if (gFrameSharpenSaturationLocation>=0) glUniform1f(gFrameSharpenSaturationLocation,1.20f);
+        if (gFrameSharpenSaturationLocation>=0) glUniform1f(gFrameSharpenSaturationLocation,GetSHARGlobalSaturationFactor());
         glBindBuffer(GL_ARRAY_BUFFER,gFrameSharpenVbo);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,(const GLvoid*)0);
@@ -3701,7 +3710,7 @@ static void ApplyCRTFilter(int width, int height, bool saturationOnly)
         if (gCRTBrightnessLocation>=0) glUniform1f(gCRTBrightnessLocation,brightness);
         if (gCRTContrastLocation>=0) glUniform1f(gCRTContrastLocation,contrast);
         if (gCRTCrtEnabledLocation>=0) glUniform1f(gCRTCrtEnabledLocation,crtPassEnabled ? 1.0f : 0.0f);
-        if (gCRTSaturationLocation>=0) glUniform1f(gCRTSaturationLocation,saturationOnly ? 1.20f : 1.0f);
+        if (gCRTSaturationLocation>=0) glUniform1f(gCRTSaturationLocation,saturationOnly ? GetSHARGlobalSaturationFactor() : 1.0f);
         glBindBuffer(GL_ARRAY_BUFFER,gCRTVbo);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,(const GLvoid*)0);

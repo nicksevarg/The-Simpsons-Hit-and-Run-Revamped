@@ -25,7 +25,7 @@
 
 #if defined(RAD_ANDROID)
 static const int SHAR_ANISOTROPIC_FILTER_LEVELS[5] = { 1, 4, 8, 12, 16 };
-static int gSHARAnisotropicFilteringSelection = 1; // 4x on new installs
+static int gSHARAnisotropicFilteringSelection = 0; // OFF on new installs
 static bool gSHARAnisotropicFilteringConfigurationLoaded = false;
 static bool gSHARAnisotropyCapabilityChecked = false;
 static bool gSHARAnisotropySupported = false;

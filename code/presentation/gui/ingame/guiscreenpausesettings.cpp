@@ -1238,16 +1238,14 @@ void CGuiScreenPauseSettings::ConfigureAndroidGraphicsMenu()
         "Max FPS",
         "Cel Shading",
         "Bloom",
-        "Cloud Shadows",
+        "Rim Lighting",
         "More Options.."
     };
 
+    const bool celShadingEnabled = IsCelShadingEnabled();
     const bool celShadingFull = IsSHARCelShadingFull();
-    // The old ON/OFF setting is replaced by LITE/FULL. Either quality mode
-    // requires the base object-level toon shading and silhouette pass.
-    SetSHARCelShadingFull( celShadingFull );
     const bool bloomEnabled = IsSHARBloomEnabled();
-    const bool cloudShadowsEnabled = IsSHARCloudShadowsEnabled();
+    const bool rimLightingEnabled = IsSHARRimLightingEnabled();
 
     if( gSHARGraphicsResolutionSelection < 0 ||
         gSHARGraphicsResolutionSelection >= SHAR_GRAPHICS_RESOLUTION_COUNT )
@@ -1359,13 +1357,24 @@ void CGuiScreenPauseSettings::ConfigureAndroidGraphicsMenu()
             }
             else if( i == 2 )
             {
-                // LITE keeps object toon lighting and expanded-mesh silhouettes;
-                // FULL also enables the screen-space contour/detail passes.
+                // OFF disables cel shading; LITE keeps object toon lighting and
+                // expanded-mesh silhouettes; FULL also enables screen-space detail.
                 value->SetVisible( true );
-                value->SetString( 0, "LITE" );
-                value->SetString( 1, "FULL" );
-                m_pMenu->SetSelectionValueCount( guiIndex, 2 );
-                m_pMenu->SetSelectionValue( guiIndex, celShadingFull ? 1 : 0 );
+                const char* celValues[3] = { "OFF", "LITE", "FULL" };
+                FeText* celValue = dynamic_cast<FeText*>( value );
+                while( celValue != NULL && celValue->GetNumOfStrings() < 3 )
+                {
+                    const int nextValue = celValue->GetNumOfStrings();
+                    celValue->AddHardCodedString( celValues[nextValue] );
+                }
+                for( int valueIndex = 0; valueIndex < 3; ++valueIndex )
+                {
+                    value->SetString( valueIndex, celValues[valueIndex] );
+                }
+                m_pMenu->SetSelectionValueCount( guiIndex, 3 );
+                const int celSelection = !celShadingEnabled ? 0 :
+                                         ( celShadingFull ? 2 : 1 );
+                m_pMenu->SetSelectionValue( guiIndex, celSelection );
             }
             else if( i == 3 || i == 4 )
             {
@@ -1373,7 +1382,7 @@ void CGuiScreenPauseSettings::ConfigureAndroidGraphicsMenu()
                 value->SetString( 0, "OFF" );
                 value->SetString( 1, "ON" );
                 m_pMenu->SetSelectionValueCount( guiIndex, 2 );
-                const bool enabled = i == 3 ? bloomEnabled : cloudShadowsEnabled;
+                const bool enabled = i == 3 ? bloomEnabled : rimLightingEnabled;
                 m_pMenu->SetSelectionValue( guiIndex, enabled ? 1 : 0 );
             }
             else if( i == 5 )
@@ -1421,14 +1430,14 @@ void CGuiScreenPauseSettings::ConfigureAndroidMoreGraphicsMenu()
     {
         "CRT Filter",
         "Motion Blur",
-        "Rim Lighting",
+        "Cloud Shadows",
         "Sharpening",
         "Anisotropic Filtering"
     };
 
     const bool crtEnabled = IsCRTFilterEnabled();
     const bool motionBlurEnabled = IsMotionBlurEnabled();
-    const bool rimLightingEnabled = IsSHARRimLightingEnabled();
+    const bool cloudShadowsEnabled = IsSHARCloudShadowsEnabled();
     int sharpeningLevel = GetFrameSharpeningLevel();
     if( sharpeningLevel == 1 )
     {
@@ -1526,7 +1535,7 @@ void CGuiScreenPauseSettings::ConfigureAndroidMoreGraphicsMenu()
                 value->SetString( 1, "ON" );
                 m_pMenu->SetSelectionValueCount( guiIndex, 2 );
                 const bool enabled = i == 0 ? crtEnabled :
-                                     i == 1 ? motionBlurEnabled : rimLightingEnabled;
+                                     i == 1 ? motionBlurEnabled : cloudShadowsEnabled;
                 m_pMenu->SetSelectionValue( guiIndex, enabled ? 1 : 0 );
             }
             else if( i == 3 && m_pMoreGraphicsSharpeningValue != NULL )
@@ -2174,7 +2183,7 @@ void CGuiScreenPauseSettings::HandleMessage
                             }
                             else if( logicalMenuItem == MENU_ITEM_INTERSECT_NAV_SYSTEM )
                             {
-                                SetSHARRimLightingEnabled( enabled );
+                                SetSHARCloudShadowsEnabled( enabled );
                             }
                             else if( logicalMenuItem == MENU_ITEM_RADAR )
                             {
@@ -2219,7 +2228,16 @@ void CGuiScreenPauseSettings::HandleMessage
                         }
                         else if( logicalMenuItem == MENU_ITEM_INTERSECT_NAV_SYSTEM )
                         {
-                            SetSHARCelShadingFull( param2 == 1 );
+                            if( param2 == 0 )
+                            {
+                                SetCelShadingEnabled( false );
+                            }
+                            else
+                            {
+                                // Selecting LITE or FULL also re-enables the
+                                // base object-level toon and silhouette passes.
+                                SetSHARCelShadingFull( param2 == 2 );
+                            }
                         }
                         else if( logicalMenuItem == MENU_ITEM_RADAR )
                         {
@@ -2227,7 +2245,7 @@ void CGuiScreenPauseSettings::HandleMessage
                         }
                         else if( logicalMenuItem == MENU_ITEM_INVERT_CAM_CONTROL )
                         {
-                            SetSHARCloudShadowsEnabled( enabled );
+                            SetSHARRimLightingEnabled( enabled );
                         }
                     }
                     else

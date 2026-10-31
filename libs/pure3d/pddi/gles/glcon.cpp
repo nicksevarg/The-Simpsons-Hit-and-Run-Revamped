@@ -153,19 +153,19 @@ void SetSHARObjectDimming(float brightness, float saturation)
 static bool gCelShadingConfigurationLoaded = false;
 // FULL preserves the existing screen-space contours; LITE keeps object toon
 // lighting and expanded-mesh silhouettes but skips the additional contour passes.
-static bool gSHARCelShadingFull = true;
+static bool gSHARCelShadingFull = false;
 static bool gSHARCelShadingQualityConfigurationLoaded = false;
-// Fresh installs use the Remastered Settings sharpening default of 40%.
-// User-selected values are loaded from Simpsons_sharpening.txt and remain unchanged on existing installs.
-static float gFrameSharpenStrength = 0.4f;
-static bool gFrameSharpeningEnabled = true;
+// Fresh installs default to OFF. Existing explicit sharpening preferences are preserved.
+// Legacy files containing only a non-zero sharpen= value are treated as enabled.
+static float gFrameSharpenStrength = 0.0f;
+static bool gFrameSharpeningEnabled = false;
 static bool gSharpeningConfigurationLoaded = false;
 
 static bool gCRTConfigurationLoaded = false;
 static bool gMotionBlurConfigurationLoaded = false;
 static bool gMotionBlurEnabled = false;
 static bool gCRTEnabled = false;
-static bool gSHARRimLightingEnabled = false;
+static bool gSHARRimLightingEnabled = true;
 static bool gSHARRimLightingConfigurationLoaded = false;
 static float gCRTScanlineStrength = 0.5f;
 static float gCRTCurvature = 0.06f;
@@ -493,14 +493,22 @@ static void LoadSharpeningConfiguration()
     }
 
     char line[256];
+    bool hasExplicitEnabledSetting = false;
     while (fgets(line, sizeof(line), file) != nullptr)
     {
         if (ParseSharpeningStrengthLine(line))
             continue;
+        if (strstr(line, "sharpening_enabled=") != nullptr)
+            hasExplicitEnabledSetting = true;
         ParseSharpeningEnabledLine(line);
     }
 
     fclose(file);
+
+    // Older settings files stored only a non-zero strength. Preserve that
+    // enabled preference while keeping the new-install fallback OFF.
+    if (!hasExplicitEnabledSetting && gFrameSharpenStrength > 0.0f)
+        gFrameSharpeningEnabled = true;
 
     if (fromLegacyDedicatedFile)
     {
@@ -898,8 +906,8 @@ void SetSHARCelShadingFull(bool full)
         WriteSHARCelShadingQualityConfiguration();
     }
 
-    // The new selector has no OFF state: both LITE and FULL require the base
-    // object-level toon lighting and silhouette-outline rendering to stay on.
+    // Choosing LITE or FULL enables the base object-level toon lighting and
+    // silhouette-outline rendering. OFF is handled by SetCelShadingEnabled().
     if (!gCelShadingEnabled)
     {
         gCelShadingEnabled = true;
