@@ -107,6 +107,8 @@ private:
     Scrooby::Text* m_pGraphicsResolutionValue = NULL;
     Scrooby::Text* m_pOriginalFPSValue = NULL;
     Scrooby::Text* m_pGraphicsFPSValue = NULL;
+    Scrooby::Text* m_pOriginalCelShadingValue = NULL;
+    Scrooby::Text* m_pGraphicsCelShadingValue = NULL;
     Scrooby::Text* m_pOriginalSharpeningValue = NULL;
     Scrooby::Text* m_pGraphicsSharpeningValue = NULL;
     Scrooby::Text* m_pMoreGraphicsSharpeningValue = NULL;

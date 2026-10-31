@@ -1044,6 +1044,90 @@ MEMTRACK_PUSH_GROUP( "CGuiScreenPauseSettings" );
         }
     }
 
+    // Create a dedicated OFF/LITE/FULL text object for the Graphics page.
+    // AddHardCodedString calls ResetText immediately, so copy the original
+    // style first and never mutate the original Scrooby value resource.
+    {
+        Scrooby::Group* pCelGroup = pPage->GetGroup( "IntersectNavSystem" );
+        FeGroup* pFeCelGroup = dynamic_cast<FeGroup*>( pCelGroup );
+        FeText* pOriginalValue = pCelGroup != NULL
+            ? dynamic_cast<FeText*>( pCelGroup->GetText( "IntersectNavSystem_Value" ) )
+            : NULL;
+
+        if( pFeCelGroup == NULL || pOriginalValue == NULL )
+        {
+            Scrooby::Group* pMenuGroup = pPage->GetGroup( "Menu" );
+            Scrooby::Group* pNestedCelGroup = pMenuGroup != NULL
+                ? pMenuGroup->GetGroup( "IntersectNavSystem" )
+                : NULL;
+            pCelGroup = pNestedCelGroup;
+            pFeCelGroup = dynamic_cast<FeGroup*>( pCelGroup );
+            pOriginalValue = pCelGroup != NULL
+                ? dynamic_cast<FeText*>(
+                    pCelGroup->GetText( "IntersectNavSystem_Value" ) )
+                : NULL;
+
+            // Some Android layouts place the source row under the shared Menu group.
+            if( pOriginalValue == NULL && pMenuGroup != NULL )
+            {
+                FeText* pGeneratedValue = dynamic_cast<FeText*>(
+                    pMenuGroup->GetText( "AndroidSettings_IntersectNavSystem_Value" ) );
+                if( pGeneratedValue != NULL )
+                {
+                    pCelGroup = pMenuGroup;
+                    pFeCelGroup = dynamic_cast<FeGroup*>( pCelGroup );
+                    pOriginalValue = pGeneratedValue;
+                }
+            }
+        }
+
+        if( pFeCelGroup != NULL && pOriginalValue != NULL )
+        {
+            m_pOriginalCelShadingValue = pOriginalValue;
+            FeText* pGraphicsValue =
+                pFeCelGroup->AddText( "AndroidGraphicsCelShadingValue", 0, 0 );
+
+            if( pGraphicsValue != NULL )
+            {
+                FeText* pAppearanceTemplate =
+                    dynamic_cast<FeText*>( m_pOriginalResolutionValue );
+                if( pAppearanceTemplate == NULL )
+                {
+                    pAppearanceTemplate = pOriginalValue;
+                }
+                CopyAndroidMenuTextAppearance( pGraphicsValue, pAppearanceTemplate );
+                // Match the Cel row's wrapping mode and geometry while retaining
+                // the known-good font resource from the Resolution value.
+                pGraphicsValue->SetTextMode( pOriginalValue->GetTextMode() );
+
+                int width = 0;
+                int height = 0;
+                int centerX = 0;
+                int centerY = 0;
+                pOriginalValue->GetBoundingBoxSize( width, height );
+                pOriginalValue->GetBoundingBoxCenter( centerX, centerY );
+                pGraphicsValue->SetBoundingBoxSize( width, height );
+                pGraphicsValue->SetPositionOfCenter( centerX, centerY );
+
+                const char* celValues[3] = { "OFF", "LITE", "FULL" };
+                const Scrooby::TextMode celTextMode = pGraphicsValue->GetTextMode();
+                // ResetText's wrapping path requires a live font. Build the
+                // fixed selector strings in overlap mode, then restore the
+                // source mode; the copied Resolution style provides the font.
+                pGraphicsValue->SetTextMode( Scrooby::TEXT_OVERLAP );
+                for( int valueIndex = 0; valueIndex < 3; ++valueIndex )
+                {
+                    pGraphicsValue->AddHardCodedString( celValues[valueIndex] );
+                }
+                pGraphicsValue->SetTextMode( celTextMode );
+
+                pGraphicsValue->SetIndex( 1 );
+                pGraphicsValue->SetVisible( false );
+                m_pGraphicsCelShadingValue = pGraphicsValue;
+            }
+        }
+    }
+
     // Do not expand the original Scrooby Settings value object to six strings.
     // Build a separate value object in the same row group and swap it in only
     // while the Graphics submenu is displayed. This keeps the resource's
@@ -1287,6 +1371,13 @@ void CGuiScreenPauseSettings::ConfigureAndroidGraphicsMenu()
             m_pOriginalFPSValue->SetVisible( false );
             m_pGraphicsFPSValue->SetVisible( true );
         }
+        else if( i == 2 && m_pGraphicsCelShadingValue != NULL &&
+                 m_pOriginalCelShadingValue != NULL )
+        {
+            item->SetItemValue( m_pGraphicsCelShadingValue );
+            m_pOriginalCelShadingValue->SetVisible( false );
+            m_pGraphicsCelShadingValue->SetVisible( true );
+        }
         // The last row is an action that opens the second Graphics page.
         item->m_attributes &= ~SELECTABLE;
         item->m_showValueArrows = ( i != 5 );
@@ -1361,20 +1452,28 @@ void CGuiScreenPauseSettings::ConfigureAndroidGraphicsMenu()
                 // expanded-mesh silhouettes; FULL also enables screen-space detail.
                 value->SetVisible( true );
                 const char* celValues[3] = { "OFF", "LITE", "FULL" };
-                FeText* celValue = dynamic_cast<FeText*>( value );
-                while( celValue != NULL && celValue->GetNumOfStrings() < 3 )
+                if( m_pGraphicsCelShadingValue != NULL &&
+                    value == m_pGraphicsCelShadingValue )
                 {
-                    const int nextValue = celValue->GetNumOfStrings();
-                    celValue->AddHardCodedString( celValues[nextValue] );
+                    for( int valueIndex = 0; valueIndex < 3; ++valueIndex )
+                    {
+                        value->SetString( valueIndex, celValues[valueIndex] );
+                    }
+                    m_pMenu->SetSelectionValueCount( guiIndex, 3 );
+                    const int celSelection = !celShadingEnabled ? 0 :
+                                             ( celShadingFull ? 2 : 1 );
+                    m_pMenu->SetSelectionValue( guiIndex, celSelection );
                 }
-                for( int valueIndex = 0; valueIndex < 3; ++valueIndex )
+                else
                 {
-                    value->SetString( valueIndex, celValues[valueIndex] );
+                    // If a custom text object cannot be created for an unusual
+                    // layout, retain a safe two-choice selector rather than
+                    // writing beyond the native text resource's string count.
+                    value->SetString( 0, "LITE" );
+                    value->SetString( 1, "FULL" );
+                    m_pMenu->SetSelectionValueCount( guiIndex, 2 );
+                    m_pMenu->SetSelectionValue( guiIndex, celShadingFull ? 1 : 0 );
                 }
-                m_pMenu->SetSelectionValueCount( guiIndex, 3 );
-                const int celSelection = !celShadingEnabled ? 0 :
-                                         ( celShadingFull ? 2 : 1 );
-                m_pMenu->SetSelectionValue( guiIndex, celSelection );
             }
             else if( i == 3 || i == 4 )
             {
@@ -1859,6 +1958,17 @@ void CGuiScreenPauseSettings::RestoreAndroidSettingsMenu()
             if( m_pSettingsDrivingCameraValue != NULL ) m_pSettingsDrivingCameraValue->SetVisible( false );
             m_pOriginalResolutionValue->SetVisible( true );
             item->SetItemValue( m_pOriginalResolutionValue );
+        }
+
+        // Restore the native Cel Shading value after leaving the Graphics page.
+        if( logicalItems[i] == MENU_ITEM_INTERSECT_NAV_SYSTEM &&
+            m_pOriginalCelShadingValue != NULL &&
+            item->GetItemValue() == m_pGraphicsCelShadingValue )
+        {
+            if( m_pGraphicsCelShadingValue != NULL )
+                m_pGraphicsCelShadingValue->SetVisible( false );
+            m_pOriginalCelShadingValue->SetVisible( true );
+            item->SetItemValue( m_pOriginalCelShadingValue );
         }
 
         // Restore the original Jump Cameras value text after the Graphics FPS selector.
