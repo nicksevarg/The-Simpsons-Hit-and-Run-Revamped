@@ -20,6 +20,33 @@
 #include <p3d/utility.hpp>
 #include <p3d/texture.hpp>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
+
 //************************************************************************
 //
 // Global Data, Local Data, Local Classes
@@ -236,7 +263,14 @@ void StaticEntityDSG::Display()
     }
     else
     {
+#ifdef RAD_ANDROID
+        if ((mIsGeo & GEO) && mpDrawstuff != NULL)
+            DisplaySHAREnvironmentCelDrawable(mpDrawstuff);
+        else
+            mpDrawstuff->Display();
+#else
         mpDrawstuff->Display();
+#endif
     }
     DSG_END_PROFILE(profileName)
 }

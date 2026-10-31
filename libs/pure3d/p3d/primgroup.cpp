@@ -21,6 +21,11 @@
 
 #include <string.h>
 
+#ifdef RAD_ANDROID
+extern bool IsSHAREnvironmentCelPassActive();
+extern bool IsCelShadingOutlinePass();
+extern void SetSHAREnvironmentCelMaterialEligible(bool eligible);
+#endif
 
 #define INDEXED_STREAM_COLOUR_WITH_OFFSET(  i, color, offset )  \
                     int r, g, b, a; \
@@ -130,6 +135,14 @@ void tPrimGroupOptimised::Display()
 {
     P3DASSERT(mBuffer);
     pddiShader* shader = mShader->GetShader();
+#ifdef RAD_ANDROID
+    const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
+        (mShader == NULL || !mShader->mEnvironmentCelEligible);
+    if (environmentMaterialIneligible && IsCelShadingOutlinePass())
+        return;
+    if (environmentMaterialIneligible)
+        SetSHAREnvironmentCelMaterialEligible(false);
+#endif
 
 #ifdef RAD_PS2
     bool refractionShadersInUse = ps2RefractionShader::RefractionShadersLoaded();
@@ -151,6 +164,10 @@ void tPrimGroupOptimised::Display()
     }
 #else
     p3d::pddi->DrawPrimBuffer( shader, mBuffer );
+#endif
+#ifdef RAD_ANDROID
+    if (environmentMaterialIneligible)
+        SetSHAREnvironmentCelMaterialEligible(true);
 #endif
 }
 
@@ -252,6 +269,14 @@ tPrimGroupStreamed::~tPrimGroupStreamed()
 
 void tPrimGroupStreamed::Display()
 {
+#ifdef RAD_ANDROID
+    const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
+        (mShader == NULL || !mShader->mEnvironmentCelEligible);
+    if (environmentMaterialIneligible && IsCelShadingOutlinePass())
+        return;
+    if (environmentMaterialIneligible)
+        SetSHAREnvironmentCelMaterialEligible(false);
+#endif
     P3DASSERT(mVertexList);
 
     // don't send indices and weights to the stream renderer
@@ -291,6 +316,10 @@ void tPrimGroupStreamed::Display()
         pddiExtVertexProgram* vp = (pddiExtVertexProgram*)p3d::pddi->GetExtension(PDDI_EXT_VERTEX_PROGRAM);
         vp->SetStreamProgram(0);
     }
+#endif
+#ifdef RAD_ANDROID
+    if (environmentMaterialIneligible)
+        SetSHAREnvironmentCelMaterialEligible(true);
 #endif
     
 }

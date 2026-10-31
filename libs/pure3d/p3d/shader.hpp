@@ -31,6 +31,7 @@ public:
     void  SetMatrix(unsigned paramName, const pddiMatrix& v) {shader->SetMatrix(paramName, v);}
 
     bool mTranslucent;
+    bool mEnvironmentCelEligible;
 protected:
     ~tShader();
     pddiShader* shader;

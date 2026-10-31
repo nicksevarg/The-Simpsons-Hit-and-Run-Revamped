@@ -12,12 +12,14 @@
 #include <string.h>
 
 tShader::tShader()
+    : mTranslucent(false), mEnvironmentCelEligible(true)
 {
     shader = p3d::device->NewShader("simple");
     shader->AddRef();
 }
 
 tShader::tShader(const char* shaderName, char* definition)
+    : mTranslucent(false), mEnvironmentCelEligible(true)
 {
     shader = p3d::device->NewShader(shaderName, definition);
     shader->AddRef();
@@ -186,6 +188,11 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                     unsigned val = f->GetInt();
 
                     shader->SetInt(param, val);
+                    if ((param == PDDI_SP_BLENDMODE && val != PDDI_BLEND_NONE) ||
+                        (param == PDDI_SP_ALPHATEST && val != 0))
+                    {
+                        shader->mEnvironmentCelEligible = false;
+                    }
                 }
                 break;
 
@@ -273,6 +280,8 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         shader->SetFloat( PDDI_SP_MIPMAP_SHARPNESS, 0.0f );
     }
     shader->mTranslucent = HasTranslucency;
+    if (HasTranslucency)
+        shader->mEnvironmentCelEligible = false;
     shader->SetName(name);
     return shader;
 }

@@ -23,6 +23,33 @@
 #include <render/DSG/InstStatPhysDSG.h>
 #include <memory/srrmemory.h>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
+
 //************************************************************************
 //
 // Global Data, Local Data, Local Classes
@@ -96,7 +123,11 @@ void InstStatPhysDSG::Display()
         BillboardQuadManager::Enable();
     }
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mMatrix);
+#ifdef RAD_ANDROID
+        DisplaySHAREnvironmentCelDrawable(mpGeo);
+#else
         mpGeo->Display();
+#endif
     p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
     if(CastsShadow())
     {

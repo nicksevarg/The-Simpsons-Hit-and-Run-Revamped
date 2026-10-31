@@ -31,6 +31,9 @@ float GetFrameSharpenStrength();
 bool IsCelShadingObjectEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
 bool IsCelShadingOutlinePass();
+void SetSHAREnvironmentCelPassActive(bool enabled);
+bool IsSHAREnvironmentCelPassActive();
+void SetSHAREnvironmentCelMaterialEligible(bool eligible);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHARCharacterMaskModelPass(bool enabled);
 void SetSHARGagCharacterCelPassActive(bool enabled);
@@ -225,6 +228,11 @@ protected:
     unsigned indexCount;
 
     bool valid;
+#ifdef RAD_ANDROID
+    bool environmentNormalsAttempted;
+    bool environmentNormalsAvailable;
+    bool GenerateEnvironmentNormals();
+#endif
     GLuint vertexBuffer;
     GLuint indexBuffer;
     GLuint vertexArray;

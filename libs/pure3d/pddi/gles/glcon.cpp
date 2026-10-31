@@ -25,6 +25,8 @@ bool GetSHARMotionBlurCameraBasis(float* output);
 static bool gCelShadingEnabled = true;
 static bool gCelShadingObjectEnabled = false;
 static bool gCelShadingOutlinePass = false;
+static bool gSHAREnvironmentCelPassActive = false;
+static bool gSHAREnvironmentCelMaterialEligible = true;
 // Enabled by gameplay only for exterior Levels 1-6; Level 7 retains the prior behavior.
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
@@ -994,6 +996,26 @@ void SetCelShadingOutlinePass(bool enabled)
 
     ApplyCelShadingState();
 }
+
+void SetSHAREnvironmentCelPassActive(bool enabled)
+{
+    gSHAREnvironmentCelPassActive = enabled;
+    gSHAREnvironmentCelMaterialEligible = true;
+    ApplyCelShadingState();
+}
+
+bool IsSHAREnvironmentCelPassActive()
+{
+    return gSHAREnvironmentCelPassActive;
+}
+
+void SetSHAREnvironmentCelMaterialEligible(bool eligible)
+{
+    if (gSHAREnvironmentCelMaterialEligible == eligible)
+        return;
+    gSHAREnvironmentCelMaterialEligible = eligible;
+    ApplyCelShadingState();
+}
 #endif
 
 #include <pddi/base/debug.hpp>
@@ -1233,6 +1255,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform int toonObjectEnabled;\n"
         "uniform int toonRimEnabled;\n"
         "uniform int toonOutlinePass;\n"
+        "uniform int toonEnvironmentPass;\n"
         "uniform float toonOutlineWidth;\n"
         "uniform float nightObjectBrightness;\n"
         "uniform float nightObjectSaturation;\n"
@@ -1272,7 +1295,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "        return diff + spec;\n"
         "    }\n"
 #ifdef RAD_ANDROID
-        "    if (lit == 0) return vec3(1.0);\n"
+        "    if (lit == 0) return toonEnvironmentPass != 0 ? vec3(toonFlatLight) : vec3(1.0);\n"
         "    if (toonRimEnabled == 0) return dcm.rgb * toonFlatLight;\n"
         // Guard the rim calculation against zero-length vectors and precision
         // overshoot. Some mobile GPUs can round a normalized dot product above
@@ -1923,6 +1946,10 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     indices = NULL;
 
     valid = false;
+#ifdef RAD_ANDROID
+    environmentNormalsAttempted = false;
+    environmentNormalsAvailable = false;
+#endif
     vertexBuffer = indexBuffer = vertexArray = 0;
 
     primType = type;
@@ -1939,11 +1966,17 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     coord = (float*)ptr;
     ptr += 12;
     
+    #ifdef RAD_ANDROID
+    // Reserve the existing unused 12-byte vertex slot for generated normals.
+    normal = (float*)ptr;
+    ptr += 12;
+    #else
     if(vertexFormat & PDDI_V_NORMAL)
     {
         normal = (float*)ptr;
         ptr += 12;
     }
+    #endif
     
     if(vertexFormat & 0xf)
     {
@@ -2025,9 +2058,123 @@ void pglPrimBuffer::SetIndices(unsigned short* i, int count)
     valid = false;
 }
 
+#ifdef RAD_ANDROID
+bool pglPrimBuffer::GenerateEnvironmentNormals()
+{
+    if (environmentNormalsAttempted)
+        return environmentNormalsAvailable;
+    environmentNormalsAttempted = true;
+    if (normal == NULL || coord == NULL || allocated < 3 ||
+        (primType != PDDI_PRIM_TRIANGLES && primType != PDDI_PRIM_TRISTRIP))
+        return false;
+
+    const int elementCount = (indexCount > 0 && indices != NULL)
+        ? (int)indexCount : (int)total;
+    if (elementCount < 3)
+        return false;
+
+    // Coordinates and normals are interleaved at the renderer's 36-byte stride.
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        float* n = (float*)((unsigned char*)normal + i * stride);
+        n[0] = n[1] = n[2] = 0.0f;
+    }
+
+    float fallbackX = 0.0f, fallbackY = 1.0f, fallbackZ = 0.0f;
+    bool haveFallback = false;
+    unsigned validTriangles = 0;
+
+    const auto addTriangle = [this, &fallbackX, &fallbackY, &fallbackZ,
+                              &haveFallback, &validTriangles](unsigned a, unsigned b, unsigned c)
+    {
+        if (a >= allocated || b >= allocated || c >= allocated ||
+            a == b || b == c || a == c)
+            return;
+
+        const float* pa = (const float*)((const unsigned char*)coord + a * stride);
+        const float* pb = (const float*)((const unsigned char*)coord + b * stride);
+        const float* pc = (const float*)((const unsigned char*)coord + c * stride);
+        const float abx = pb[0] - pa[0], aby = pb[1] - pa[1], abz = pb[2] - pa[2];
+        const float acx = pc[0] - pa[0], acy = pc[1] - pa[1], acz = pc[2] - pa[2];
+        const float nx = aby * acz - abz * acy;
+        const float ny = abz * acx - abx * acz;
+        const float nz = abx * acy - aby * acx;
+        const float lengthSquared = nx * nx + ny * ny + nz * nz;
+        if (lengthSquared <= 1.0e-12f)
+            return;
+
+        float* na = (float*)((unsigned char*)normal + a * stride);
+        float* nb = (float*)((unsigned char*)normal + b * stride);
+        float* nc = (float*)((unsigned char*)normal + c * stride);
+        na[0] += nx; na[1] += ny; na[2] += nz;
+        nb[0] += nx; nb[1] += ny; nb[2] += nz;
+        nc[0] += nx; nc[1] += ny; nc[2] += nz;
+
+        if (!haveFallback)
+        {
+            const float inverseLength = 1.0f / sqrtf(lengthSquared);
+            fallbackX = nx * inverseLength;
+            fallbackY = ny * inverseLength;
+            fallbackZ = nz * inverseLength;
+            haveFallback = true;
+        }
+        ++validTriangles;
+    };
+
+    if (primType == PDDI_PRIM_TRIANGLES)
+    {
+        for (int i = 0; i + 2 < elementCount; i += 3)
+            addTriangle(indices ? indices[i] : (unsigned)i,
+                        indices ? indices[i + 1] : (unsigned)(i + 1),
+                        indices ? indices[i + 2] : (unsigned)(i + 2));
+    }
+    else
+    {
+        // Alternation is based on index position, even across degenerate joins.
+        for (int i = 0; i + 2 < elementCount; ++i)
+        {
+            unsigned a = indices ? indices[i] : (unsigned)i;
+            unsigned b = indices ? indices[i + 1] : (unsigned)(i + 1);
+            const unsigned c = indices ? indices[i + 2] : (unsigned)(i + 2);
+            if (i & 1) { const unsigned swap = a; a = b; b = swap; }
+            addTriangle(a, b, c);
+        }
+    }
+
+    if (validTriangles == 0 || !haveFallback)
+        return false;
+
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        float* n = (float*)((unsigned char*)normal + i * stride);
+        const float lengthSquared = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
+        if (lengthSquared > 1.0e-12f)
+        {
+            const float inverseLength = 1.0f / sqrtf(lengthSquared);
+            n[0] *= inverseLength; n[1] *= inverseLength; n[2] *= inverseLength;
+        }
+        else
+        {
+            n[0] = fallbackX; n[1] = fallbackY; n[2] = fallbackZ;
+        }
+    }
+
+    environmentNormalsAvailable = true;
+    valid = false;
+    return true;
+}
+#endif
+
 void pglPrimBuffer::Display(void)
 {
     MICROPROFILE_SCOPEI("PDDI", "pglPrimBuffer::Display", MP_RED);
+
+#ifdef RAD_ANDROID
+    if (gSHAREnvironmentCelPassActive && gCelShadingEnabled &&
+        gCelShadingObjectEnabled && gCelShadingOutlinePass &&
+        !(vertexType & PDDI_V_NORMAL) && !GenerateEnvironmentNormals())
+        return;
+#endif
 
     if(!valid)
     {
@@ -2057,6 +2204,19 @@ void pglPrimBuffer::Display(void)
         glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,stride,(void*)offset);
         offset += 12;
 
+#ifdef RAD_ANDROID
+        if ((vertexType & PDDI_V_NORMAL) || environmentNormalsAvailable)
+        {
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,stride,(void*)offset);
+        }
+        else
+        {
+            glDisableVertexAttribArray(1);
+            glVertexAttrib3f(1, 0.0f, 0.0f, 0.0f);
+        }
+        offset += 12;
+#else
         if(vertexType & PDDI_V_NORMAL)
         {
             glEnableVertexAttribArray(1);
@@ -2068,6 +2228,7 @@ void pglPrimBuffer::Display(void)
             glDisableVertexAttribArray(1);
             glVertexAttrib3f(1, 0.0f, 0.0f, 0.0f);
         }
+#endif
 
         if(vertexType & 0xf)
         {
@@ -2364,7 +2525,8 @@ void pglContext::SetShaderProgram(pglProgram* program)
     {
 #ifdef RAD_ANDROID
         if (currentProgram)
-            currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled());
+            currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
+            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible);
 #endif
         return;
     }
@@ -2378,7 +2540,8 @@ void pglContext::SetShaderProgram(pglProgram* program)
     currentProgram->AddRef();
     currentProgram->UseProgram();
 #ifdef RAD_ANDROID
-    currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled());
+    currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
+            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible);
 #endif
     currentProgram->SetProjectionMatrix(&projection);
 
@@ -2395,7 +2558,8 @@ void pglContext::SetShaderProgram(pglProgram* program)
 void pglContext::ApplyCelShadingState()
 {
     if (currentProgram)
-        currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled());
+        currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
+            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible);
 }
 #endif
 

@@ -78,6 +78,7 @@ protected:
     GLint toonObjectEnabled;
     GLint toonRimEnabled;
     GLint toonOutlinePass;
+    GLint toonEnvironmentPass;
     GLint toonOutlineWidth;
     GLint nightObjectBrightness;
     GLint nightObjectSaturation;
