@@ -2275,10 +2275,26 @@ void pglPrimBuffer::Display(void)
     MICROPROFILE_SCOPEI("PDDI", "pglPrimBuffer::Display", MP_RED);
 
 #ifdef RAD_ANDROID
-    if (gSHAREnvironmentCelPassActive && gCelShadingEnabled &&
-        gCelShadingObjectEnabled && gCelShadingOutlinePass &&
+    const bool environmentOutlineGeometryPass =
+        gSHAREnvironmentCelPassActive && gCelShadingEnabled &&
+        gCelShadingObjectEnabled && gCelShadingOutlinePass;
+    if (environmentOutlineGeometryPass)
+        LoadSHAREnvironmentOutlineDiagnostics();
+
+    if (environmentOutlineGeometryPass &&
         !(vertexType & PDDI_V_NORMAL) && !GenerateEnvironmentNormals())
+    {
+        static unsigned skippedEnvironmentOutlineBuffers = 0;
+        if (gSHAREnvironmentOutlineDiagnosticMode != 0 &&
+            skippedEnvironmentOutlineBuffers < 32)
+        {
+            SDL_Log("[SHAR Outline Diagnostics] mesh skipped: generated normals unavailable; "
+                    "primType=%d vertexType=0x%X allocated=%u total=%u indices=%u",
+                    (int)primType, vertexType, allocated, total, indexCount);
+            ++skippedEnvironmentOutlineBuffers;
+        }
         return;
+    }
 #endif
 
     if(!valid)
@@ -2373,8 +2389,8 @@ void pglPrimBuffer::Display(void)
     GLboolean depthTestWasEnabled = GL_FALSE;
     GLboolean cullWasEnabled = GL_FALSE;
     const bool isEnvironmentOutlinePass =
-        gSHAREnvironmentCelPassActive && gCelShadingEnabled &&
-        gCelShadingObjectEnabled && gCelShadingOutlinePass;
+        gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible &&
+        gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass;
     if (isEnvironmentOutlinePass)
     {
         LoadSHAREnvironmentOutlineDiagnostics();
