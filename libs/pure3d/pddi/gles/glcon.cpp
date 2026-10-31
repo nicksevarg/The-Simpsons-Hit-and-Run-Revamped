@@ -31,6 +31,10 @@ static bool gSHAREnvironmentCelMaterialEligible = true;
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
 static float gSHARCelOutlineViewportHeight = 1.0f;
+// Temporary LITE outline diagnostics: 0=normal, 1=no depth test,
+// 2=no face culling, 3=no depth test and no face culling.
+static int gSHAREnvironmentOutlineDiagnosticMode = 0;
+static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
 // Enabled by gameplay only for exterior Levels 1-6; Level 7 retains the prior behavior.
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
@@ -205,6 +209,63 @@ static bool BuildGraphicsConfigurationPath(char* filePath, size_t filePathSize, 
 
     snprintf(filePath, filePathSize, "%s/%s", graphicsPath, fileName);
     return true;
+}
+
+static void LoadSHAREnvironmentOutlineDiagnostics()
+{
+    if (gSHAREnvironmentOutlineDiagnosticsLoaded)
+        return;
+
+    gSHAREnvironmentOutlineDiagnosticsLoaded = true;
+
+    char filePath[512];
+    if (!BuildGraphicsConfigurationPath(
+            filePath, sizeof(filePath), "Simpsons_cel_outline_diagnostics.txt"))
+        return;
+
+    FILE* file = fopen(filePath, "r");
+    if (file == nullptr)
+    {
+        file = fopen(filePath, "w");
+        if (file != nullptr)
+        {
+            fprintf(file, "# Temporary environment cel-outline diagnostics.\n");
+            fprintf(file, "# Change the value and restart the game to select a test mode.\n");
+            fprintf(file, "# 0 = normal rendering (default).\n");
+            fprintf(file, "# 1 = disable depth testing during environment outline draws.\n");
+            fprintf(file, "# 2 = disable face culling during environment outline draws.\n");
+            fprintf(file, "# 3 = disable both depth testing and face culling.\n");
+            fprintf(file, "outline_diagnostic_mode=0\n");
+            fclose(file);
+        }
+        SDL_Log("[SHAR Outline Diagnostics] mode 0 (normal rendering)");
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file) != nullptr)
+    {
+        char* value = strstr(line, "outline_diagnostic_mode=");
+        if (value == nullptr)
+            continue;
+
+        value += strlen("outline_diagnostic_mode=");
+        char* parseEnd = nullptr;
+        const long parsed = strtol(value, &parseEnd, 10);
+        if (parseEnd != value)
+        {
+            if (parsed < 0)
+                gSHAREnvironmentOutlineDiagnosticMode = 0;
+            else if (parsed > 3)
+                gSHAREnvironmentOutlineDiagnosticMode = 3;
+            else
+                gSHAREnvironmentOutlineDiagnosticMode = static_cast<int>(parsed);
+        }
+        break;
+    }
+    fclose(file);
+
+    SDL_Log("[SHAR Outline Diagnostics] mode %d", gSHAREnvironmentOutlineDiagnosticMode);
 }
 
 static bool BuildLegacyRootConfigurationPath(char* filePath, size_t filePathSize, const char* fileName)
@@ -2303,6 +2364,36 @@ void pglPrimBuffer::Display(void)
         glBindVertexArrayOES(vertexArray);
     }
 
+#ifdef RAD_ANDROID
+    // Apply diagnostic overrides only to the environment inverted-hull pass.
+    // Each override is restored immediately so normal scene rendering and the
+    // renderer's cached cull state remain unchanged.
+    int outlineDiagnosticMode = 0;
+    GLboolean depthTestWasEnabled = GL_FALSE;
+    GLboolean cullWasEnabled = GL_FALSE;
+    const bool isEnvironmentOutlinePass =
+        gSHAREnvironmentCelPassActive && gCelShadingEnabled &&
+        gCelShadingObjectEnabled && gCelShadingOutlinePass;
+    if (isEnvironmentOutlinePass)
+    {
+        LoadSHAREnvironmentOutlineDiagnostics();
+        outlineDiagnosticMode = gSHAREnvironmentOutlineDiagnosticMode;
+
+        if ((outlineDiagnosticMode & 1) != 0)
+        {
+            depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+            if (depthTestWasEnabled)
+                glDisable(GL_DEPTH_TEST);
+        }
+        if ((outlineDiagnosticMode & 2) != 0)
+        {
+            cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+            if (cullWasEnabled)
+                glDisable(GL_CULL_FACE);
+        }
+    }
+#endif
+
     if(indexCount && indices)
     {
         glDrawElements(primTypeTable[primType],indexCount,GL_UNSIGNED_SHORT,0);
@@ -2311,6 +2402,13 @@ void pglPrimBuffer::Display(void)
     {
         glDrawArrays(primTypeTable[primType], 0, total);
     }
+
+#ifdef RAD_ANDROID
+    if ((outlineDiagnosticMode & 1) != 0 && depthTestWasEnabled)
+        glEnable(GL_DEPTH_TEST);
+    if ((outlineDiagnosticMode & 2) != 0 && cullWasEnabled)
+        glEnable(GL_CULL_FACE);
+#endif
 }
 
 /*
