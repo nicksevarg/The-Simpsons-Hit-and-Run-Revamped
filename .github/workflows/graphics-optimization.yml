@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - env-cel-shading-first-build
   workflow_dispatch:
 
 permissions:
