@@ -27,6 +27,10 @@ static bool gCelShadingObjectEnabled = false;
 static bool gCelShadingOutlinePass = false;
 static bool gSHAREnvironmentCelPassActive = false;
 static bool gSHAREnvironmentCelMaterialEligible = true;
+// The viewport is supplied to the environment silhouette shader so its extrusion
+// can be specified in pixels instead of world/view-space units.
+static float gSHARCelOutlineViewportWidth = 1.0f;
+static float gSHARCelOutlineViewportHeight = 1.0f;
 // Enabled by gameplay only for exterior Levels 1-6; Level 7 retains the prior behavior.
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
@@ -1209,20 +1213,35 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform int toonEnabled;\n"
         "uniform int toonObjectEnabled;\n"
         "uniform int toonOutlinePass;\n"
+        "uniform int toonEnvironmentPass;\n"
         "uniform float toonOutlineWidth;\n"
+        "uniform vec2 toonViewportSize;\n"
 #endif
         "void main() {\n"
         "    vec4 V = modelview * vec4(position, 1.0);\n"
         "    toonNormal = normalize(mat3(normalmatrix) * normal);\n"
+        "    vec4 clipPosition = projection * V;\n"
 #ifdef RAD_ANDROID
         "    if (toonEnabled != 0 && toonObjectEnabled != 0 && toonOutlinePass != 0) {\n"
-        "        V.xyz += toonNormal * toonOutlineWidth;\n"
+        "        if (toonEnvironmentPass != 0 && clipPosition.w > 0.00001) {\n"
+        "            vec4 clipNormal = projection * vec4(toonNormal, 0.0);\n"
+        "            vec2 projectedNormalPixels = (clipNormal.xy * clipPosition.w - clipPosition.xy * clipNormal.w) * toonViewportSize;\n"
+        "            float projectedNormalLength = length(projectedNormalPixels);\n"
+        "            if (projectedNormalLength > 0.00001) {\n"
+        "                vec2 pixelDirection = projectedNormalPixels / projectedNormalLength;\n"
+        "                vec2 ndcOffset = pixelDirection * (2.0 * toonOutlineWidth / toonViewportSize);\n"
+        "                clipPosition.xy += ndcOffset * clipPosition.w;\n"
+        "            }\n"
+        "        } else if (toonEnvironmentPass == 0) {\n"
+        "            V.xyz += toonNormal * 0.009;\n"
+        "            clipPosition = projection * V;\n"
+        "        }\n"
         "    }\n"
 #endif
         "    toonViewPos = V.xyz;\n"
         "    tc = texcoord;\n"
         "    cpri = color;\n"
-        "    gl_Position = projection * V;\n"
+        "    gl_Position = clipPosition;\n"
         "}\n"
     );
 
@@ -1604,8 +1623,32 @@ void pglContext::SetupHardwareProjection(void)
             break;
     }
 
+#ifdef RAD_ANDROID
+    // Match the shader's pixel-width extrusion to the active 3D viewport.
+    if (state.viewState->projectionMode == PDDI_PROJECTION_DEVICE)
+    {
+        gSHARCelOutlineViewportWidth = (float)display->GetWidth();
+        gSHARCelOutlineViewportHeight = (float)display->GetHeight();
+    }
+    else
+    {
+        gSHARCelOutlineViewportWidth =
+            (float)display->GetWidth() *
+            (state.viewState->viewWindow.right - state.viewState->viewWindow.left);
+        gSHARCelOutlineViewportHeight =
+            (float)display->GetHeight() *
+            (state.viewState->viewWindow.bottom - state.viewState->viewWindow.top);
+    }
+    if (gSHARCelOutlineViewportWidth < 1.0f) gSHARCelOutlineViewportWidth = 1.0f;
+    if (gSHARCelOutlineViewportHeight < 1.0f) gSHARCelOutlineViewportHeight = 1.0f;
+#endif
     if(currentProgram)
+    {
         currentProgram->SetProjectionMatrix(&projection);
+#ifdef RAD_ANDROID
+        ApplyCelShadingState();
+#endif
+    }
 }
 
 void pglContext::LoadHardwareMatrix(pddiMatrixType id)
@@ -2526,7 +2569,8 @@ void pglContext::SetShaderProgram(pglProgram* program)
 #ifdef RAD_ANDROID
         if (currentProgram)
             currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
-            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible);
+            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
 #endif
         return;
     }
@@ -2541,7 +2585,8 @@ void pglContext::SetShaderProgram(pglProgram* program)
     currentProgram->UseProgram();
 #ifdef RAD_ANDROID
     currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
-            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible);
+            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
 #endif
     currentProgram->SetProjectionMatrix(&projection);
 
@@ -2559,7 +2604,8 @@ void pglContext::ApplyCelShadingState()
 {
     if (currentProgram)
         currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
-            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible);
+            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
 }
 #endif
 

@@ -78,6 +78,8 @@ static inline void SHARUniform1i(const pglProgram* o,GLint l,GLint v)
 { if(!SHARShouldUploadUniform(o,l,GL_INT,&v,sizeof(v)))return; glUniform1i(l,v); }
 static inline void SHARUniform1f(const pglProgram* o,GLint l,GLfloat v)
 { if(!SHARShouldUploadUniform(o,l,GL_FLOAT,&v,sizeof(v)))return; glUniform1f(l,v); }
+static inline void SHARUniform2f(const pglProgram* o,GLint l,GLfloat x,GLfloat y)
+{ const GLfloat v[2]={x,y}; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC2,v,sizeof(v)))return; glUniform2f(l,x,y); }
 static inline void SHARUniform3f(const pglProgram* o,GLint l,GLfloat x,GLfloat y,GLfloat z)
 { const GLfloat v[3]={x,y,z}; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC3,v,sizeof(v)))return; glUniform3f(l,x,y,z); }
 static inline void SHARUniform4f(const pglProgram* o,GLint l,GLfloat x,GLfloat y,GLfloat z,GLfloat w)
@@ -89,6 +91,7 @@ static inline void SHARUniformMatrix4fv(const pglProgram* o,GLint l,GLsizei n,GL
 #else
 static inline void SHARUniform1i(const pglProgram*,GLint l,GLint v){glUniform1i(l,v);}
 static inline void SHARUniform1f(const pglProgram*,GLint l,GLfloat v){glUniform1f(l,v);}
+static inline void SHARUniform2f(const pglProgram*,GLint l,GLfloat x,GLfloat y){glUniform2f(l,x,y);}
 static inline void SHARUniform3f(const pglProgram*,GLint l,GLfloat x,GLfloat y,GLfloat z){glUniform3f(l,x,y,z);}
 static inline void SHARUniform4f(const pglProgram*,GLint l,GLfloat x,GLfloat y,GLfloat z,GLfloat w){glUniform4f(l,x,y,z,w);}
 static inline void SHARUniform4fv(const pglProgram*,GLint l,GLsizei n,const GLfloat* v){glUniform4fv(l,n,v);}
@@ -129,6 +132,7 @@ pglProgram::pglProgram()
     toonOutlinePass = -1;
     toonEnvironmentPass = -1;
     toonOutlineWidth = -1;
+    toonViewportSize = -1;
     nightObjectBrightness = -1;
     nightObjectSaturation = -1;
     #endif
@@ -309,7 +313,7 @@ void pglProgram::SetCelShadingEnabled(bool enabled)
 }
 
 #ifdef RAD_ANDROID
-void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass)
+void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, float viewportWidth, float viewportHeight)
 {
     if (toonEnabled >= 0)
         SHARUniform1i(this, toonEnabled, enabled ? 1 : 0);
@@ -321,8 +325,15 @@ void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outli
         SHARUniform1i(this, toonOutlinePass, outlinePass ? 1 : 0);
     if (toonEnvironmentPass >= 0)
         SHARUniform1i(this, toonEnvironmentPass, environmentPass ? 1 : 0);
+    // Environment outlines use a constant pixel width in clip space. This
+    // uniform is only consumed by the environment outline pass; character and
+    // vehicle outlines retain their existing world-space expansion.
     if (toonOutlineWidth >= 0)
-        SHARUniform1f(this, toonOutlineWidth, 0.009f);
+        SHARUniform1f(this, toonOutlineWidth, 2.0f);
+    if (toonViewportSize >= 0)
+        SHARUniform2f(this, toonViewportSize,
+            viewportWidth > 1.0f ? viewportWidth : 1.0f,
+            viewportHeight > 1.0f ? viewportHeight : 1.0f);
     if (nightObjectBrightness >= 0)
         SHARUniform1f(this, nightObjectBrightness, objectBrightness);
     if (nightObjectSaturation >= 0)
@@ -435,6 +446,7 @@ bool pglProgram::LinkProgram(GLuint vertexShader, GLuint fragmentShader)
     toonOutlinePass = glGetUniformLocation(program, "toonOutlinePass");
     toonEnvironmentPass = glGetUniformLocation(program, "toonEnvironmentPass");
     toonOutlineWidth = glGetUniformLocation(program, "toonOutlineWidth");
+    toonViewportSize = glGetUniformLocation(program, "toonViewportSize");
     nightObjectBrightness = glGetUniformLocation(program, "nightObjectBrightness");
     nightObjectSaturation = glGetUniformLocation(program, "nightObjectSaturation");
     #endif
