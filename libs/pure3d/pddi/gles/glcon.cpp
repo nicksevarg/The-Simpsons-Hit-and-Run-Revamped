@@ -2673,6 +2673,8 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
             ++splitIndexEdges;
     }
 
+    // This describes triangle-derived face-normal coherence per vertex index;
+    // it is separate from the actual attribute comparison across duplicate positions.
     unsigned normalVertices = 0;
     unsigned lowCoherenceVertices = 0;
     unsigned mediumCoherenceVertices = 0;
@@ -2709,8 +2711,8 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
             "actualZeroLengthNormals=%u duplicateNormalGroups=%u "
             "normalMismatchGroups(>5deg)=%u (>15deg)=%u (>30deg)=%u (>60deg)=%u "
             "maxAngleFromFirstCopy=%.2f avgMaxAngleFromFirstCopy=%.2f "
-            "normalVertices=%u lowCoherence(<0.25)=%u mediumCoherence(<0.50)=%u "
-            "zeroResultantNormals=%u avgNormalCoherence=%.4f minNormalCoherence=%.4f "
+            "faceAccumulationVertices=%u lowFaceCoherence(<0.25)=%u mediumFaceCoherence(<0.50)=%u "
+            "zeroResultantFaceNormals=%u avgIndexFaceCoherence=%.4f minIndexFaceCoherence=%.4f "
             "geoBoundaryEdges=%u geoSharedEdges=%u geoWindingConflicts=%u "
             "geoNonManifoldEdges=%u splitIndexEdges=%u collapsedPositionEdges=%u "
             "positionTolerance=0.0001",
