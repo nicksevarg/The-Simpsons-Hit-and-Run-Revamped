@@ -131,6 +131,7 @@ pglProgram::pglProgram()
     toonRimEnabled = -1;
     toonOutlinePass = -1;
     toonEnvironmentPass = -1;
+    toonOutlineDiagnosticMode = -1;
     toonOutlineWidth = -1;
     toonViewportSize = -1;
     nightObjectBrightness = -1;
@@ -313,7 +314,7 @@ void pglProgram::SetCelShadingEnabled(bool enabled)
 }
 
 #ifdef RAD_ANDROID
-void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, float viewportWidth, float viewportHeight)
+void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, float viewportWidth, float viewportHeight, int outlineDiagnosticMode)
 {
     if (toonEnabled >= 0)
         SHARUniform1i(this, toonEnabled, enabled ? 1 : 0);
@@ -325,6 +326,8 @@ void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outli
         SHARUniform1i(this, toonOutlinePass, outlinePass ? 1 : 0);
     if (toonEnvironmentPass >= 0)
         SHARUniform1i(this, toonEnvironmentPass, environmentPass ? 1 : 0);
+    if (toonOutlineDiagnosticMode >= 0)
+        SHARUniform1i(this, toonOutlineDiagnosticMode, outlineDiagnosticMode);
     // Environment outlines use a constant pixel width in clip space. This
     // uniform is only consumed by the environment outline pass; character and
     // vehicle outlines retain their existing world-space expansion.
@@ -446,6 +449,7 @@ bool pglProgram::LinkProgram(GLuint vertexShader, GLuint fragmentShader)
     toonRimEnabled = glGetUniformLocation(program, "toonRimEnabled");
     toonOutlinePass = glGetUniformLocation(program, "toonOutlinePass");
     toonEnvironmentPass = glGetUniformLocation(program, "toonEnvironmentPass");
+    toonOutlineDiagnosticMode = glGetUniformLocation(program, "toonOutlineDiagnosticMode");
     toonOutlineWidth = glGetUniformLocation(program, "toonOutlineWidth");
     toonViewportSize = glGetUniformLocation(program, "toonViewportSize");
     nightObjectBrightness = glGetUniformLocation(program, "nightObjectBrightness");

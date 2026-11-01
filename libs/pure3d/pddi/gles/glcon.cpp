@@ -245,6 +245,7 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
             fprintf(file, "# 4 = opposite face culling (GL_FRONT), with depth testing enabled.\n");
             fprintf(file, "# 5 = normal rendering plus indexed mesh-winding diagnostic logs.\n");
             fprintf(file, "# 6 = normal rendering plus all-mesh diagnostics and actual duplicate-position normal comparisons.\n");
+            fprintf(file, "# 7 = colour the environment outline shell by projected-normal expansion (green=expanded, red=skipped).\n");
             fprintf(file, "outline_diagnostic_mode=0\n");
             fclose(file);
         }
@@ -266,8 +267,8 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
         {
             if (parsed < 0)
                 gSHAREnvironmentOutlineDiagnosticMode = 0;
-            else if (parsed > 6)
-                gSHAREnvironmentOutlineDiagnosticMode = 6;
+            else if (parsed > 7)
+                gSHAREnvironmentOutlineDiagnosticMode = 7;
             else
                 gSHAREnvironmentOutlineDiagnosticMode = static_cast<int>(parsed);
         }
@@ -1284,10 +1285,12 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "varying vec3 toonNormal;\n"
         "varying vec3 toonViewPos;\n"
 #ifdef RAD_ANDROID
+        "varying float toonOutlineProjectionState;\n"
         "uniform int toonEnabled;\n"
         "uniform int toonObjectEnabled;\n"
         "uniform int toonOutlinePass;\n"
         "uniform int toonEnvironmentPass;\n"
+        "uniform int toonOutlineDiagnosticMode;\n"
         "uniform float toonOutlineWidth;\n"
         "uniform vec2 toonViewportSize;\n"
 #endif
@@ -1301,17 +1304,22 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
 #endif
         "    vec4 clipPosition = projection * V;\n"
 #ifdef RAD_ANDROID
+        "    toonOutlineProjectionState = 1.0;\n"
         "    if (toonEnabled != 0 && toonObjectEnabled != 0 && toonOutlinePass != 0) {\n"
-        "        if (toonEnvironmentPass != 0 && clipPosition.w > 0.00001) {\n"
-        "            vec4 clipNormal = projection * vec4(toonNormal, 0.0);\n"
-        "            vec2 projectedNormalPixels = (clipNormal.xy * clipPosition.w - clipPosition.xy * clipNormal.w) * toonViewportSize;\n"
-        "            float projectedNormalLength = length(projectedNormalPixels);\n"
-        "            if (projectedNormalLength > 0.00001) {\n"
-        "                vec2 pixelDirection = projectedNormalPixels / projectedNormalLength;\n"
-        "                vec2 ndcOffset = pixelDirection * (2.0 * toonOutlineWidth / toonViewportSize);\n"
-        "                clipPosition.xy += ndcOffset * clipPosition.w;\n"
+        "        if (toonEnvironmentPass != 0) {\n"
+        "            toonOutlineProjectionState = 0.0;\n"
+        "            if (clipPosition.w > 0.00001) {\n"
+        "                vec4 clipNormal = projection * vec4(toonNormal, 0.0);\n"
+        "                vec2 projectedNormalPixels = (clipNormal.xy * clipPosition.w - clipPosition.xy * clipNormal.w) * toonViewportSize;\n"
+        "                float projectedNormalLength = length(projectedNormalPixels);\n"
+        "                if (projectedNormalLength > 0.00001) {\n"
+        "                    toonOutlineProjectionState = 1.0;\n"
+        "                    vec2 pixelDirection = projectedNormalPixels / projectedNormalLength;\n"
+        "                    vec2 ndcOffset = pixelDirection * (2.0 * toonOutlineWidth / toonViewportSize);\n"
+        "                    clipPosition.xy += ndcOffset * clipPosition.w;\n"
+        "                }\n"
         "            }\n"
-        "        } else if (toonEnvironmentPass == 0) {\n"
+        "        } else {\n"
         "            V.xyz += toonNormal * 0.009;\n"
         "            clipPosition = projection * V;\n"
         "        }\n"
@@ -1354,9 +1362,11 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform int toonRimEnabled;\n"
         "uniform int toonOutlinePass;\n"
         "uniform int toonEnvironmentPass;\n"
+        "uniform int toonOutlineDiagnosticMode;\n"
         "uniform float toonOutlineWidth;\n"
         "uniform float nightObjectBrightness;\n"
         "uniform float nightObjectSaturation;\n"
+        "varying float toonOutlineProjectionState;\n"
 #endif
 
         "vec3 direction(vec4 p1, vec4 p2) { return normalize(p2.xyz * sign(p1.w) - p1.xyz * sign(p2.w)); }\n"
@@ -1426,6 +1436,13 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         (toonLighting +
         "void main() {\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
+#ifdef RAD_ANDROID
+        "        if (toonEnvironmentPass != 0 && toonOutlineDiagnosticMode == 7) {\n"
+        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
+        "            gl_FragColor = vec4(diagnosticColour, cpri.a * dcm.a);\n"
+        "            return;\n"
+        "        }\n"
+#endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, cpri.a * dcm.a);\n"
         "        return;\n"
         "    }\n"
@@ -1445,6 +1462,13 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "void main() {\n"
         "    vec4 base = texture2D(tex, tc) * cpri;\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
+#ifdef RAD_ANDROID
+        "        if (toonEnvironmentPass != 0 && toonOutlineDiagnosticMode == 7) {\n"
+        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
+        "            gl_FragColor = vec4(diagnosticColour, base.a);\n"
+        "            return;\n"
+        "        }\n"
+#endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, base.a);\n"
         "        return;\n"
         "    }\n"
@@ -1466,6 +1490,13 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec4 base = texture2D(tex, tc) * cpri;\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
         "        if (base.a < alpharef) discard;\n"
+#ifdef RAD_ANDROID
+        "        if (toonEnvironmentPass != 0 && toonOutlineDiagnosticMode == 7) {\n"
+        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
+        "            gl_FragColor = vec4(diagnosticColour, base.a);\n"
+        "            return;\n"
+        "        }\n"
+#endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, base.a);\n"
         "        return;\n"
         "    }\n"
@@ -3533,13 +3564,17 @@ float pglContext::EndTiming(void)
 
 void pglContext::SetShaderProgram(pglProgram* program)
 {
+#ifdef RAD_ANDROID
+    LoadSHAREnvironmentOutlineDiagnostics();
+#endif
     if(program == currentProgram)
     {
 #ifdef RAD_ANDROID
         if (currentProgram)
             currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
-            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
+            gSHAREnvironmentOutlineDiagnosticMode);
 #endif
         return;
     }
@@ -3555,7 +3590,8 @@ void pglContext::SetShaderProgram(pglProgram* program)
 #ifdef RAD_ANDROID
     currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
-            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
+            gSHAREnvironmentOutlineDiagnosticMode);
 #endif
     currentProgram->SetProjectionMatrix(&projection);
 
@@ -3571,10 +3607,12 @@ void pglContext::SetShaderProgram(pglProgram* program)
 #ifdef RAD_ANDROID
 void pglContext::ApplyCelShadingState()
 {
+    LoadSHAREnvironmentOutlineDiagnostics();
     if (currentProgram)
         currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
-            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
+            gSHAREnvironmentOutlineDiagnosticMode);
 }
 #endif
 
