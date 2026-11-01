@@ -40,6 +40,8 @@ static float gSHARCelOutlineViewportHeight = 1.0f;
 // 2=no face culling, 3=no depth test and no face culling.
 static int gSHAREnvironmentOutlineDiagnosticMode = 0;
 static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
+// Monotonic per-process identity for retained primitive buffers in diagnostic logs.
+static unsigned gSHAREnvironmentDiagnosticMeshId = 0;
 // Enabled by gameplay only for exterior Levels 1-6; Level 7 retains the prior behavior.
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
@@ -242,7 +244,7 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
             fprintf(file, "# 3 = disable both depth testing and face culling.\n");
             fprintf(file, "# 4 = opposite face culling (GL_FRONT), with depth testing enabled.\n");
             fprintf(file, "# 5 = normal rendering plus indexed mesh-winding diagnostic logs.\n");
-            fprintf(file, "# 6 = normal rendering plus normal-coherence, duplicate-edge and stable-ID diagnostics.\n");
+            fprintf(file, "# 6 = normal rendering plus all-mesh diagnostics and actual duplicate-position normal comparisons.\n");
             fprintf(file, "outline_diagnostic_mode=0\n");
             fclose(file);
         }
@@ -2063,6 +2065,7 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     environmentNormalsAvailable = false;
     environmentWindingDiagnosticsReported = false;
     environmentMeshQualityDiagnosticsReported = false;
+    environmentDiagnosticMeshId = ++gSHAREnvironmentDiagnosticMeshId;
 #endif
     vertexBuffer = indexBuffer = vertexArray = 0;
 
@@ -2315,10 +2318,7 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
         return true;
     environmentMeshQualityDiagnosticsReported = true;
 
-    static unsigned reportedEnvironmentQualityMeshes = 0;
-    if (reportedEnvironmentQualityMeshes >= 96)
-        return true;
-    if (coord == NULL || allocated < 3)
+    if (coord == NULL || normal == NULL || allocated < 3)
         return false;
 
     const int elementCount = (indexCount > 0 && indices != NULL)
@@ -2388,6 +2388,15 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
         NormalAccumulation() : x(0.0), y(0.0), z(0.0),
                                totalMagnitude(0.0), contributions(0) {}
     };
+    struct PositionNormalGroup
+    {
+        float referenceX, referenceY, referenceZ;
+        float minDotToFirstCopy;
+        unsigned count;
+        PositionNormalGroup()
+            : referenceX(0.0f), referenceY(0.0f), referenceZ(0.0f),
+              minDotToFirstCopy(1.0f), count(0) {}
+    };
 
     const auto quantizePoint = [](const float* position, QuantizedPoint* point) -> bool
     {
@@ -2408,9 +2417,12 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
 
     std::unordered_map<GeometricEdge, GeometricEdgeUse, GeometricEdgeHash> geometricEdges;
     std::unordered_map<QuantizedPoint, unsigned, QuantizedPointHash> vertexPositionUses;
+    std::unordered_map<QuantizedPoint, PositionNormalGroup, QuantizedPointHash> positionNormalGroups;
     geometricEdges.reserve(static_cast<size_t>(elementCount));
     vertexPositionUses.reserve(static_cast<size_t>(allocated));
+    positionNormalGroups.reserve(static_cast<size_t>(allocated));
     std::vector<NormalAccumulation> normalAccumulations(allocated);
+    unsigned zeroLengthActualNormals = 0;
 
     // Stable FNV-1a ID over quantized positions and the primitive index stream.
     // Unlike a pointer, this can identify equivalent mesh buffers in separate runs.
@@ -2438,6 +2450,42 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
             hashValue(static_cast<uint64_t>(point.y));
             hashValue(static_cast<uint64_t>(point.z));
             ++vertexPositionUses[point];
+
+            // Compare the actual normal attribute consumed by the outline shader
+            // for vertex indices that occupy the same quantized local position.
+            const float* sourceNormal =
+                (const float*)((const unsigned char*)normal + i * stride);
+            const float normalLengthSquared =
+                sourceNormal[0] * sourceNormal[0] +
+                sourceNormal[1] * sourceNormal[1] +
+                sourceNormal[2] * sourceNormal[2];
+            if (isfinite(sourceNormal[0]) && isfinite(sourceNormal[1]) &&
+                isfinite(sourceNormal[2]) && normalLengthSquared > 1.0e-12f)
+            {
+                const float inverseLength = 1.0f / sqrtf(normalLengthSquared);
+                const float nx = sourceNormal[0] * inverseLength;
+                const float ny = sourceNormal[1] * inverseLength;
+                const float nz = sourceNormal[2] * inverseLength;
+                PositionNormalGroup& group = positionNormalGroups[point];
+                if (group.count == 0)
+                {
+                    group.referenceX = nx;
+                    group.referenceY = ny;
+                    group.referenceZ = nz;
+                }
+                else
+                {
+                    const float dot = nx * group.referenceX +
+                                      ny * group.referenceY +
+                                      nz * group.referenceZ;
+                    group.minDotToFirstCopy = fminf(group.minDotToFirstCopy, dot);
+                }
+                ++group.count;
+            }
+            else
+            {
+                ++zeroLengthActualNormals;
+            }
         }
         else
         {
@@ -2578,6 +2626,34 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
             duplicatePositionVertices += it->second - 1;
     }
 
+    unsigned duplicateNormalGroups = 0;
+    unsigned normalMismatchGroups5Deg = 0;
+    unsigned normalMismatchGroups15Deg = 0;
+    unsigned normalMismatchGroups30Deg = 0;
+    unsigned normalMismatchGroups60Deg = 0;
+    double maximumNormalAngleFromFirstCopy = 0.0;
+    double sumMaximumNormalAngleFromFirstCopy = 0.0;
+    for (std::unordered_map<QuantizedPoint, PositionNormalGroup, QuantizedPointHash>::const_iterator it =
+             positionNormalGroups.begin(); it != positionNormalGroups.end(); ++it)
+    {
+        const PositionNormalGroup& group = it->second;
+        if (group.count < 2)
+            continue;
+
+        const double dot = fmax(-1.0, fmin(1.0, (double)group.minDotToFirstCopy));
+        const double angleDegrees = acos(dot) * 57.29577951308232;
+        ++duplicateNormalGroups;
+        if (angleDegrees > 5.0) ++normalMismatchGroups5Deg;
+        if (angleDegrees > 15.0) ++normalMismatchGroups15Deg;
+        if (angleDegrees > 30.0) ++normalMismatchGroups30Deg;
+        if (angleDegrees > 60.0) ++normalMismatchGroups60Deg;
+        if (angleDegrees > maximumNormalAngleFromFirstCopy)
+            maximumNormalAngleFromFirstCopy = angleDegrees;
+        sumMaximumNormalAngleFromFirstCopy += angleDegrees;
+    }
+    const double averageMaximumNormalAngleFromFirstCopy = duplicateNormalGroups > 0
+        ? sumMaximumNormalAngleFromFirstCopy / duplicateNormalGroups : 0.0;
+
     unsigned geometricBoundaryEdges = 0;
     unsigned geometricSharedEdges = 0;
     unsigned geometricWindingConflicts = 0;
@@ -2626,25 +2702,32 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
         ? coherenceSum / normalVertices : 0.0;
     if (normalVertices == 0) minimumCoherence = 0.0;
 
-    SDL_Log("[SHAR Outline MeshQuality] fingerprint=%016llX prim=%d vertexType=0x%X "
-            "vertices=%u elements=%d triangles=%u degenerateTriangles=%u "
-            "invalidIndexTriangles=%u invalidPositionTriangles=%u "
-            "duplicatePositionVertices=%u normalVertices=%u "
-            "lowCoherence(<0.25)=%u mediumCoherence(<0.50)=%u "
+    SDL_Log("[SHAR Outline MeshQuality] meshId=%u mesh=%p fingerprint=%016llX "
+            "normalSource=%s prim=%d vertexType=0x%X vertices=%u elements=%d "
+            "triangles=%u degenerateTriangles=%u invalidIndexTriangles=%u "
+            "invalidPositionTriangles=%u duplicatePositionVertices=%u "
+            "actualZeroLengthNormals=%u duplicateNormalGroups=%u "
+            "normalMismatchGroups(>5deg)=%u (>15deg)=%u (>30deg)=%u (>60deg)=%u "
+            "maxAngleFromFirstCopy=%.2f avgMaxAngleFromFirstCopy=%.2f "
+            "normalVertices=%u lowCoherence(<0.25)=%u mediumCoherence(<0.50)=%u "
             "zeroResultantNormals=%u avgNormalCoherence=%.4f minNormalCoherence=%.4f "
             "geoBoundaryEdges=%u geoSharedEdges=%u geoWindingConflicts=%u "
             "geoNonManifoldEdges=%u splitIndexEdges=%u collapsedPositionEdges=%u "
             "positionTolerance=0.0001",
+            environmentDiagnosticMeshId, static_cast<void*>(this),
             static_cast<unsigned long long>(fingerprint),
+            (vertexType & PDDI_V_NORMAL) ? "authored" : "generated",
             (int)primType, vertexType, allocated, elementCount, validTriangles,
             degenerateTriangles, invalidIndexTriangles, invalidPositionTriangles,
-            duplicatePositionVertices, normalVertices, lowCoherenceVertices,
-            mediumCoherenceVertices, zeroResultantVertices,
-            averageCoherence, minimumCoherence, geometricBoundaryEdges,
-            geometricSharedEdges, geometricWindingConflicts,
+            duplicatePositionVertices, zeroLengthActualNormals, duplicateNormalGroups,
+            normalMismatchGroups5Deg, normalMismatchGroups15Deg,
+            normalMismatchGroups30Deg, normalMismatchGroups60Deg,
+            maximumNormalAngleFromFirstCopy, averageMaximumNormalAngleFromFirstCopy,
+            normalVertices, lowCoherenceVertices, mediumCoherenceVertices,
+            zeroResultantVertices, averageCoherence, minimumCoherence,
+            geometricBoundaryEdges, geometricSharedEdges, geometricWindingConflicts,
             geometricNonManifoldEdges, splitIndexEdges, collapsedPositionEdges);
 
-    ++reportedEnvironmentQualityMeshes;
     return true;
 }
 
@@ -2768,8 +2851,6 @@ void pglPrimBuffer::Display(void)
         if (gSHAREnvironmentOutlineDiagnosticMode == 4 ||
             gSHAREnvironmentOutlineDiagnosticMode == 5)
             DiagnoseEnvironmentWinding();
-        else if (gSHAREnvironmentOutlineDiagnosticMode == 6)
-            DiagnoseEnvironmentMeshQuality();
     }
 
     if (environmentOutlineGeometryPass &&
@@ -2786,6 +2867,12 @@ void pglPrimBuffer::Display(void)
         }
         return;
     }
+
+    // Run after GenerateEnvironmentNormals(): compare the exact normal vectors
+    // uploaded for the environment outline pass, not pre-generation estimates.
+    if (environmentOutlineGeometryPass &&
+        gSHAREnvironmentOutlineDiagnosticMode == 6)
+        DiagnoseEnvironmentMeshQuality();
 #endif
 
     if(!valid)
