@@ -231,10 +231,19 @@ protected:
 #ifdef RAD_ANDROID
     bool environmentNormalsAttempted;
     bool environmentNormalsAvailable;
+    bool environmentOutlineNormalsAttempted;
+    bool environmentOutlineNormalsAvailable;
+    bool environmentOutlineNormalsUploaded;
+    float* environmentOutlineNormals;
+    GLuint environmentOutlineNormalBuffer;
+    unsigned environmentOutlineSmoothedGroups;
+    unsigned environmentOutlineSmoothedVertices;
+    unsigned environmentOutlineCreaseSeparatedPairs;
     bool environmentWindingDiagnosticsReported;
     bool environmentMeshQualityDiagnosticsReported;
     unsigned environmentDiagnosticMeshId;
     bool GenerateEnvironmentNormals();
+    bool GenerateEnvironmentOutlineNormals();
     bool DiagnoseEnvironmentWinding();
     bool DiagnoseEnvironmentMeshQuality();
 #endif

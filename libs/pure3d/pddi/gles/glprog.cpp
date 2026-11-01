@@ -398,6 +398,7 @@ bool pglProgram::LinkProgram(GLuint vertexShader, GLuint fragmentShader)
     glBindAttribLocation(program, 1, "normal");
     glBindAttribLocation(program, 2, "texcoord");
     glBindAttribLocation(program, 3, "color");
+    glBindAttribLocation(program, 4, "outlineNormal");
 
     glLinkProgram(program);
 

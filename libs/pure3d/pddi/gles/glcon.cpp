@@ -1271,6 +1271,9 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "attribute vec3 normal;\n"
         "attribute vec2 texcoord;\n"
         "attribute vec4 color;\n"
+#ifdef RAD_ANDROID
+        "attribute vec3 outlineNormal;\n"
+#endif
 
         "uniform mat4 projection;\n"
         "uniform mat4 modelview;\n"
@@ -1290,7 +1293,12 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
 #endif
         "void main() {\n"
         "    vec4 V = modelview * vec4(position, 1.0);\n"
+#ifdef RAD_ANDROID
+        "    vec3 vertexNormal = (toonOutlinePass != 0 && toonEnvironmentPass != 0) ? outlineNormal : normal;\n"
+        "    toonNormal = normalize(mat3(normalmatrix) * vertexNormal);\n"
+#else
         "    toonNormal = normalize(mat3(normalmatrix) * normal);\n"
+#endif
         "    vec4 clipPosition = projection * V;\n"
 #ifdef RAD_ANDROID
         "    if (toonEnabled != 0 && toonObjectEnabled != 0 && toonOutlinePass != 0) {\n"
@@ -2063,6 +2071,14 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
 #ifdef RAD_ANDROID
     environmentNormalsAttempted = false;
     environmentNormalsAvailable = false;
+    environmentOutlineNormalsAttempted = false;
+    environmentOutlineNormalsAvailable = false;
+    environmentOutlineNormalsUploaded = false;
+    environmentOutlineNormals = NULL;
+    environmentOutlineNormalBuffer = 0;
+    environmentOutlineSmoothedGroups = 0;
+    environmentOutlineSmoothedVertices = 0;
+    environmentOutlineCreaseSeparatedPairs = 0;
     environmentWindingDiagnosticsReported = false;
     environmentMeshQualityDiagnosticsReported = false;
     environmentDiagnosticMeshId = ++gSHAREnvironmentDiagnosticMeshId;
@@ -2131,6 +2147,11 @@ pglPrimBuffer::~pglPrimBuffer()
 
     GLuint buffers[] = { vertexBuffer, indexBuffer };
     glDeleteBuffers(2, buffers);
+#ifdef RAD_ANDROID
+    if (environmentOutlineNormalBuffer)
+        glDeleteBuffers(1, &environmentOutlineNormalBuffer);
+    delete [] environmentOutlineNormals;
+#endif
     glDeleteVertexArraysOES(1, &vertexArray);
 }
 
@@ -2154,6 +2175,18 @@ void pglPrimBuffer::Unlock(pddiPrimBufferStream* stream)
     if(colour)
         colour -= total * stride;
 
+#ifdef RAD_ANDROID
+    environmentNormalsAttempted = false;
+    environmentNormalsAvailable = false;
+    environmentOutlineNormalsAttempted = false;
+    environmentOutlineNormalsAvailable = false;
+    environmentOutlineNormalsUploaded = false;
+    environmentOutlineSmoothedGroups = 0;
+    environmentOutlineSmoothedVertices = 0;
+    environmentOutlineCreaseSeparatedPairs = 0;
+    delete [] environmentOutlineNormals;
+    environmentOutlineNormals = NULL;
+#endif
     valid = false;
 }
 
@@ -2172,6 +2205,18 @@ void pglPrimBuffer::SetIndices(unsigned short* i, int count)
 {
     PDDIASSERT(count <= (int)indexCount);
     memcpy(indices, i, count * sizeof(unsigned short));
+#ifdef RAD_ANDROID
+    environmentNormalsAttempted = false;
+    environmentNormalsAvailable = false;
+    environmentOutlineNormalsAttempted = false;
+    environmentOutlineNormalsAvailable = false;
+    environmentOutlineNormalsUploaded = false;
+    environmentOutlineSmoothedGroups = 0;
+    environmentOutlineSmoothedVertices = 0;
+    environmentOutlineCreaseSeparatedPairs = 0;
+    delete [] environmentOutlineNormals;
+    environmentOutlineNormals = NULL;
+#endif
     valid = false;
 }
 
@@ -2715,7 +2760,8 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
             "zeroResultantFaceNormals=%u avgIndexFaceCoherence=%.4f minIndexFaceCoherence=%.4f "
             "geoBoundaryEdges=%u geoSharedEdges=%u geoWindingConflicts=%u "
             "geoNonManifoldEdges=%u splitIndexEdges=%u collapsedPositionEdges=%u "
-            "positionTolerance=0.0001",
+            "outlineSmoothedPositionGroups=%u outlineSmoothedVertices=%u "
+            "outlineCreaseSeparatedPairs=%u positionTolerance=0.0001",
             environmentDiagnosticMeshId, static_cast<void*>(this),
             static_cast<unsigned long long>(fingerprint),
             (vertexType & PDDI_V_NORMAL) ? "authored" : "generated",
@@ -2728,7 +2774,9 @@ bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
             normalVertices, lowCoherenceVertices, mediumCoherenceVertices,
             zeroResultantVertices, averageCoherence, minimumCoherence,
             geometricBoundaryEdges, geometricSharedEdges, geometricWindingConflicts,
-            geometricNonManifoldEdges, splitIndexEdges, collapsedPositionEdges);
+            geometricNonManifoldEdges, splitIndexEdges, collapsedPositionEdges,
+            environmentOutlineSmoothedGroups, environmentOutlineSmoothedVertices,
+            environmentOutlineCreaseSeparatedPairs);
 
     return true;
 }
@@ -2837,6 +2885,170 @@ bool pglPrimBuffer::GenerateEnvironmentNormals()
     valid = false;
     return true;
 }
+
+bool pglPrimBuffer::GenerateEnvironmentOutlineNormals()
+{
+    if (environmentOutlineNormalsAttempted)
+        return environmentOutlineNormalsAvailable;
+    environmentOutlineNormalsAttempted = true;
+    environmentOutlineNormalsAvailable = false;
+    environmentOutlineSmoothedGroups = 0;
+    environmentOutlineSmoothedVertices = 0;
+    environmentOutlineCreaseSeparatedPairs = 0;
+
+    if (normal == NULL || coord == NULL || allocated < 3 ||
+        (vertexType & PDDI_V_NORMAL) ||
+        !environmentNormalsAvailable)
+        return false;
+
+    float* outlineData = new float[static_cast<size_t>(allocated) * 3];
+    if (outlineData == NULL)
+        return false;
+
+    // Start with the exact generated normals used by the existing environment
+    // outline. Only the separate outline copy is modified below; the original
+    // interleaved vertex normal data remains untouched for ordinary rendering.
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        const float* source = (const float*)((const unsigned char*)normal + i * stride);
+        outlineData[i * 3] = source[0];
+        outlineData[i * 3 + 1] = source[1];
+        outlineData[i * 3 + 2] = source[2];
+    }
+
+    struct OutlinePosition
+    {
+        int64_t x, y, z;
+        bool operator==(const OutlinePosition& other) const
+        {
+            return x == other.x && y == other.y && z == other.z;
+        }
+    };
+    struct OutlinePositionHash
+    {
+        size_t operator()(const OutlinePosition& p) const
+        {
+            uint64_t hash = 1469598103934665603ULL;
+            const int64_t values[3] = { p.x, p.y, p.z };
+            for (int i = 0; i < 3; ++i)
+            {
+                const uint64_t value = static_cast<uint64_t>(values[i]);
+                for (unsigned byte = 0; byte < 8; ++byte)
+                {
+                    hash ^= (value >> (byte * 8)) & 0xffULL;
+                    hash *= 1099511628211ULL;
+                }
+            }
+            return static_cast<size_t>(hash ^ (hash >> 32));
+        }
+    };
+
+    std::unordered_map<OutlinePosition, std::vector<unsigned>, OutlinePositionHash> positionVertices;
+    positionVertices.reserve(allocated);
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        const float* p = (const float*)((const unsigned char*)coord + i * stride);
+        if (!isfinite(p[0]) || !isfinite(p[1]) || !isfinite(p[2]))
+            continue;
+
+        OutlinePosition key;
+        key.x = static_cast<int64_t>(llround(static_cast<double>(p[0]) * 10000.0));
+        key.y = static_cast<int64_t>(llround(static_cast<double>(p[1]) * 10000.0));
+        key.z = static_cast<int64_t>(llround(static_cast<double>(p[2]) * 10000.0));
+        positionVertices[key].push_back(i);
+    }
+
+    // A 60-degree crease threshold is deliberately conservative: copies that
+    // belong to a smooth seam can share an outline direction, while sharper
+    // geometric edges keep their independent directions.
+    const float creaseCosine = 0.5f;
+    for (std::unordered_map<OutlinePosition, std::vector<unsigned>, OutlinePositionHash>::const_iterator group =
+             positionVertices.begin(); group != positionVertices.end(); ++group)
+    {
+        const std::vector<unsigned>& vertices = group->second;
+        if (vertices.size() < 2)
+            continue;
+
+        bool groupChanged = false;
+        for (size_t i = 0; i < vertices.size(); ++i)
+        {
+            const unsigned vertex = vertices[i];
+            const float* base = (const float*)((const unsigned char*)normal + vertex * stride);
+            if (!isfinite(base[0]) || !isfinite(base[1]) || !isfinite(base[2]))
+                continue;
+
+            float sumX = base[0];
+            float sumY = base[1];
+            float sumZ = base[2];
+            unsigned compatibleCopies = 1;
+
+            for (size_t j = 0; j < vertices.size(); ++j)
+            {
+                if (i == j)
+                    continue;
+
+                const unsigned otherVertex = vertices[j];
+                const float* other = (const float*)((const unsigned char*)normal + otherVertex * stride);
+                if (!isfinite(other[0]) || !isfinite(other[1]) || !isfinite(other[2]))
+                    continue;
+
+                const float dot = base[0] * other[0] +
+                                  base[1] * other[1] +
+                                  base[2] * other[2];
+                if (dot >= creaseCosine)
+                {
+                    sumX += other[0];
+                    sumY += other[1];
+                    sumZ += other[2];
+                    ++compatibleCopies;
+                }
+                else if (vertex < otherVertex)
+                {
+                    ++environmentOutlineCreaseSeparatedPairs;
+                }
+            }
+
+            if (compatibleCopies < 2)
+                continue;
+
+            const float lengthSquared = sumX * sumX + sumY * sumY + sumZ * sumZ;
+            if (lengthSquared <= 1.0e-12f)
+                continue;
+
+            const float inverseLength = 1.0f / sqrtf(lengthSquared);
+            const float smoothX = sumX * inverseLength;
+            const float smoothY = sumY * inverseLength;
+            const float smoothZ = sumZ * inverseLength;
+            const float alignment = base[0] * smoothX +
+                                    base[1] * smoothY +
+                                    base[2] * smoothZ;
+
+            if (alignment < 0.99999f)
+            {
+                outlineData[vertex * 3] = smoothX;
+                outlineData[vertex * 3 + 1] = smoothY;
+                outlineData[vertex * 3 + 2] = smoothZ;
+                ++environmentOutlineSmoothedVertices;
+                groupChanged = true;
+            }
+        }
+
+        if (groupChanged)
+            ++environmentOutlineSmoothedGroups;
+    }
+
+    if (environmentOutlineSmoothedVertices == 0)
+    {
+        delete [] outlineData;
+        return false;
+    }
+
+    environmentOutlineNormals = outlineData;
+    environmentOutlineNormalsAvailable = true;
+    environmentOutlineNormalsUploaded = false;
+    return true;
+}
+
 #endif
 
 void pglPrimBuffer::Display(void)
@@ -2844,6 +3056,7 @@ void pglPrimBuffer::Display(void)
     MICROPROFILE_SCOPEI("PDDI", "pglPrimBuffer::Display", MP_RED);
 
 #ifdef RAD_ANDROID
+    bool useCreaseAwareEnvironmentOutlineNormals = false;
     const bool environmentOutlineGeometryPass =
         gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible &&
         gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass;
@@ -2870,8 +3083,11 @@ void pglPrimBuffer::Display(void)
         return;
     }
 
-    // Run after GenerateEnvironmentNormals(): compare the exact normal vectors
-    // uploaded for the environment outline pass, not pre-generation estimates.
+    if (environmentOutlineGeometryPass && !(vertexType & PDDI_V_NORMAL))
+        useCreaseAwareEnvironmentOutlineNormals = GenerateEnvironmentOutlineNormals();
+
+    // Run after both normal-generation stages so Mode 6 can report the original
+    // generated normals alongside the number of outline-only crease corrections.
     if (environmentOutlineGeometryPass &&
         gSHAREnvironmentOutlineDiagnosticMode == 6)
         DiagnoseEnvironmentMeshQuality();
@@ -2960,6 +3176,40 @@ void pglPrimBuffer::Display(void)
     {
         glBindVertexArrayOES(vertexArray);
     }
+
+#ifdef RAD_ANDROID
+    // The outline-only normal stream is a separate attribute/VBO. During all
+    // ordinary draws attribute 4 aliases the original interleaved normal slot.
+    // This prevents crease-aware smoothing from altering the source normals.
+    if (useCreaseAwareEnvironmentOutlineNormals)
+    {
+        if (!environmentOutlineNormalBuffer)
+            glGenBuffers(1, &environmentOutlineNormalBuffer);
+        glBindBuffer(GL_ARRAY_BUFFER, environmentOutlineNormalBuffer);
+        if (!environmentOutlineNormalsUploaded)
+        {
+            glBufferData(GL_ARRAY_BUFFER,
+                         allocated * 3 * sizeof(float),
+                         environmentOutlineNormals, GL_STATIC_DRAW);
+            environmentOutlineNormalsUploaded = true;
+        }
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE,
+                              3 * sizeof(float), (void*)0);
+    }
+    else if ((vertexType & PDDI_V_NORMAL) || environmentNormalsAvailable)
+    {
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride, (void*)12);
+    }
+    else
+    {
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+        glDisableVertexAttribArray(4);
+        glVertexAttrib3f(4, 0.0f, 0.0f, 1.0f);
+    }
+#endif
 
 #ifdef RAD_ANDROID
     // Apply diagnostic overrides only to the environment inverted-hull pass.
