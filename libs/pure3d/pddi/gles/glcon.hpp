@@ -233,6 +233,7 @@ protected:
     bool environmentNormalsAvailable;
     bool environmentWindingDiagnosticsReported;
     bool environmentMeshQualityDiagnosticsReported;
+    unsigned environmentDiagnosticMeshId;
     bool GenerateEnvironmentNormals();
     bool DiagnoseEnvironmentWinding();
     bool DiagnoseEnvironmentMeshQuality();
