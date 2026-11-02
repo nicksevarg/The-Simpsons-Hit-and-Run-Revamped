@@ -29,6 +29,14 @@ bool IsSHAREnvironmentBillboardFoliagePassActive();
 //for memcpy
 #include <stdio.h>
 #include <string.h>
+#ifdef RAD_ANDROID
+#include <SDL.h>
+#include <unordered_set>
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+bool IsCelShadingOutlinePass();
+bool IsSHAREnvironmentCelPassActive();
+bool IsSHAREnvironmentBillboardFoliagePassActive();
+#endif
 
 #ifdef RAD_PS2
 #define PS2_OCCLUSION_FLARE
@@ -1298,6 +1306,27 @@ tBillboardQuadGroup::FindQuadByName(const char* name)
 void 
 tBillboardQuadGroup::Display()
 {
+#ifdef RAD_ANDROID
+    if (IsSHAREnvironmentOutlineDiagnosticMode10())
+    {
+        static std::unordered_set<const tBillboardQuadGroup*> reportedGroups;
+        if (reportedGroups.size() < 700 && reportedGroups.insert(this).second)
+        {
+            tShader* diagnosticShader = GetShader();
+            SDL_Log("[SHAR Outline Mode 10] billboard-display group=%p name=%s shader=%s quads=%d environmentPass=%d outlinePass=%d foliageNormals=%d managerEnabled=%d collectPass=%d",
+                    static_cast<const void*>(this),
+                    GetName() ? GetName() : "<unnamed>",
+                    diagnosticShader && diagnosticShader->GetName() ? diagnosticShader->GetName() : "<no-shader>",
+                    GetNumQuads(),
+                    IsSHAREnvironmentCelPassActive() ? 1 : 0,
+                    IsCelShadingOutlinePass() ? 1 : 0,
+                    IsSHAREnvironmentBillboardFoliagePassActive() ? 1 : 0,
+                    BillboardQuadManager::sEnabled ? 1 : 0,
+                    BillboardQuadManager::sCollectPass ? 1 : 0);
+        }
+    }
+#endif
+
     if ( !BillboardQuadManager::sEnabled )
     {
         Matrix world = *(p3d::context->GetWorldMatrix());

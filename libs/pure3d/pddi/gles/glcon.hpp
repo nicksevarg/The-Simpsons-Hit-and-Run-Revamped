@@ -34,6 +34,7 @@ bool IsCelShadingOutlinePass();
 void SetSHAREnvironmentCelPassActive(bool enabled);
 bool IsSHAREnvironmentCelPassActive();
 void SetSHAREnvironmentCelMaterialEligible(bool eligible);
+void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHARCharacterMaskModelPass(bool enabled);
 void SetSHARGagCharacterCelPassActive(bool enabled);
@@ -241,6 +242,7 @@ protected:
     unsigned environmentOutlineCreaseSeparatedPairs;
     bool environmentWindingDiagnosticsReported;
     bool environmentMeshQualityDiagnosticsReported;
+    bool environmentOutlineDiagnosticsReported;
     unsigned environmentDiagnosticMeshId;
     bool GenerateEnvironmentNormals();
     bool GenerateEnvironmentOutlineNormals();

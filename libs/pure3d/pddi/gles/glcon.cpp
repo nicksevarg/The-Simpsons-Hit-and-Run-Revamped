@@ -44,6 +44,8 @@ static int gSHAREnvironmentOutlineDiagnosticMode = 0;
 static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
 // Monotonic per-process identity for retained primitive buffers in diagnostic logs.
 static unsigned gSHAREnvironmentDiagnosticMeshId = 0;
+static const char* gSHAREnvironmentDiagnosticOwnerName = NULL;
+static const char* gSHAREnvironmentDiagnosticDrawableName = NULL;
 // Enabled by gameplay only for exterior Levels 1-6; Level 7 retains the prior behavior.
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
@@ -1109,6 +1111,12 @@ bool IsSHAREnvironmentOutlineDiagnosticMode10()
     return gSHAREnvironmentOutlineDiagnosticMode == 10;
 }
 
+void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName)
+{
+    gSHAREnvironmentDiagnosticOwnerName = ownerName;
+    gSHAREnvironmentDiagnosticDrawableName = drawableName;
+}
+
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled)
 {
     gSHAREnvironmentBillboardFoliagePassActive = enabled;
@@ -2155,6 +2163,7 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     environmentOutlineCreaseSeparatedPairs = 0;
     environmentWindingDiagnosticsReported = false;
     environmentMeshQualityDiagnosticsReported = false;
+    environmentOutlineDiagnosticsReported = false;
     environmentDiagnosticMeshId = ++gSHAREnvironmentDiagnosticMeshId;
 #endif
     vertexBuffer = indexBuffer = vertexArray = 0;
@@ -3165,6 +3174,29 @@ void pglPrimBuffer::Display(void)
     if (environmentOutlineGeometryPass &&
         gSHAREnvironmentOutlineDiagnosticMode == 6)
         DiagnoseEnvironmentMeshQuality();
+
+    if (environmentOutlineGeometryPass &&
+        gSHAREnvironmentOutlineDiagnosticMode == 10 &&
+        !environmentOutlineDiagnosticsReported)
+    {
+        SDL_Log("[SHAR Outline Mode 10] outline-mesh id=%u buffer=%p owner=%s drawable=%s primType=%d vertexType=0x%X allocated=%u total=%u indices=%u sourceNormals=%d generatedNormals=%d outlineNormals=%d smoothedGroups=%u smoothedVertices=%u creasePairs=%u",
+                environmentDiagnosticMeshId,
+                static_cast<void*>(this),
+                gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
+                gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+                (int)primType,
+                vertexType,
+                allocated,
+                total,
+                indexCount,
+                (vertexType & PDDI_V_NORMAL) ? 1 : 0,
+                environmentNormalsAvailable ? 1 : 0,
+                environmentOutlineNormalsAvailable ? 1 : 0,
+                environmentOutlineSmoothedGroups,
+                environmentOutlineSmoothedVertices,
+                environmentOutlineCreaseSeparatedPairs);
+        environmentOutlineDiagnosticsReported = true;
+    }
 #endif
 
     if(!valid)

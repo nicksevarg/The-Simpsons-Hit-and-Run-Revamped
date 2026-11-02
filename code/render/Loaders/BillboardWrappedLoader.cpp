@@ -21,6 +21,10 @@
 #include <render/DSG/StaticEntityDSG.h>
 #include <constants/srrchunks.h>
 #include <memory/srrmemory.h>
+#ifdef RAD_ANDROID
+#include <SDL.h>
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+#endif
 //************************************************************************
 //
 // Global Data, Local Data, Local Classes
@@ -147,6 +151,21 @@ tEntity* BillboardWrappedLoader::LoadObject
 	tBillboardQuadGroup* pBQGroup = (tBillboardQuadGroup*)tBillboardQuadGroupLoader::LoadObject( file, store );
 
 	rAssert(pBQGroup);
+
+#ifdef RAD_ANDROID
+    if (IsSHAREnvironmentOutlineDiagnosticMode10())
+    {
+        tShader* diagnosticShader = pBQGroup->GetShader();
+        SDL_Log("[SHAR Outline Mode 10] billboard-load group=%p name=%s shader=%s quads=%d overrideWrapper=%d translucent=%d environmentEligible=%d",
+                static_cast<void*>(pBQGroup),
+                pBQGroup->GetName() ? pBQGroup->GetName() : "<unnamed>",
+                diagnosticShader && diagnosticShader->GetName() ? diagnosticShader->GetName() : "<no-shader>",
+                pBQGroup->GetNumQuads(),
+                mOverrideWrapper ? 1 : 0,
+                diagnosticShader && diagnosticShader->mTranslucent ? 1 : 0,
+                diagnosticShader && diagnosticShader->mEnvironmentCelEligible ? 1 : 0);
+    }
+#endif
 
 	if ( mOverrideWrapper )
 	{
