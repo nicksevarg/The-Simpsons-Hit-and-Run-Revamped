@@ -21,12 +21,94 @@
 #include <p3d/texture.hpp>
 
 #ifdef RAD_ANDROID
+#include <SDL.h>
+#include <ctype.h>
+#include <string>
+#include <unordered_set>
+
 bool IsCelShadingEnabled();
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+static bool SHARContainsNameToken(const char* name, const char* token)
+{
+    if (name == NULL || token == NULL || token[0] == '\\0')
+        return false;
+    for (const char* start = name; *start != '\\0'; ++start)
+    {
+        const char* a = start;
+        const char* b = token;
+        while (*a != '\\0' && *b != '\\0' &&
+               tolower(static_cast<unsigned char>(*a)) ==
+               tolower(static_cast<unsigned char>(*b)))
+        {
+            ++a;
+            ++b;
+        }
+        if (*b == '\\0')
+            return true;
+    }
+    return false;
+}
+
+static bool SHARIsFoliageBillboardName(const char* name)
+{
+    return SHARContainsNameToken(name, "tree") ||
+           SHARContainsNameToken(name, "foliage") ||
+           SHARContainsNameToken(name, "leaf") ||
+           SHARContainsNameToken(name, "leaves") ||
+           SHARContainsNameToken(name, "bush") ||
+           SHARContainsNameToken(name, "shrub") ||
+           SHARContainsNameToken(name, "canopy") ||
+           SHARContainsNameToken(name, "branch") ||
+           SHARContainsNameToken(name, "plant") ||
+           SHARContainsNameToken(name, "hedge");
+}
+
+static bool SHARIsRoadGeometryName(const char* name)
+{
+    return SHARContainsNameToken(name, "road") ||
+           SHARContainsNameToken(name, "street") ||
+           SHARContainsNameToken(name, "asphalt") ||
+           SHARContainsNameToken(name, "pavement") ||
+           SHARContainsNameToken(name, "sidewalk") ||
+           SHARContainsNameToken(name, "curb") ||
+           SHARContainsNameToken(name, "kerb") ||
+           SHARContainsNameToken(name, "concrete") ||
+           SHARContainsNameToken(name, "walkway") ||
+           SHARContainsNameToken(name, "driveway") ||
+           SHARContainsNameToken(name, "path");
+}
+
+static void LogSHAREnvironmentMode10EntityOnce(const char* ownerName,
+                                                const char* drawableName,
+                                                bool isGeometry,
+                                                bool translucent,
+                                                bool foliageCandidate,
+                                                bool roadCandidate)
+{
+    static std::unordered_set<std::string> reportedEntities;
+    if (reportedEntities.size() >= 700)
+        return;
+    std::string key = ownerName ? ownerName : "<unnamed>";
+    key += '|';
+    key += drawableName ? drawableName : "<unnamed-drawable>";
+    if (!reportedEntities.insert(key).second)
+        return;
+
+    SDL_Log("[SHAR Outline Mode 10] entity owner=%s drawable=%s type=%s translucent=%d foliageCandidate=%d roadCandidate=%d",
+            ownerName ? ownerName : "<unnamed>",
+            drawableName ? drawableName : "<unnamed-drawable>",
+            isGeometry ? "geometry" : "billboard",
+            translucent ? 1 : 0,
+            foliageCandidate ? 1 : 0,
+            roadCandidate ? 1 : 0);
+}
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageBillboard = false)
 {
     if (drawable == NULL)
         return;
@@ -37,9 +119,13 @@ static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
     }
     SetSHAREnvironmentCelPassActive(true);
     SetCelShadingObjectEnabled(true);
+    if (foliageBillboard)
+        SetSHAREnvironmentBillboardFoliagePassActive(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    if (foliageBillboard)
+        SetSHAREnvironmentBillboardFoliagePassActive(false);
     drawable->Display();
     SetCelShadingObjectEnabled(false);
     SetSHAREnvironmentCelPassActive(false);
@@ -264,10 +350,33 @@ void StaticEntityDSG::Display()
     else
     {
 #ifdef RAD_ANDROID
-        if ((mIsGeo & GEO) && mpDrawstuff != NULL)
-            DisplaySHAREnvironmentCelDrawable(mpDrawstuff);
-        else
-            mpDrawstuff->Display();
+        if (mpDrawstuff != NULL)
+        {
+            const bool isGeometry = (mIsGeo & GEO) != 0;
+            const char* ownerName = GetName();
+            const char* drawableName = mpDrawstuff->GetName();
+            const bool foliageName =
+                SHARIsFoliageBillboardName(ownerName) ||
+                SHARIsFoliageBillboardName(drawableName);
+            const bool foliageBillboard =
+                IsSHAREnvironmentOutlineDiagnosticMode10() &&
+                !isGeometry && !mTranslucent && foliageName;
+            const bool roadCandidate =
+                isGeometry &&
+                (SHARIsRoadGeometryName(ownerName) ||
+                 SHARIsRoadGeometryName(drawableName));
+
+            if (IsSHAREnvironmentOutlineDiagnosticMode10())
+                LogSHAREnvironmentMode10EntityOnce(ownerName, drawableName,
+                    isGeometry, mTranslucent, foliageName, roadCandidate);
+
+            if (isGeometry)
+                DisplaySHAREnvironmentCelDrawable(mpDrawstuff);
+            else if (foliageBillboard)
+                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, true);
+            else
+                mpDrawstuff->Display();
+        }
 #else
         mpDrawstuff->Display();
 #endif

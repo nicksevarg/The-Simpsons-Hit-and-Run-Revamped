@@ -32,13 +32,14 @@ static bool gCelShadingObjectEnabled = false;
 static bool gCelShadingOutlinePass = false;
 static bool gSHAREnvironmentCelPassActive = false;
 static bool gSHAREnvironmentCelMaterialEligible = true;
+static bool gSHAREnvironmentBillboardFoliagePassActive = false;
 // The viewport is supplied to the environment silhouette shader so its extrusion
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
 static float gSHARCelOutlineViewportHeight = 1.0f;
 // Temporary LITE outline diagnostics: 0=normal, 1=no depth test,
 // 2=no face culling, 3=no depth test and no face culling, 8=environment
-// outline depth writes; Mode 9 adds a small positive clip-space depth bias.
+// outline depth writes; Mode 9 adds clip-space bias; Mode 10 investigates roads and foliage.
 static int gSHAREnvironmentOutlineDiagnosticMode = 0;
 static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
 // Monotonic per-process identity for retained primitive buffers in diagnostic logs.
@@ -249,6 +250,7 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
             fprintf(file, "# 7 = colour the environment outline shell by projected-normal expansion (green=expanded, red=skipped).\n");
             fprintf(file, "# 8 = Mode 7 visualisation plus depth writes enabled during environment outline draws.\n");
             fprintf(file, "# 9 = Mode 8 plus a small positive clip-space depth bias on environment outline vertices.\n");
+            fprintf(file, "# 10 = Mode 9 plus road-entity diagnostics and opaque tree-billboard outlines.\n");
             fprintf(file, "outline_diagnostic_mode=0\n");
             fclose(file);
         }
@@ -270,8 +272,8 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
         {
             if (parsed < 0)
                 gSHAREnvironmentOutlineDiagnosticMode = 0;
-            else if (parsed > 9)
-                gSHAREnvironmentOutlineDiagnosticMode = 9;
+            else if (parsed > 10)
+                gSHAREnvironmentOutlineDiagnosticMode = 10;
             else
                 gSHAREnvironmentOutlineDiagnosticMode = static_cast<int>(parsed);
         }
@@ -1047,7 +1049,9 @@ void SetCelShadingOutlinePass(bool enabled)
             const bool writeEnvironmentOutlineDepth =
                 gSHAREnvironmentCelPassActive &&
                 gSHAREnvironmentCelMaterialEligible &&
-                (gSHAREnvironmentOutlineDiagnosticMode == 8 || gSHAREnvironmentOutlineDiagnosticMode == 9);
+                (gSHAREnvironmentOutlineDiagnosticMode == 8 ||
+                 gSHAREnvironmentOutlineDiagnosticMode == 9 ||
+                 gSHAREnvironmentOutlineDiagnosticMode == 10);
             gCelShadingContext->SetGLDepthMask(writeEnvironmentOutlineDepth ? GL_TRUE : GL_FALSE);
         }
         else
@@ -1057,7 +1061,9 @@ void SetCelShadingOutlinePass(bool enabled)
             const bool writeEnvironmentOutlineDepth =
                 gSHAREnvironmentCelPassActive &&
                 gSHAREnvironmentCelMaterialEligible &&
-                (gSHAREnvironmentOutlineDiagnosticMode == 8 || gSHAREnvironmentOutlineDiagnosticMode == 9);
+                (gSHAREnvironmentOutlineDiagnosticMode == 8 ||
+                 gSHAREnvironmentOutlineDiagnosticMode == 9 ||
+                 gSHAREnvironmentOutlineDiagnosticMode == 10);
             glDepthMask(writeEnvironmentOutlineDepth ? GL_TRUE : GL_FALSE);
         }
     }
@@ -1092,7 +1098,25 @@ void SetSHAREnvironmentCelPassActive(bool enabled)
 {
     gSHAREnvironmentCelPassActive = enabled;
     gSHAREnvironmentCelMaterialEligible = true;
+    if (!enabled)
+        gSHAREnvironmentBillboardFoliagePassActive = false;
     ApplyCelShadingState();
+}
+
+bool IsSHAREnvironmentOutlineDiagnosticMode10()
+{
+    LoadSHAREnvironmentOutlineDiagnostics();
+    return gSHAREnvironmentOutlineDiagnosticMode == 10;
+}
+
+void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled)
+{
+    gSHAREnvironmentBillboardFoliagePassActive = enabled;
+}
+
+bool IsSHAREnvironmentBillboardFoliagePassActive()
+{
+    return gSHAREnvironmentBillboardFoliagePassActive;
 }
 
 bool IsSHAREnvironmentCelPassActive()
@@ -1334,7 +1358,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "                    clipPosition.xy += ndcOffset * clipPosition.w;\n"
         "                }\n"
         "            }\n"
-        "            if (toonOutlineDiagnosticMode == 9 && clipPosition.w > 0.00001) {\n"
+        "            if ((toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10) && clipPosition.w > 0.00001) {\n"
         "                // Move the expanded shell slightly farther away so the original mesh wins.\n"
         "                clipPosition.z += 0.00025 * clipPosition.w;\n"
         "            }\n"
@@ -1456,7 +1480,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "void main() {\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
 #ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9)) {\n"
+        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
         "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
         "            gl_FragColor = vec4(diagnosticColour, cpri.a * dcm.a);\n"
         "            return;\n"
@@ -1482,7 +1506,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec4 base = texture2D(tex, tc) * cpri;\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
 #ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9)) {\n"
+        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
         "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
         "            gl_FragColor = vec4(diagnosticColour, base.a);\n"
         "            return;\n"
@@ -1510,7 +1534,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
         "        if (base.a < alpharef) discard;\n"
 #ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9)) {\n"
+        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
         "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
         "            gl_FragColor = vec4(diagnosticColour, base.a);\n"
         "            return;\n"

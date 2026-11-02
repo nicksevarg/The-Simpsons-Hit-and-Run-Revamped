@@ -18,6 +18,10 @@
 #include <p3d/billboardobject.hpp>
 #include <pddi/pddiext.hpp>
 
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentBillboardFoliagePassActive();
+#endif
+
 #ifdef RAD_XBOX
 #include <pddi/pddixbox.hpp>
 #endif
@@ -127,6 +131,10 @@ tBillboardQuad::Display(pddiPrimStream* stream, const Matrix& world, const Matri
     {
         return;
     }
+
+#ifdef RAD_ANDROID
+    const bool useFoliageOutlineNormals = IsSHAREnvironmentBillboardFoliagePassActive();
+#endif
 
     //Vector  v[4];
     //Vector2 t[4];
@@ -366,31 +374,55 @@ tBillboardQuad::Display(pddiPrimStream* stream, const Matrix& world, const Matri
     if ((!flip)||(billboardMode != p3dBillboardConstants::BillboardMode::NO_AXIS))
     {
         //bottom left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[0].u, t[0].v);
         stream->Coord(v[0].x, v[0].y, v[0].z);
     
         //top right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[2].u, t[2].v);
         stream->Coord(v[2].x, v[2].y, v[2].z);
 
         //bottom right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[1].u, t[1].v);
         stream->Coord(v[1].x, v[1].y, v[1].z);
     
         // top left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[3].u, t[3].v);
         stream->Coord(v[3].x, v[3].y, v[3].z);
 
         // top right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[2].u, t[2].v);
         stream->Coord(v[2].x, v[2].y, v[2].z);
 
         // bottom left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[0].u, t[0].v);
         stream->Coord(v[0].x, v[0].y, v[0].z);
@@ -398,31 +430,55 @@ tBillboardQuad::Display(pddiPrimStream* stream, const Matrix& world, const Matri
     else
     {        
         //bottom left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[0].u, t[0].v);
         stream->Coord(v[0].x, v[0].y, v[0].z);
     
         //bottom right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[1].u, t[1].v);
         stream->Coord(v[1].x, v[1].y, v[1].z);
 
         //top right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[2].u, t[2].v);
         stream->Coord(v[2].x, v[2].y, v[2].z);
     
         // bottom left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[0].u, t[0].v);
         stream->Coord(v[0].x, v[0].y, v[0].z);
 
         // top right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[2].u, t[2].v);
         stream->Coord(v[2].x, v[2].y, v[2].z);
 
         // top left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[3].u, t[3].v);
         stream->Coord(v[3].x, v[3].y, v[3].z);
@@ -1335,7 +1391,13 @@ tBillboardQuadGroup::Display()
         #endif
 
 
+#ifdef RAD_ANDROID
+        const unsigned int vertexFormat = IsSHAREnvironmentBillboardFoliagePassActive()
+            ? (PDDI_V_NT | PDDI_V_COLOUR) : PDDI_V_CT;
+        pddiPrimStream* stream = p3d::pddi->BeginPrims(shader->GetShader(), PDDI_PRIM_TRIANGLES, vertexFormat, numVisibleQuads*6);
+#else
         pddiPrimStream* stream = p3d::pddi->BeginPrims(shader->GetShader(), PDDI_PRIM_TRIANGLES, PDDI_V_CT, numVisibleQuads*6);
+#endif
 
         for (int i = 0; i < numQuads; i++)
         {
