@@ -38,6 +38,9 @@ public:
    tGeometry* mpGeo();
    void SetDrawable(tDrawable* ipDraw);
    tDrawable* mpDraw();
+#ifdef RAD_ANDROID
+   void SetSHAREnvironmentFoliageBillboard(bool enabled) { mSHAREnvironmentFoliageBillboard = enabled; }
+#endif
    virtual void SetRank(rmt::Vector& irRefPosn, rmt::Vector& mViewVector);
    ///////////////////////////////////////////////////////////////////////
    // Drawable
@@ -88,6 +91,9 @@ protected:
 
    int mIsGeo;
    tDrawable* mpDrawstuff;
+#ifdef RAD_ANDROID
+   bool mSHAREnvironmentFoliageBillboard;
+#endif
 private:
 };
 

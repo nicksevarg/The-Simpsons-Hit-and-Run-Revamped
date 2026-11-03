@@ -211,6 +211,10 @@ tEntity* BillboardWrappedLoader::LoadObject
     }
 
 	pStaticEntity->SetDrawable(pBQGroup);
+#ifdef RAD_ANDROID
+    pStaticEntity->SetSHAREnvironmentFoliageBillboard(
+        pBQGroup->IsSHAREnvironmentFoliageBillboard());
+#endif
 
 	//
 	// _id is from SimpleChunkHandler; it is the chunk id;

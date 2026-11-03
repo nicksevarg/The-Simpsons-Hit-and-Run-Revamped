@@ -55,20 +55,6 @@ static bool SHARContainsNameToken(const char* name, const char* token)
     return false;
 }
 
-static bool SHARIsFoliageBillboardName(const char* name)
-{
-    return SHARContainsNameToken(name, "tree") ||
-           SHARContainsNameToken(name, "foliage") ||
-           SHARContainsNameToken(name, "leaf") ||
-           SHARContainsNameToken(name, "leaves") ||
-           SHARContainsNameToken(name, "bush") ||
-           SHARContainsNameToken(name, "shrub") ||
-           SHARContainsNameToken(name, "canopy") ||
-           SHARContainsNameToken(name, "branch") ||
-           SHARContainsNameToken(name, "plant") ||
-           SHARContainsNameToken(name, "hedge");
-}
-
 static bool SHARIsRoadGeometryName(const char* name)
 {
     return SHARContainsNameToken(name, "road") ||
@@ -160,6 +146,9 @@ static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageB
 StaticEntityDSG::StaticEntityDSG()
 {
    mpDrawstuff = NULL;
+#ifdef RAD_ANDROID
+   mSHAREnvironmentFoliageBillboard = false;
+#endif
 }
 //========================================================================
 // StaticEntityDSG::
@@ -355,9 +344,7 @@ void StaticEntityDSG::Display()
             const bool isGeometry = (mIsGeo & GEO) != 0;
             const char* ownerName = GetName();
             const char* drawableName = mpDrawstuff->GetName();
-            const bool foliageName =
-                SHARIsFoliageBillboardName(ownerName) ||
-                SHARIsFoliageBillboardName(drawableName);
+            const bool foliageName = mSHAREnvironmentFoliageBillboard;
             const bool foliageBillboard =
                 IsSHAREnvironmentOutlineDiagnosticMode10() &&
                 !isGeometry && !mTranslucent && foliageName;

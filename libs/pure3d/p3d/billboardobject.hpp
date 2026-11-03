@@ -152,7 +152,7 @@ public:
     BakedBillboardQuad(){}
     ~BakedBillboardQuad(){}
 
-    void Display(pddiPrimStream* stream);
+    void Display(pddiPrimStream* stream, bool useFoliageOutlineNormals = false);
     void CopyQuad( tBillboardQuad* ipQuad )
     {
         for(int i=0; i<4; i++)
@@ -186,6 +186,8 @@ public:
 
     void SetShader(tShader* mat);
     tShader* GetShader() const                          { return shader; }
+    void SetSHAREnvironmentFoliageBillboard(bool enable) { mSHAREnvironmentFoliageBillboard = enable; }
+    bool IsSHAREnvironmentFoliageBillboard() const { return mSHAREnvironmentFoliageBillboard; }
    
     void SetZTest(bool enable)                          { zTest = enable; }
     bool GetZTest() const                               { return zTest; }
@@ -262,6 +264,7 @@ public:
         shader          = ipToBeCopied->shader;
         zTest           = ipToBeCopied->zTest;//true;//ipToBeCopied->zTest;
         zWrite          = ipToBeCopied->zWrite;//false;//ipToBeCopied->zWrite;
+        mSHAREnvironmentFoliageBillboard = ipToBeCopied->mSHAREnvironmentFoliageBillboard;
 
         if(mTempQuads.IsSetUp())    mTempQuads.ClearUse();
         else                        mTempQuads.Allocate(200+numQuads);
@@ -285,6 +288,7 @@ protected:
 
     bool     zTest;
     bool     zWrite;
+    bool     mSHAREnvironmentFoliageBillboard;
     int      occlusionMode;
     float    intensityBias;
 
