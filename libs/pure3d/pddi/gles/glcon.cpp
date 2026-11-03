@@ -22,6 +22,8 @@ bool GetSHARMotionBlurCameraBasis(float* output);
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdint.h>
+#include <ctype.h>
+#include <string.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -33,6 +35,7 @@ static bool gCelShadingOutlinePass = false;
 static bool gSHAREnvironmentCelPassActive = false;
 static bool gSHAREnvironmentCelMaterialEligible = true;
 static bool gSHAREnvironmentBillboardFoliagePassActive = false;
+static bool gSHAREnvironmentFoliageMeshPassActive = false;
 // The viewport is supplied to the environment silhouette shader so its extrusion
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
@@ -1117,7 +1120,10 @@ void SetSHAREnvironmentCelPassActive(bool enabled)
     gSHAREnvironmentCelPassActive = enabled;
     gSHAREnvironmentCelMaterialEligible = true;
     if (!enabled)
+    {
         gSHAREnvironmentBillboardFoliagePassActive = false;
+        gSHAREnvironmentFoliageMeshPassActive = false;
+    }
     ApplyCelShadingState();
 }
 
@@ -1154,6 +1160,84 @@ void SetSHAREnvironmentCelMaterialEligible(bool eligible)
         return;
     gSHAREnvironmentCelMaterialEligible = eligible;
     ApplyCelShadingState();
+}
+
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled)
+{
+    gSHAREnvironmentFoliageMeshPassActive = enabled;
+}
+
+bool IsSHAREnvironmentFoliageMeshPassActive()
+{
+    return gSHAREnvironmentFoliageMeshPassActive;
+}
+
+static bool SHARNameHasFoliagePrefix(const char* name, const char* token)
+{
+    if (name == NULL || token == NULL || token[0] == '\0')
+        return false;
+
+    const size_t tokenLength = strlen(token);
+    for (const char* start = name; *start != '\0'; ++start)
+    {
+        // Require a name boundary so "street" is not mistaken for "tree".
+        if (start != name && start[-1] != '_' && start[-1] != '-' && start[-1] != '/')
+            continue;
+
+        size_t i = 0;
+        while (i < tokenLength && start[i] != '\0' &&
+               tolower(static_cast<unsigned char>(start[i])) ==
+               tolower(static_cast<unsigned char>(token[i])))
+        {
+            ++i;
+        }
+        if (i == tokenLength)
+            return true;
+    }
+    return false;
+}
+
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName)
+{
+    static const char* foliagePrefixes[] =
+    {
+        "tree", "bush", "shrub", "forest", "pumpkin", "cemtree", "gens153"
+    };
+
+    for (size_t i = 0; i < sizeof(foliagePrefixes) / sizeof(foliagePrefixes[0]); ++i)
+    {
+        if (SHARNameHasFoliagePrefix(ownerName, foliagePrefixes[i]) ||
+            SHARNameHasFoliagePrefix(drawableName, foliagePrefixes[i]))
+            return true;
+    }
+    return false;
+}
+
+void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
+                                                 const char* shaderName,
+                                                 bool environmentEligible,
+                                                 bool alphaTestOnlyEligible,
+                                                 bool translucent,
+                                                 bool outlineWillDraw)
+{
+    if (materialIdentity == NULL || !IsSHAREnvironmentOutlineDiagnosticMode10() ||
+        !gSHAREnvironmentFoliageMeshPassActive || !gCelShadingOutlinePass)
+        return;
+
+    static std::unordered_set<const void*> reportedMaterials;
+    if (reportedMaterials.size() >= 256 ||
+        !reportedMaterials.insert(materialIdentity).second)
+        return;
+
+    SDL_Log("[SHAR Outline Mode 10] foliage-material material=%p owner=%s drawable=%s shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
+            materialIdentity,
+            gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
+            gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+            shaderName ? shaderName : "<unnamed-shader>",
+            environmentEligible ? 1 : 0,
+            alphaTestOnlyEligible ? 1 : 0,
+            translucent ? 1 : 0,
+            outlineWillDraw ? 1 : 0);
 }
 #endif
 

@@ -22,6 +22,18 @@
 #include <string.h>
 
 #ifdef RAD_ANDROID
+bool IsSHAREnvironmentFoliageMeshPassActive();
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+bool IsCelShadingOutlinePass();
+void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
+                                                 const char* shaderName,
+                                                 bool environmentEligible,
+                                                 bool alphaTestOnlyEligible,
+                                                 bool translucent,
+                                                 bool outlineWillDraw);
+#endif
+
+#ifdef RAD_ANDROID
 extern bool IsSHAREnvironmentCelPassActive();
 extern bool IsCelShadingOutlinePass();
 extern void SetSHAREnvironmentCelMaterialEligible(bool eligible);
@@ -136,8 +148,21 @@ void tPrimGroupOptimised::Display()
     P3DASSERT(mBuffer);
     pddiShader* shader = mShader->GetShader();
 #ifdef RAD_ANDROID
+    const bool foliageAlphaTestEligible =
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL &&
+        mShader->mEnvironmentCelAlphaTestEligible;
     const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
-        (mShader == NULL || !mShader->mEnvironmentCelEligible);
+        (mShader == NULL ||
+         (!mShader->mEnvironmentCelEligible && !foliageAlphaTestEligible));
+    if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL)
+    {
+        LogSHAREnvironmentFoliageMaterialDiagnostic(
+            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
+            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
+            !environmentMaterialIneligible);
+    }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
     if (environmentMaterialIneligible)
@@ -270,8 +295,21 @@ tPrimGroupStreamed::~tPrimGroupStreamed()
 void tPrimGroupStreamed::Display()
 {
 #ifdef RAD_ANDROID
+    const bool foliageAlphaTestEligible =
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL &&
+        mShader->mEnvironmentCelAlphaTestEligible;
     const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
-        (mShader == NULL || !mShader->mEnvironmentCelEligible);
+        (mShader == NULL ||
+         (!mShader->mEnvironmentCelEligible && !foliageAlphaTestEligible));
+    if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL)
+    {
+        LogSHAREnvironmentFoliageMaterialDiagnostic(
+            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
+            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
+            !environmentMaterialIneligible);
+    }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
     if (environmentMaterialIneligible)

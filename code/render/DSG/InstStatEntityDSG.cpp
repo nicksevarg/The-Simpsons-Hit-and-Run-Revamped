@@ -29,8 +29,12 @@ bool IsCelShadingEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh)
 {
     if (drawable == NULL)
         return;
@@ -41,9 +45,13 @@ static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
     }
     SetSHAREnvironmentCelPassActive(true);
     SetCelShadingObjectEnabled(true);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(false);
     drawable->Display();
     SetCelShadingObjectEnabled(false);
     SetSHAREnvironmentCelPassActive(false);
@@ -139,7 +147,15 @@ void InstStatEntityDSG::Display()
     }
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, mpMatrix);
 #ifdef RAD_ANDROID
-        DisplaySHAREnvironmentCelDrawable(mpDrawstuff);
+        const char* ownerName = GetName();
+        const char* drawableName = mpDrawstuff ? mpDrawstuff->GetName() : NULL;
+        const bool foliageMesh = IsSHAREnvironmentFoliageEntityName(ownerName, drawableName);
+        const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
+        if (mode10Diagnostics)
+            SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
+        DisplaySHAREnvironmentCelDrawable(mpDrawstuff, foliageMesh);
+        if (mode10Diagnostics)
+            SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
 #else
         mpDrawstuff->Display();
 #endif

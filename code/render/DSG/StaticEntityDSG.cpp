@@ -32,6 +32,8 @@ void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
 
 static bool SHARContainsNameToken(const char* name, const char* token)
@@ -67,7 +69,8 @@ static bool SHARIsRoadGeometryName(const char* name)
            SHARContainsNameToken(name, "concrete") ||
            SHARContainsNameToken(name, "walkway") ||
            SHARContainsNameToken(name, "driveway") ||
-           SHARContainsNameToken(name, "path");
+           SHARContainsNameToken(name, "path") ||
+           SHARContainsNameToken(name, "track");
 }
 
 static void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
@@ -94,7 +97,9 @@ static void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
             roadCandidate ? 1 : 0);
 }
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageBillboard = false)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable,
+                                                bool foliageBillboard = false,
+                                                bool foliageMesh = false)
 {
     if (drawable == NULL)
         return;
@@ -107,9 +112,13 @@ static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageB
     SetCelShadingObjectEnabled(true);
     if (foliageBillboard)
         SetSHAREnvironmentBillboardFoliagePassActive(true);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(false);
     if (foliageBillboard)
         SetSHAREnvironmentBillboardFoliagePassActive(false);
     drawable->Display();
@@ -348,6 +357,8 @@ void StaticEntityDSG::Display()
             const bool foliageBillboard =
                 IsSHAREnvironmentOutlineDiagnosticMode10() &&
                 !isGeometry && !mTranslucent && foliageName;
+            const bool foliageMesh =
+                isGeometry && IsSHAREnvironmentFoliageEntityName(ownerName, drawableName);
             const bool roadCandidate =
                 isGeometry &&
                 (SHARIsRoadGeometryName(ownerName) ||
@@ -362,7 +373,7 @@ void StaticEntityDSG::Display()
             }
 
             if (isGeometry)
-                DisplaySHAREnvironmentCelDrawable(mpDrawstuff);
+                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, false, foliageMesh);
             else if (foliageBillboard)
                 DisplaySHAREnvironmentCelDrawable(mpDrawstuff, true);
             else

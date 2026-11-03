@@ -32,6 +32,9 @@ public:
 
     bool mTranslucent;
     bool mEnvironmentCelEligible;
+    // True only for alpha-tested cutouts with no blending/translucency.
+    // These may receive an outline on explicitly identified foliage meshes.
+    bool mEnvironmentCelAlphaTestEligible;
 protected:
     ~tShader();
     pddiShader* shader;

@@ -12,14 +12,14 @@
 #include <string.h>
 
 tShader::tShader()
-    : mTranslucent(false), mEnvironmentCelEligible(true)
+    : mTranslucent(false), mEnvironmentCelEligible(true), mEnvironmentCelAlphaTestEligible(false)
 {
     shader = p3d::device->NewShader("simple");
     shader->AddRef();
 }
 
 tShader::tShader(const char* shaderName, char* definition)
-    : mTranslucent(false), mEnvironmentCelEligible(true)
+    : mTranslucent(false), mEnvironmentCelEligible(true), mEnvironmentCelAlphaTestEligible(false)
 {
     shader = p3d::device->NewShader(shaderName, definition);
     shader->AddRef();
@@ -131,6 +131,8 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
 
     tShader* shader = NULL;
+    bool hasAlphaTest = false;
+    bool hasAlphaBlend = false;
 
     while(f->ChunksRemaining())
     {
@@ -188,6 +190,10 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                     unsigned val = f->GetInt();
 
                     shader->SetInt(param, val);
+                    if (param == PDDI_SP_BLENDMODE)
+                        hasAlphaBlend = (val != PDDI_BLEND_NONE);
+                    if (param == PDDI_SP_ALPHATEST)
+                        hasAlphaTest = (val != 0);
                     if ((param == PDDI_SP_BLENDMODE && val != PDDI_BLEND_NONE) ||
                         (param == PDDI_SP_ALPHATEST && val != 0))
                     {
@@ -280,6 +286,8 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         shader->SetFloat( PDDI_SP_MIPMAP_SHARPNESS, 0.0f );
     }
     shader->mTranslucent = HasTranslucency;
+    shader->mEnvironmentCelAlphaTestEligible =
+        hasAlphaTest && !hasAlphaBlend && !HasTranslucency;
     if (HasTranslucency)
         shader->mEnvironmentCelEligible = false;
     shader->SetName(name);
