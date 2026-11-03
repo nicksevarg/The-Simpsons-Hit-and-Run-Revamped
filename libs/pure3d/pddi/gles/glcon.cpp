@@ -1039,11 +1039,20 @@ void SetCelShadingOutlinePass(bool enabled)
 
     if (enabled && gCelShadingEnabled && gCelShadingObjectEnabled)
     {
-        // Keep the outline behind the normal pass and render only backfaces.
+        // Ordinary inverted-hull meshes draw only their backfaces. Flat
+        // foliage cards have no rear shell surface, so render those outlines
+        // two-sided instead of culling the visible card away.
         if (gCelShadingContext)
         {
-            gCelShadingContext->SetGLCullEnabled(true);
-            gCelShadingContext->SetGLCullFace(GL_BACK);
+            if (gSHAREnvironmentBillboardFoliagePassActive)
+            {
+                gCelShadingContext->SetGLCullEnabled(false);
+            }
+            else
+            {
+                gCelShadingContext->SetGLCullEnabled(true);
+                gCelShadingContext->SetGLCullFace(GL_BACK);
+            }
             // Mode 8 tests whether later opaque objects erase outlines because
             // outline fragments do not populate the depth buffer. Keep this
             // override limited to environment shells; character/vehicle outlines
@@ -1058,8 +1067,15 @@ void SetCelShadingOutlinePass(bool enabled)
         }
         else
         {
-            glEnable(GL_CULL_FACE);
-            glCullFace(GL_BACK);
+            if (gSHAREnvironmentBillboardFoliagePassActive)
+            {
+                glDisable(GL_CULL_FACE);
+            }
+            else
+            {
+                glEnable(GL_CULL_FACE);
+                glCullFace(GL_BACK);
+            }
             const bool writeEnvironmentOutlineDepth =
                 gSHAREnvironmentCelPassActive &&
                 gSHAREnvironmentCelMaterialEligible &&
@@ -1986,7 +2002,33 @@ void pglContext::EndPrims(pddiPrimStream* stream)
         glVertexAttrib4f( 3, 1.0f, 1.0f, 1.0f, 1.0f );
     }
 
+#ifdef RAD_ANDROID
+    // Environment foliage shaders read outlineNormal at attribute 4, not the
+    // ordinary normal at attribute 1. Immediate-mode billboard streams are
+    // used by both direct and baked billboard draws, so bind the streamed
+    // corner normals to both shader inputs for this pass.
+    const bool useFoliageOutlineNormals =
+        IsSHAREnvironmentBillboardFoliagePassActive() &&
+        !glstream->normals.empty();
+    if (useFoliageOutlineNormals)
+    {
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 0, glstream->normals.data());
+    }
+    else
+    {
+        glDisableVertexAttribArray(4);
+        glVertexAttrib3f(4, 0.0f, 0.0f, 1.0f);
+    }
+#endif
+
     glDrawArrays( glstream->primitive, 0, glstream->coords.size() );
+
+#ifdef RAD_ANDROID
+    // Do not leave attribute 4 pointing into the temporary stream vector.
+    glDisableVertexAttribArray(4);
+    glVertexAttrib3f(4, 0.0f, 0.0f, 1.0f);
+#endif
 
     glstream->coords.clear();
     glstream->normals.clear();

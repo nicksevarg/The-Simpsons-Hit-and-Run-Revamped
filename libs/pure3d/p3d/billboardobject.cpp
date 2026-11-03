@@ -1896,11 +1896,13 @@ tBillboardQuadGroupLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     quadGroup->SetSHAREnvironmentFoliageBillboard(foliageTag);
     if (IsSHAREnvironmentOutlineDiagnosticMode10() && quadGroup->numQuads >= 10)
     {
-        SDL_Log("[SHAR Outline Mode 10] billboard-source group=%p rawName=%s rawShader=%s quads=%d translucent=%d foliageSourceMatch=%d foliageTag=%d",
+        SDL_Log("[SHAR Outline Mode 10] billboard-source group=%p rawName=%s rawShader=%s quads=%d zTest=%d zWrite=%d translucent=%d foliageSourceMatch=%d foliageTag=%d",
                 static_cast<void*>(quadGroup),
                 name,
                 shaderName,
                 quadGroup->numQuads,
+                quadGroup->GetZTest() ? 1 : 0,
+                quadGroup->GetZWrite() ? 1 : 0,
                 translucent ? 1 : 0,
                 foliageSourceMatch ? 1 : 0,
                 foliageTag ? 1 : 0);

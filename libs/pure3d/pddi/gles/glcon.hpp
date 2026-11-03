@@ -33,6 +33,7 @@ void SetCelShadingObjectEnabled(bool enabled);
 bool IsCelShadingOutlinePass();
 void SetSHAREnvironmentCelPassActive(bool enabled);
 bool IsSHAREnvironmentCelPassActive();
+bool IsSHAREnvironmentBillboardFoliagePassActive();
 void SetSHAREnvironmentCelMaterialEligible(bool eligible);
 void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
 void SetCelShadingOutlinePass(bool enabled);

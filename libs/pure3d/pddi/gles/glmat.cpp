@@ -338,8 +338,16 @@ void pglMat::SetDevPass(unsigned pass)
     if (IsCelShadingEnabled() && IsCelShadingObjectEnabled() &&
         IsCelShadingOutlinePass())
     {
-        context->SetGLCullEnabled(true);
-        context->SetGLCullFace(GL_BACK);
+        if (IsSHAREnvironmentBillboardFoliagePassActive())
+        {
+            // A flat alpha-cutout card has no back-facing shell surface.
+            context->SetGLCullEnabled(false);
+        }
+        else
+        {
+            context->SetGLCullEnabled(true);
+            context->SetGLCullFace(GL_BACK);
+        }
     }
 #endif
 }
