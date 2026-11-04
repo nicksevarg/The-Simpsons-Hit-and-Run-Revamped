@@ -39,7 +39,6 @@
 #include <p3d/anim/compositedrawable.hpp>
 
 #ifdef RAD_ANDROID
-#include <SDL.h>
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 bool IsSHAREnvironmentRoadEntityName(const char* name);
@@ -191,13 +190,6 @@ void InstDynaPhysDSG::Display()
         const char* drawableName = mpGeo->GetName();
         const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
         const unsigned long long sourceAssetUID = static_cast<unsigned long long>(mpGeo->GetUID());
-        SDL_Log("[SHAR Outline Mode 10] dyna-display-gate asset=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx celEligible=%d foliageMeshEligible=%d translucent=%d",
-            ownerName ? ownerName : "<null>",
-            drawableName ? drawableName : "<null>",
-            ownerUID, sourceAssetUID,
-            mSHAREnvironmentCelEligible ? 1 : 0,
-            mSHAREnvironmentFoliageMeshEligible ? 1 : 0,
-            mTranslucent ? 1 : 0);
         const bool foliageCandidate =
             mSHAREnvironmentFoliageMeshEligible ||
             IsSHARMode10FoliageUID(sourceAssetUID) ||
