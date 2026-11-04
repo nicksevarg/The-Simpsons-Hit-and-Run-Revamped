@@ -1102,13 +1102,14 @@ void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
 struct SHARMode10FoliagePassEventKey
 {
     unsigned long long assetUID;
+    unsigned long long ownerUID;
     unsigned char kind;
     bool enabled;
 
     bool operator==(const SHARMode10FoliagePassEventKey& other) const
     {
-        return assetUID == other.assetUID && kind == other.kind &&
-               enabled == other.enabled;
+        return assetUID == other.assetUID && ownerUID == other.ownerUID &&
+               kind == other.kind && enabled == other.enabled;
     }
 };
 
@@ -1117,6 +1118,8 @@ struct SHARMode10FoliagePassEventKeyHash
     size_t operator()(const SHARMode10FoliagePassEventKey& key) const
     {
         size_t hash = static_cast<size_t>(key.assetUID ^ (key.assetUID >> 32));
+        hash ^= static_cast<size_t>(key.ownerUID ^ (key.ownerUID >> 32)) +
+            0x9e3779b9U + (hash << 6) + (hash >> 2);
         hash ^= static_cast<size_t>(key.kind) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
         hash ^= static_cast<size_t>(key.enabled ? 1U : 0U) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
         return hash;
@@ -1149,10 +1152,59 @@ static bool SHARMode10ShouldLogFoliagePassEvent(unsigned char kind, bool enabled
         gSHAREnvironmentDiagnosticSourceAssetUID ?
             gSHAREnvironmentDiagnosticSourceAssetUID :
             gSHAREnvironmentDiagnosticOwnerUID,
+        gSHAREnvironmentDiagnosticFoliageCandidate ?
+            gSHAREnvironmentDiagnosticOwnerUID : 0ULL,
         kind,
         enabled
     };
+    if (reportedEvents.size() >= 50000)
+        return false;
     return reportedEvents.insert(key).second;
+}
+
+struct SHARMode10OutlineBufferLogKey
+{
+    const void* bufferIdentity;
+    unsigned long long ownerUID;
+    unsigned char kind;
+
+    bool operator==(const SHARMode10OutlineBufferLogKey& other) const
+    {
+        return bufferIdentity == other.bufferIdentity &&
+               ownerUID == other.ownerUID && kind == other.kind;
+    }
+};
+
+struct SHARMode10OutlineBufferLogKeyHash
+{
+    size_t operator()(const SHARMode10OutlineBufferLogKey& key) const
+    {
+        size_t hash = reinterpret_cast<size_t>(key.bufferIdentity);
+        hash ^= static_cast<size_t>(key.ownerUID ^ (key.ownerUID >> 32)) +
+            0x9e3779b9U + (hash << 6) + (hash >> 2);
+        hash ^= static_cast<size_t>(key.kind) + 0x9e3779b9U +
+            (hash << 6) + (hash >> 2);
+        return hash;
+    }
+};
+
+static bool SHARMode10ShouldLogOutlineBufferForCurrentOwner(
+    const void* bufferIdentity, unsigned char kind)
+{
+    if (bufferIdentity == NULL)
+        return false;
+
+    static std::unordered_set<SHARMode10OutlineBufferLogKey,
+                              SHARMode10OutlineBufferLogKeyHash> reportedBuffers;
+    const SHARMode10OutlineBufferLogKey key = {
+        bufferIdentity,
+        gSHAREnvironmentDiagnosticFoliageCandidate ?
+            gSHAREnvironmentDiagnosticOwnerUID : 0ULL,
+        kind
+    };
+    if (reportedBuffers.size() >= 50000)
+        return false;
+    return reportedBuffers.insert(key).second;
 }
 
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled)
@@ -1244,7 +1296,7 @@ bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawa
     static const char* foliagePrefixes[] =
     {
         "tree", "bush", "shrub", "forest", "pumpkin", "cemtree", "gens153",
-        "fern", "palm"
+        "fern", "palm", "willow"
     };
     for (size_t i = 0; i < sizeof(foliagePrefixes) / sizeof(foliagePrefixes[0]); ++i)
     {
@@ -1276,14 +1328,16 @@ bool IsSHAREnvironmentRoadEntityName(const char* name)
 struct SHARMode10MaterialSummaryKey
 {
     unsigned long long assetUID;
+    unsigned long long ownerUID;
     unsigned int shaderHash;
     unsigned int detailHash;
     unsigned char eligibilityFlags;
     bool foliagePass;
     bool operator==(const SHARMode10MaterialSummaryKey& other) const
     {
-        return assetUID == other.assetUID && shaderHash == other.shaderHash &&
-               detailHash == other.detailHash && eligibilityFlags == other.eligibilityFlags &&
+        return assetUID == other.assetUID && ownerUID == other.ownerUID &&
+               shaderHash == other.shaderHash && detailHash == other.detailHash &&
+               eligibilityFlags == other.eligibilityFlags &&
                foliagePass == other.foliagePass;
     }
 };
@@ -1292,6 +1346,8 @@ struct SHARMode10MaterialSummaryKeyHash
     size_t operator()(const SHARMode10MaterialSummaryKey& key) const
     {
         size_t hash = static_cast<size_t>(key.assetUID);
+        hash ^= static_cast<size_t>(key.ownerUID ^ (key.ownerUID >> 32)) +
+            0x9e3779b9U + (hash << 6) + (hash >> 2);
         hash ^= static_cast<size_t>(key.shaderHash) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
         hash ^= static_cast<size_t>(key.detailHash) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
         hash ^= static_cast<size_t>(key.eligibilityFlags) + (hash << 6) + (hash >> 2);
@@ -1323,12 +1379,16 @@ static bool SHARMode10RecordMaterialSummary(const char* shaderName,
     static std::unordered_set<SHARMode10MaterialSummaryKey, SHARMode10MaterialSummaryKeyHash> reported;
     const SHARMode10MaterialSummaryKey key = {
         gSHAREnvironmentDiagnosticSourceAssetUID ? gSHAREnvironmentDiagnosticSourceAssetUID : gSHAREnvironmentDiagnosticOwnerUID,
+        (foliagePass || gSHAREnvironmentDiagnosticFoliageCandidate) ?
+            gSHAREnvironmentDiagnosticOwnerUID : 0ULL,
         SHARMode10HashText(shaderName), detailHash,
         static_cast<unsigned char>((environmentEligible ? 1 : 0) |
             (alphaTestOnlyEligible ? 2 : 0) | (translucent ? 4 : 0) |
             (outlineWillDraw ? 8 : 0)),
         foliagePass
     };
+    if (reported.size() >= 50000)
+        return false;
     return reported.insert(key).second;
 }
 
@@ -3518,9 +3578,13 @@ void pglPrimBuffer::Display(void)
         gSHAREnvironmentOutlineDiagnosticMode == 6)
         DiagnoseEnvironmentMeshQuality();
 
+    const bool shouldLogEnvironmentOutlineMesh =
+        gSHAREnvironmentDiagnosticFoliageCandidate ?
+            SHARMode10ShouldLogOutlineBufferForCurrentOwner(this, 1) :
+            !environmentOutlineDiagnosticsReported;
     if (environmentOutlineGeometryPass &&
         gSHAREnvironmentOutlineDiagnosticMode == 10 &&
-        !environmentOutlineDiagnosticsReported)
+        shouldLogEnvironmentOutlineMesh)
     {
         SDL_Log("[SHAR Outline Mode 10] outline-mesh id=%u buffer=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d primType=%d vertexType=0x%X allocated=%u total=%u indices=%u sourceNormals=%d generatedNormals=%d outlineNormals=%d smoothedGroups=%u smoothedVertices=%u creasePairs=%u",
                 environmentDiagnosticMeshId,
@@ -3709,7 +3773,11 @@ void pglPrimBuffer::Display(void)
         gSHAREnvironmentOutlineDiagnosticMode == 10)
     {
         static std::unordered_set<const pglPrimBuffer*> reportedOutlineSubmissions;
-        if (reportedOutlineSubmissions.insert(this).second)
+        const bool shouldLogOutlineSubmit =
+            gSHAREnvironmentDiagnosticFoliageCandidate ?
+                SHARMode10ShouldLogOutlineBufferForCurrentOwner(this, 2) :
+                reportedOutlineSubmissions.insert(this).second;
+        if (shouldLogOutlineSubmit)
         {
             SDL_Log("[SHAR Outline Mode 10] outline-submit buffer=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d call=%s primType=%d count=%u",
                     static_cast<const void*>(this),
