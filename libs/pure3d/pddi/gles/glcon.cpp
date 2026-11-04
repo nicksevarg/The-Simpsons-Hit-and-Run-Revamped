@@ -1296,7 +1296,7 @@ bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawa
     static const char* foliagePrefixes[] =
     {
         "tree", "bush", "shrub", "forest", "pumpkin", "cemtree", "gens153",
-        "fern", "palm", "willow"
+        "fern", "palm"
     };
     for (size_t i = 0; i < sizeof(foliagePrefixes) / sizeof(foliagePrefixes[0]); ++i)
     {
