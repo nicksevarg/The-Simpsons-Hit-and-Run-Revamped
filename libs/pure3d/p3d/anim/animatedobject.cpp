@@ -16,7 +16,15 @@
 #ifdef RAD_ANDROID
 #include <SDL.h>
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
-bool IsSHARMode10BreakableFactoryLoadActive();
+static bool gSHARMode10BreakableFactoryLoadActive = false;
+void SetSHARMode10BreakableFactoryLoadActive(bool active)
+{
+    gSHARMode10BreakableFactoryLoadActive = active;
+}
+static bool IsSHARMode10BreakableFactoryLoadActive()
+{
+    return gSHARMode10BreakableFactoryLoadActive;
+}
 #endif
 
 #include <string.h>

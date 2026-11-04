@@ -29,17 +29,9 @@
 #include <p3d/effects/particleloader.hpp>
 #include <render/breakables/breakablesmanager.h>
 #ifdef RAD_ANDROID
-#include <SDL.h>
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
-static bool gSHARMode10BreakableFactoryLoadActive = false;
-void SetSHARMode10BreakableFactoryLoadActive(bool active)
-{
-    gSHARMode10BreakableFactoryLoadActive = active;
-}
-bool IsSHARMode10BreakableFactoryLoadActive()
-{
-    return gSHARMode10BreakableFactoryLoadActive;
-}
+// The state lives in Pure3D's animated-object loader so that static library
+// links never require the lower-level Pure3D library to call back into game code.
+void SetSHARMode10BreakableFactoryLoadActive(bool active);
 #endif
 
 //===========================================================================
