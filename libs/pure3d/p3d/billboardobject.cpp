@@ -60,20 +60,20 @@ static bool SHARBillboardNameEqualsIgnoreCase(const char* lhs, const char* rhs)
 
 static bool SHARBillboardNameContainsIgnoreCase(const char* name, const char* token)
 {
-    if (name == NULL || token == NULL || token[0] == '\\0')
+    if (name == NULL || token == NULL || token[0] == '\0')
         return false;
-    for (const char* start = name; *start != '\\0'; ++start)
+    for (const char* start = name; *start != '\0'; ++start)
     {
         const char* a = start;
         const char* b = token;
-        while (*a != '\\0' && *b != '\\0' &&
+        while (*a != '\0' && *b != '\0' &&
                tolower(static_cast<unsigned char>(*a)) ==
                tolower(static_cast<unsigned char>(*b)))
         {
             ++a;
             ++b;
         }
-        if (*b == '\\0')
+        if (*b == '\0')
             return true;
     }
     return false;
