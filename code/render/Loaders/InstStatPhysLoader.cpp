@@ -111,7 +111,7 @@ tEntity* InstStatPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 #ifdef RAD_ANDROID
     const bool sourceFoliageTag = IsSHAREnvironmentFoliageEntityName(objName, NULL);
     const bool sourceRoadTag = IsSHAREnvironmentRoadEntityName(objName);
-    const tUID sourceAssetUID = tName::MakeUID(objName);
+    tUID sourceAssetUID = tName::MakeUID(objName);
     if (sourceFoliageTag || sourceRoadTag)
     {
         SDL_Log("[SHAR Outline Mode 10] asset-tag route=InstStatPhys source=%s sourceAssetUID=%016llx foliage=%d road=%d",

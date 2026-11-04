@@ -111,7 +111,7 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 #ifdef RAD_ANDROID
                 const bool foliageTag = IsSHAREnvironmentFoliageEntityName(name, NULL);
                 const bool roadTag = IsSHAREnvironmentRoadEntityName(name);
-                const tUID sourceAssetUID = tName::MakeUID(name);
+                tUID sourceAssetUID = tName::MakeUID(name);
                 pStaticEntityDSG->SetSHAREnvironmentFoliageMesh(foliageTag);
                 pStaticEntityDSG->SetSHAREnvironmentRoadCandidate(roadTag);
                 pStaticEntityDSG->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
