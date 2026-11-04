@@ -79,6 +79,8 @@ public:
     tDrawable* pGeo();
     void SetSHAREnvironmentCelEligible(bool eligible) { mSHAREnvironmentCelEligible = eligible; }
     void SetSHAREnvironmentFoliageMeshEligible(bool eligible) { mSHAREnvironmentFoliageMeshEligible = eligible; }
+    bool IsSHAREnvironmentCelEligible() const { return mSHAREnvironmentCelEligible; }
+    bool IsSHAREnvironmentFoliageMeshEligible() const { return mSHAREnvironmentFoliageMeshEligible; }
         
     //virtual void FetchGroundPlane();    // tell object to get itself a ground plane, through worldphysicsmanager, through groundplanepool
     //virtual void FreeGroundPlane();     // make this safe to call even when we don't have one?
