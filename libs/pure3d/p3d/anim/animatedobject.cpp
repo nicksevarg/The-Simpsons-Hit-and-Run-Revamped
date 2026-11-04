@@ -13,6 +13,11 @@
 #include <p3d/chunkfile.hpp>
 #include <p3d/utility.hpp>
 #include <constants/chunkids.hpp>
+#ifdef RAD_ANDROID
+#include <SDL.h>
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+bool IsSHARMode10BreakableFactoryLoadActive();
+#endif
 
 #include <string.h>
 
@@ -465,14 +470,25 @@ tEntity* tAnimatedObjectFactoryLoader::LoadObject(tChunkFile* f, tEntityStore* s
     
     tAnimatedObjectFactory* factory = new tAnimatedObjectFactory;
 
-    char buf[256];
+    char factoryName[256];
+    char baseDrawableName[256];
 
-    f->GetPString(buf);
-    factory->SetName(buf);
- 
-    f->GetPString(buf);   
-    factory->baseObject = p3d::find<tCompositeDrawable>(store, buf);
+    f->GetPString(factoryName);
+    factory->SetName(factoryName);
+
+    f->GetPString(baseDrawableName);
+    factory->baseObject = p3d::find<tCompositeDrawable>(store, baseDrawableName);
     P3DASSERT(factory->baseObject);
+#ifdef RAD_ANDROID
+    if (IsSHARMode10BreakableFactoryLoadActive() &&
+        IsSHAREnvironmentOutlineDiagnosticMode10())
+    {
+        SDL_Log("[SHAR Outline Mode 10] breakable-factory-load factoryName=%s drawableName=%s factoryUID=%016llx drawableUID=%016llx",
+            factoryName, baseDrawableName,
+            static_cast<unsigned long long>(factory->GetUID()),
+            factory->baseObject ? static_cast<unsigned long long>(factory->baseObject->GetUID()) : 0ULL);
+    }
+#endif
     factory->baseObject->AddRef();
 
     factory->numAnimations = f->GetLong();

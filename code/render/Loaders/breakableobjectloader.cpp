@@ -28,6 +28,19 @@
 #include <render/Loaders/AllWrappers.h>
 #include <p3d/effects/particleloader.hpp>
 #include <render/breakables/breakablesmanager.h>
+#ifdef RAD_ANDROID
+#include <SDL.h>
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+static bool gSHARMode10BreakableFactoryLoadActive = false;
+void SetSHARMode10BreakableFactoryLoadActive(bool active)
+{
+    gSHARMode10BreakableFactoryLoadActive = active;
+}
+bool IsSHARMode10BreakableFactoryLoadActive()
+{
+    return gSHARMode10BreakableFactoryLoadActive;
+}
+#endif
 
 //===========================================================================
 // Local Constants, Typedefs, and Macros
@@ -208,7 +221,13 @@ MEMTRACK_PUSH_GROUP( "Breakables" );
         case Pure3D::AnimatedObject::FACTORY:
             {
                 rAssert( pFactory == NULL );
+#ifdef RAD_ANDROID
+                SetSHARMode10BreakableFactoryLoadActive(true);
+#endif
                 tEntity* entity = mpFactoryLoader->LoadObject( file, store );
+#ifdef RAD_ANDROID
+                SetSHARMode10BreakableFactoryLoadActive(false);
+#endif
                 pFactory = static_cast<tAnimatedObjectFactory*> (entity);
                 rAssert( dynamic_cast< tAnimatedObjectFactory* >(entity) != NULL );
             }

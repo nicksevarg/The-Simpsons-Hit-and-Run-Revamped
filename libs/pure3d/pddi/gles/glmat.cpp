@@ -12,9 +12,11 @@
 #include <microprofile.h>
 #include <SDL.h>
 #ifdef RAD_ANDROID
-#include <unordered_set>
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsSHAREnvironmentFoliageMeshPassActive();
+void LogSHAREnvironmentMode10RuntimeMaterial(bool alphaTest, float alphaRef,
+                                              int alphaCompare, int blendMode,
+                                              bool twoSided, bool hasTexture);
 #endif
 
 pddiShadeColourTable pglMat::colourTable[] = 
@@ -273,25 +275,18 @@ void pglMat::SetDevPass(unsigned pass)
     int i = 0;
 
 #ifdef RAD_ANDROID
-    // Read the actual PDDI alpha-test/blend state once per material instance.
+    // Record one runtime alpha/blend signature per source asset instead of
+    // retaining thousands of transient material pointers.
     if (IsSHAREnvironmentOutlineDiagnosticMode10() &&
         IsCelShadingEnabled() && IsCelShadingObjectEnabled() && IsCelShadingOutlinePass() &&
         (IsSHAREnvironmentFoliageMeshPassActive() ||
          IsSHAREnvironmentBillboardFoliagePassActive()))
     {
-        static std::unordered_set<const pglMat*> reportedFoliageMaterials;
-        if (reportedFoliageMaterials.size() < 2048 &&
-            reportedFoliageMaterials.insert(this).second)
-        {
-            SDL_Log("[SHAR Outline Mode 10] foliage-runtime-material material=%p alphaTest=%d alphaRef=%.3f alphaCompare=%d blendMode=%d twoSided=%d texture=%p",
-                    static_cast<const void*>(this),
-                    texEnv[i].alphaTest ? 1 : 0,
-                    texEnv[i].alphaRef,
-                    static_cast<int>(texEnv[i].alphaCompareMode),
-                    static_cast<int>(texEnv[i].alphaBlendMode),
-                    texEnv[i].twoSided ? 1 : 0,
-                    static_cast<void*>(texEnv[i].texture));
-        }
+        LogSHAREnvironmentMode10RuntimeMaterial(
+            texEnv[i].alphaTest, texEnv[i].alphaRef,
+            static_cast<int>(texEnv[i].alphaCompareMode),
+            static_cast<int>(texEnv[i].alphaBlendMode),
+            texEnv[i].twoSided, texEnv[i].texture != NULL);
     }
 #endif
 

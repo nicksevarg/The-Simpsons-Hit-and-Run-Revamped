@@ -1101,6 +1101,18 @@ void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
 
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled)
 {
+    if (gSHAREnvironmentBillboardFoliagePassActive == enabled)
+        return;
+    if (IsSHAREnvironmentOutlineDiagnosticMode10())
+    {
+        SDL_Log("[SHAR Outline Mode 10] foliage-pass event=%s kind=billboard owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d celPassActive=%d outlinePass=%d",
+            enabled ? "begin" : "end",
+            gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
+            gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+            gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
+            gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
+            gSHAREnvironmentCelPassActive ? 1 : 0, gCelShadingOutlinePass ? 1 : 0);
+    }
     gSHAREnvironmentBillboardFoliagePassActive = enabled;
 }
 
@@ -1124,6 +1136,18 @@ void SetSHAREnvironmentCelMaterialEligible(bool eligible)
 
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled)
 {
+    if (gSHAREnvironmentFoliageMeshPassActive == enabled)
+        return;
+    if (IsSHAREnvironmentOutlineDiagnosticMode10())
+    {
+        SDL_Log("[SHAR Outline Mode 10] foliage-pass event=%s kind=mesh owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d celPassActive=%d outlinePass=%d",
+            enabled ? "begin" : "end",
+            gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
+            gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+            gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
+            gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
+            gSHAREnvironmentCelPassActive ? 1 : 0, gCelShadingOutlinePass ? 1 : 0);
+    }
     gSHAREnvironmentFoliageMeshPassActive = enabled;
 }
 
@@ -1188,6 +1212,68 @@ bool IsSHAREnvironmentRoadEntityName(const char* name)
     return false;
 }
 
+// Deduplicate by source asset + shader + eligibility state rather than by the
+// transient material pointer. That retains unique material behaviour throughout
+// the level sequence without exhausting a global pointer-count budget.
+struct SHARMode10MaterialSummaryKey
+{
+    unsigned long long assetUID;
+    unsigned int shaderHash;
+    unsigned int detailHash;
+    unsigned char eligibilityFlags;
+    bool foliagePass;
+    bool operator==(const SHARMode10MaterialSummaryKey& other) const
+    {
+        return assetUID == other.assetUID && shaderHash == other.shaderHash &&
+               detailHash == other.detailHash && eligibilityFlags == other.eligibilityFlags &&
+               foliagePass == other.foliagePass;
+    }
+};
+struct SHARMode10MaterialSummaryKeyHash
+{
+    size_t operator()(const SHARMode10MaterialSummaryKey& key) const
+    {
+        size_t hash = static_cast<size_t>(key.assetUID);
+        hash ^= static_cast<size_t>(key.shaderHash) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
+        hash ^= static_cast<size_t>(key.detailHash) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
+        hash ^= static_cast<size_t>(key.eligibilityFlags) + (hash << 6) + (hash >> 2);
+        hash ^= static_cast<size_t>(key.foliagePass ? 1U : 0U) + (hash << 6) + (hash >> 2);
+        return hash;
+    }
+};
+static unsigned int SHARMode10HashText(const char* value)
+{
+    unsigned int hash = 2166136261U;
+    if (value != NULL)
+    {
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(value); *p; ++p)
+        {
+            hash ^= *p;
+            hash *= 16777619U;
+        }
+    }
+    return hash;
+}
+static bool SHARMode10RecordMaterialSummary(const char* shaderName,
+                                             bool environmentEligible,
+                                             bool alphaTestOnlyEligible,
+                                             bool translucent,
+                                             bool outlineWillDraw,
+                                             bool foliagePass,
+                                             unsigned int detailHash)
+{
+    static std::unordered_set<SHARMode10MaterialSummaryKey, SHARMode10MaterialSummaryKeyHash> reported;
+    const SHARMode10MaterialSummaryKey key = {
+        gSHAREnvironmentDiagnosticSourceAssetUID ? gSHAREnvironmentDiagnosticSourceAssetUID : gSHAREnvironmentDiagnosticOwnerUID,
+        SHARMode10HashText(shaderName), detailHash,
+        static_cast<unsigned char>((environmentEligible ? 1 : 0) |
+            (alphaTestOnlyEligible ? 2 : 0) | (translucent ? 4 : 0) |
+            (outlineWillDraw ? 8 : 0)),
+        foliagePass
+    };
+    return reported.insert(key).second;
+}
+
 void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
                                            const char* shaderName,
                                            bool environmentEligible,
@@ -1198,57 +1284,19 @@ void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
     if (materialIdentity == NULL || !IsSHAREnvironmentOutlineDiagnosticMode10() ||
         !gSHAREnvironmentCelPassActive || !gCelShadingOutlinePass)
         return;
-
-    // One record per material/source-asset pair keeps logs useful without
-    // flooding them every frame or hiding different assets that share a shader.
-    struct MaterialUseKey
-    {
-        const void* materialIdentity;
-        unsigned long long ownerUID;
-        unsigned long long sourceAssetUID;
-        bool operator==(const MaterialUseKey& other) const
-        {
-            return materialIdentity == other.materialIdentity &&
-                   ownerUID == other.ownerUID &&
-                   sourceAssetUID == other.sourceAssetUID;
-        }
-    };
-    struct MaterialUseKeyHash
-    {
-        size_t operator()(const MaterialUseKey& key) const
-        {
-            size_t hash = static_cast<size_t>(
-                reinterpret_cast<uintptr_t>(key.materialIdentity));
-            hash ^= static_cast<size_t>(key.ownerUID) + 0x9e3779b9U +
-                    (hash << 6) + (hash >> 2);
-            hash ^= static_cast<size_t>(key.sourceAssetUID) + 0x9e3779b9U +
-                    (hash << 6) + (hash >> 2);
-            return hash;
-        }
-    };
-    static std::unordered_set<MaterialUseKey, MaterialUseKeyHash> reportedMaterialUses;
-    const MaterialUseKey key = {
-        materialIdentity,
-        gSHAREnvironmentDiagnosticOwnerUID,
-        gSHAREnvironmentDiagnosticSourceAssetUID
-    };
-    if (reportedMaterialUses.size() >= 2048 ||
-        !reportedMaterialUses.insert(key).second)
+    if (!SHARMode10RecordMaterialSummary(shaderName, environmentEligible,
+        alphaTestOnlyEligible, translucent, outlineWillDraw, false, 0))
         return;
 
-    SDL_Log("[SHAR Outline Mode 10] material-state material=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
-            materialIdentity,
+    SDL_Log("[SHAR Outline Mode 10] material-state owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
             gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
             gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-            gSHAREnvironmentDiagnosticOwnerUID,
-            gSHAREnvironmentDiagnosticSourceAssetUID,
+            gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
             gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
             gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
             shaderName ? shaderName : "<unnamed-shader>",
-            environmentEligible ? 1 : 0,
-            alphaTestOnlyEligible ? 1 : 0,
-            translucent ? 1 : 0,
-            outlineWillDraw ? 1 : 0);
+            environmentEligible ? 1 : 0, alphaTestOnlyEligible ? 1 : 0,
+            translucent ? 1 : 0, outlineWillDraw ? 1 : 0);
 }
 
 void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
@@ -1261,26 +1309,47 @@ void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
     if (materialIdentity == NULL || !IsSHAREnvironmentOutlineDiagnosticMode10() ||
         !gSHAREnvironmentFoliageMeshPassActive || !gCelShadingOutlinePass)
         return;
-
-    static std::unordered_set<const void*> reportedMaterials;
-    if (reportedMaterials.size() >= 256 ||
-        !reportedMaterials.insert(materialIdentity).second)
+    if (!SHARMode10RecordMaterialSummary(shaderName, environmentEligible,
+        alphaTestOnlyEligible, translucent, outlineWillDraw, true, 0))
         return;
 
-    SDL_Log("[SHAR Outline Mode 10] foliage-material material=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
-            materialIdentity,
+    SDL_Log("[SHAR Outline Mode 10] foliage-material callbackActive=1 passActive=1 owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
             gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
             gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-            gSHAREnvironmentDiagnosticOwnerUID,
-            gSHAREnvironmentDiagnosticSourceAssetUID,
+            gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
             gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
-            gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
             shaderName ? shaderName : "<unnamed-shader>",
-            environmentEligible ? 1 : 0,
-            alphaTestOnlyEligible ? 1 : 0,
-            translucent ? 1 : 0,
-            outlineWillDraw ? 1 : 0);
+            environmentEligible ? 1 : 0, alphaTestOnlyEligible ? 1 : 0,
+            translucent ? 1 : 0, outlineWillDraw ? 1 : 0);
 }
+
+void LogSHAREnvironmentMode10RuntimeMaterial(bool alphaTest, float alphaRef,
+                                              int alphaCompare, int blendMode,
+                                              bool twoSided, bool hasTexture)
+{
+    if (!IsSHAREnvironmentOutlineDiagnosticMode10() || !gSHAREnvironmentCelPassActive ||
+        !gCelShadingOutlinePass ||
+        (!gSHAREnvironmentFoliageMeshPassActive && !gSHAREnvironmentBillboardFoliagePassActive))
+        return;
+    const int alphaRefMilli = static_cast<int>(alphaRef * 1000.0f + (alphaRef >= 0.0f ? 0.5f : -0.5f));
+    unsigned int detailHash = static_cast<unsigned int>(alphaRefMilli);
+    detailHash ^= static_cast<unsigned int>(alphaCompare) + 0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
+    detailHash ^= static_cast<unsigned int>(blendMode) + 0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
+    detailHash ^= static_cast<unsigned int>((twoSided ? 1 : 0) | (hasTexture ? 2 : 0) | (alphaTest ? 4 : 0));
+    detailHash ^= gSHAREnvironmentBillboardFoliagePassActive ? 0xB111B04DU : 0xA11CE001U;
+    if (!SHARMode10RecordMaterialSummary("<runtime-pddi-state>", alphaTest, false,
+        blendMode != 0, true, true, detailHash))
+        return;
+
+    SDL_Log("[SHAR Outline Mode 10] foliage-runtime-material owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx pass=%s alphaTest=%d alphaRef=%.3f alphaCompare=%d blendMode=%d twoSided=%d hasTexture=%d",
+        gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
+        gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+        gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
+        gSHAREnvironmentFoliageMeshPassActive ? "mesh" : "billboard",
+        alphaTest ? 1 : 0, alphaRef, alphaCompare, blendMode,
+        twoSided ? 1 : 0, hasTexture ? 1 : 0);
+}
+
 #endif
 
 #include <pddi/base/debug.hpp>
