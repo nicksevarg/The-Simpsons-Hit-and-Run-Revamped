@@ -79,6 +79,29 @@ static bool SHARBillboardNameContainsIgnoreCase(const char* name, const char* to
     return false;
 }
 
+static bool SHARBillboardNameHasTokenPrefixIgnoreCase(const char* name, const char* token)
+{
+    if (name == NULL || token == NULL || token[0] == '\\0')
+        return false;
+    for (const char* start = name; *start != '\\0'; ++start)
+    {
+        if (start != name && start[-1] != '_' && start[-1] != '-' && start[-1] != '/')
+            continue;
+        const char* a = start;
+        const char* b = token;
+        while (*a != '\\0' && *b != '\\0' &&
+               tolower(static_cast<unsigned char>(*a)) ==
+               tolower(static_cast<unsigned char>(*b)))
+        {
+            ++a;
+            ++b;
+        }
+        if (*b == '\\0')
+            return true;
+    }
+    return false;
+}
+
 static bool SHARIsKnownFoliageBillboardSource(const char* groupName, const char* shaderName)
 {
     const bool knownLegacyName =
@@ -87,9 +110,9 @@ static bool SHARIsKnownFoliageBillboardSource(const char* groupName, const char*
         SHARBillboardNameEqualsIgnoreCase(groupName, "l1_treebig_billboard_m") ||
         SHARBillboardNameEqualsIgnoreCase(shaderName, "l1_treebig_billboard_m");
     const bool namedTreeBillboard =
-        (SHARBillboardNameContainsIgnoreCase(groupName, "tree") &&
+        (SHARBillboardNameHasTokenPrefixIgnoreCase(groupName, "tree") &&
          SHARBillboardNameContainsIgnoreCase(groupName, "billboard")) ||
-        (SHARBillboardNameContainsIgnoreCase(shaderName, "tree") &&
+        (SHARBillboardNameHasTokenPrefixIgnoreCase(shaderName, "tree") &&
          SHARBillboardNameContainsIgnoreCase(shaderName, "billboard"));
     return knownLegacyName || namedTreeBillboard;
 }
