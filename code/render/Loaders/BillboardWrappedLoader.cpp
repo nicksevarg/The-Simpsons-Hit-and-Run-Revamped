@@ -156,14 +156,15 @@ tEntity* BillboardWrappedLoader::LoadObject
     if (IsSHAREnvironmentOutlineDiagnosticMode10())
     {
         tShader* diagnosticShader = pBQGroup->GetShader();
-        SDL_Log("[SHAR Outline Mode 10] billboard-load group=%p name=%s shader=%s quads=%d overrideWrapper=%d translucent=%d environmentEligible=%d",
+        SDL_Log("[SHAR Outline Mode 10] billboard-load group=%p name=%s shader=%s quads=%d loader=BillboardWrappedLoader drawRoute=%s translucent=%d environmentEligible=%d foliageTag=%d",
                 static_cast<void*>(pBQGroup),
                 pBQGroup->GetName() ? pBQGroup->GetName() : "<unnamed>",
                 diagnosticShader && diagnosticShader->GetName() ? diagnosticShader->GetName() : "<no-shader>",
                 pBQGroup->GetNumQuads(),
-                mOverrideWrapper ? 1 : 0,
+                mOverrideWrapper ? "direct-group" : "StaticEntityDSG",
                 diagnosticShader && diagnosticShader->mTranslucent ? 1 : 0,
-                diagnosticShader && diagnosticShader->mEnvironmentCelEligible ? 1 : 0);
+                diagnosticShader && diagnosticShader->mEnvironmentCelEligible ? 1 : 0,
+                pBQGroup->IsSHAREnvironmentFoliageBillboard() ? 1 : 0);
     }
 #endif
 

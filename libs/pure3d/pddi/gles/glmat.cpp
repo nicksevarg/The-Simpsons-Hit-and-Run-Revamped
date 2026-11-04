@@ -11,7 +11,11 @@
 #include <vector>
 #include <microprofile.h>
 #include <SDL.h>
-
+#ifdef RAD_ANDROID
+#include <unordered_set>
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+bool IsSHAREnvironmentFoliageMeshPassActive();
+#endif
 
 pddiShadeColourTable pglMat::colourTable[] = 
 {
@@ -267,7 +271,30 @@ void pglMat::SetDevPass(unsigned pass)
     MICROPROFILE_SCOPEI( "PDDI", "pglMat::SetDevPass", MP_RED );
 
     int i = 0;
-    
+
+#ifdef RAD_ANDROID
+    // Read the actual PDDI alpha-test/blend state once per material instance.
+    if (IsSHAREnvironmentOutlineDiagnosticMode10() &&
+        IsCelShadingEnabled() && IsCelShadingObjectEnabled() && IsCelShadingOutlinePass() &&
+        (IsSHAREnvironmentFoliageMeshPassActive() ||
+         IsSHAREnvironmentBillboardFoliagePassActive()))
+    {
+        static std::unordered_set<const pglMat*> reportedFoliageMaterials;
+        if (reportedFoliageMaterials.size() < 2048 &&
+            reportedFoliageMaterials.insert(this).second)
+        {
+            SDL_Log("[SHAR Outline Mode 10] foliage-runtime-material material=%p alphaTest=%d alphaRef=%.3f alphaCompare=%d blendMode=%d twoSided=%d texture=%p",
+                    static_cast<const void*>(this),
+                    texEnv[i].alphaTest ? 1 : 0,
+                    texEnv[i].alphaRef,
+                    static_cast<int>(texEnv[i].alphaCompareMode),
+                    static_cast<int>(texEnv[i].alphaBlendMode),
+                    texEnv[i].twoSided ? 1 : 0,
+                    static_cast<void*>(texEnv[i].texture));
+        }
+    }
+#endif
+
     context->SetTextureEnvironment(&texEnv[i]);
 
     if(texEnv[i].texture)

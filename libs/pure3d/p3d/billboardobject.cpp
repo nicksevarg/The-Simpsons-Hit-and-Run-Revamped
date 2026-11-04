@@ -58,12 +58,51 @@ static bool SHARBillboardNameEqualsIgnoreCase(const char* lhs, const char* rhs)
     return *lhs == '\0' && *rhs == '\0';
 }
 
+static bool SHARBillboardNameContainsIgnoreCase(const char* name, const char* token)
+{
+    if (name == NULL || token == NULL || token[0] == '\\0')
+        return false;
+    for (const char* start = name; *start != '\\0'; ++start)
+    {
+        const char* a = start;
+        const char* b = token;
+        while (*a != '\\0' && *b != '\\0' &&
+               tolower(static_cast<unsigned char>(*a)) ==
+               tolower(static_cast<unsigned char>(*b)))
+        {
+            ++a;
+            ++b;
+        }
+        if (*b == '\\0')
+            return true;
+    }
+    return false;
+}
+
 static bool SHARIsKnownFoliageBillboardSource(const char* groupName, const char* shaderName)
 {
-    return SHARBillboardNameEqualsIgnoreCase(groupName, "treesShape") ||
-           SHARBillboardNameEqualsIgnoreCase(shaderName, "treesShape") ||
-           SHARBillboardNameEqualsIgnoreCase(groupName, "l1_treebig_billboard_m") ||
-           SHARBillboardNameEqualsIgnoreCase(shaderName, "l1_treebig_billboard_m");
+    const bool knownLegacyName =
+        SHARBillboardNameEqualsIgnoreCase(groupName, "treesShape") ||
+        SHARBillboardNameEqualsIgnoreCase(shaderName, "treesShape") ||
+        SHARBillboardNameEqualsIgnoreCase(groupName, "l1_treebig_billboard_m") ||
+        SHARBillboardNameEqualsIgnoreCase(shaderName, "l1_treebig_billboard_m");
+    const bool namedTreeBillboard =
+        (SHARBillboardNameContainsIgnoreCase(groupName, "tree") &&
+         SHARBillboardNameContainsIgnoreCase(groupName, "billboard")) ||
+        (SHARBillboardNameContainsIgnoreCase(shaderName, "tree") &&
+         SHARBillboardNameContainsIgnoreCase(shaderName, "billboard"));
+    return knownLegacyName || namedTreeBillboard;
+}
+
+static bool SHARIsFoliageDiagnosticBillboardSource(const char* groupName, const char* shaderName)
+{
+    return SHARIsKnownFoliageBillboardSource(groupName, shaderName) ||
+           SHARBillboardNameContainsIgnoreCase(groupName, "flower") ||
+           SHARBillboardNameContainsIgnoreCase(shaderName, "flower") ||
+           SHARBillboardNameContainsIgnoreCase(groupName, "plant") ||
+           SHARBillboardNameContainsIgnoreCase(shaderName, "plant") ||
+           SHARBillboardNameContainsIgnoreCase(groupName, "leaf") ||
+           SHARBillboardNameContainsIgnoreCase(shaderName, "leaf");
 }
 #endif
 
@@ -1311,19 +1350,21 @@ tBillboardQuadGroup::Display()
     if (IsSHAREnvironmentOutlineDiagnosticMode10())
     {
         static std::unordered_set<const tBillboardQuadGroup*> reportedGroups;
-        if (reportedGroups.size() < 700 && reportedGroups.insert(this).second)
+        if (reportedGroups.insert(this).second)
         {
             tShader* diagnosticShader = GetShader();
-            SDL_Log("[SHAR Outline Mode 10] billboard-display group=%p name=%s shader=%s quads=%d environmentPass=%d outlinePass=%d foliageNormals=%d managerEnabled=%d collectPass=%d foliageTag=%d",
+            const char* drawRoute = !BillboardQuadManager::sEnabled ? "direct" :
+                (BillboardQuadManager::sCollectPass ? "manager-collect" : "manager-batch");
+            SDL_Log("[SHAR Outline Mode 10] billboard-display group=%p name=%s shader=%s quads=%d route=%s zTest=%d zWrite=%d translucent=%d environmentPass=%d outlinePass=%d foliageNormals=%d foliageTag=%d",
                     static_cast<const void*>(this),
                     GetName() ? GetName() : "<unnamed>",
                     diagnosticShader && diagnosticShader->GetName() ? diagnosticShader->GetName() : "<no-shader>",
-                    GetNumQuads(),
+                    GetNumQuads(), drawRoute,
+                    GetZTest() ? 1 : 0, GetZWrite() ? 1 : 0,
+                    diagnosticShader && diagnosticShader->mTranslucent ? 1 : 0,
                     IsSHAREnvironmentCelPassActive() ? 1 : 0,
                     IsCelShadingOutlinePass() ? 1 : 0,
                     IsSHAREnvironmentBillboardFoliagePassActive() ? 1 : 0,
-                    BillboardQuadManager::sEnabled ? 1 : 0,
-                    BillboardQuadManager::sCollectPass ? 1 : 0,
                     IsSHAREnvironmentFoliageBillboard() ? 1 : 0);
         }
     }
@@ -1567,6 +1608,16 @@ tBillboardQuadGroup::Display()
             mSHAREnvironmentFoliageBillboard &&
             IsSHAREnvironmentOutlineDiagnosticMode10() &&
             IsCelShadingEnabled();
+        static std::unordered_set<const tBillboardQuadGroup*> reportedOutlineBatches;
+        if (foliageOutlineBatch && reportedOutlineBatches.insert(this).second)
+        {
+            SDL_Log("[SHAR Outline Mode 10] billboard-outline-batch group=%p name=%s shader=%s bakedQuads=%d zTest=%d zWrite=%d route=BillboardQuadManager",
+                    static_cast<const void*>(this),
+                    GetName() ? GetName() : "<unnamed>",
+                    shader && shader->GetName() ? shader->GetName() : "<no-shader>",
+                    mTempQuads.mUseSize,
+                    GetZTest() ? 1 : 0, GetZWrite() ? 1 : 0);
+        }
         if (foliageOutlineBatch)
         {
             SetSHAREnvironmentCelPassActive(true);
@@ -1893,19 +1944,20 @@ tBillboardQuadGroupLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     const bool translucent = shader && shader->mTranslucent;
     const bool foliageSourceMatch = SHARIsKnownFoliageBillboardSource(name, shaderName);
     const bool foliageTag = foliageSourceMatch && !translucent;
+    const bool foliageDiagnosticCandidate =
+        SHARIsFoliageDiagnosticBillboardSource(name, shaderName);
     quadGroup->SetSHAREnvironmentFoliageBillboard(foliageTag);
-    if (IsSHAREnvironmentOutlineDiagnosticMode10() && quadGroup->numQuads >= 10)
+    // One record per loaded group: all opaque groups, including <10 quads,
+    // plus likely foliage even when the shader is marked blended.
+    if (IsSHAREnvironmentOutlineDiagnosticMode10() &&
+        (!translucent || foliageDiagnosticCandidate))
     {
-        SDL_Log("[SHAR Outline Mode 10] billboard-source group=%p rawName=%s rawShader=%s quads=%d zTest=%d zWrite=%d translucent=%d foliageSourceMatch=%d foliageTag=%d",
-                static_cast<void*>(quadGroup),
-                name,
-                shaderName,
+        SDL_Log("[SHAR Outline Mode 10] billboard-source group=%p rawName=%s rawShader=%s quads=%d zTest=%d zWrite=%d translucent=%d foliageSourceMatch=%d foliageTag=%d foliageDiagnosticCandidate=%d",
+                static_cast<void*>(quadGroup), name, shaderName,
                 quadGroup->numQuads,
-                quadGroup->GetZTest() ? 1 : 0,
-                quadGroup->GetZWrite() ? 1 : 0,
-                translucent ? 1 : 0,
-                foliageSourceMatch ? 1 : 0,
-                foliageTag ? 1 : 0);
+                quadGroup->GetZTest() ? 1 : 0, quadGroup->GetZWrite() ? 1 : 0,
+                translucent ? 1 : 0, foliageSourceMatch ? 1 : 0,
+                foliageTag ? 1 : 0, foliageDiagnosticCandidate ? 1 : 0);
     }
 #endif
 

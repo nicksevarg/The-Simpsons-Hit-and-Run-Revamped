@@ -20,6 +20,12 @@
 #include <p3d/anim/compositedrawable.hpp>
 
 #ifdef RAD_ANDROID
+#include <SDL.h>
+void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
+                                          const char* className,
+                                          const char* ownerName,
+                                          unsigned long long ownerUID,
+                                          unsigned long long sourceAssetUID);
 bool IsCelShadingEnabled();
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
 void SetCelShadingObjectEnabled(bool enabled);
@@ -188,6 +194,8 @@ void BreakableObjectDSG::Display()
             static_cast<unsigned long long>(mpObject->GetBaseObject()->GetUID());
         const char* ownerName = GetName();
         const char* drawableName = mpObject->GetBaseObject()->GetName();
+        LogSHAREnvironmentMode10DSGClassOnce(this, "BreakableObjectDSG",
+            ownerName, ownerUID, sourceAssetUID);
         LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
             mTranslucent, false, false, ownerUID, sourceAssetUID);
         SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);

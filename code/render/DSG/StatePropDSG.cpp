@@ -17,6 +17,12 @@
 #include <render/DSG/StatePropDSG.h>
 
 #ifdef RAD_ANDROID
+#include <SDL.h>
+void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
+                                          const char* className,
+                                          const char* ownerName,
+                                          unsigned long long ownerUID,
+                                          unsigned long long sourceAssetUID);
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
 void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
 void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
@@ -397,6 +403,8 @@ StatePropDSG::Display()
         const unsigned long long sourceAssetUID =
             static_cast<unsigned long long>(mpStateProp->GetUID());
         const char* ownerName = GetName();
+        LogSHAREnvironmentMode10DSGClassOnce(this, "StatePropDSG",
+            ownerName, ownerUID, sourceAssetUID);
         const char* drawableName = mpStateProp->GetDrawable() ?
             mpStateProp->GetDrawable()->GetName() : NULL;
         LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,

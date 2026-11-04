@@ -327,7 +327,12 @@ void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outli
     if (toonEnvironmentPass >= 0)
         SHARUniform1i(this, toonEnvironmentPass, environmentPass ? 1 : 0);
     if (toonOutlineDiagnosticMode >= 0)
-        SHARUniform1i(this, toonOutlineDiagnosticMode, outlineDiagnosticMode);
+    {
+        // Keep the CPU at Mode 10 for depth-writing/projection tests, but send
+        // Mode 9 to the shader to suppress only Mode 10's red/green debug tint.
+        const int shaderDiagnosticMode = outlineDiagnosticMode == 10 ? 9 : outlineDiagnosticMode;
+        SHARUniform1i(this, toonOutlineDiagnosticMode, shaderDiagnosticMode);
+    }
     // Environment outlines use a constant pixel width in clip space. This
     // uniform is only consumed by the environment outline pass; character and
     // vehicle outlines retain their existing world-space expansion.

@@ -24,6 +24,11 @@
 #include <memory/srrmemory.h>
 
 #ifdef RAD_ANDROID
+void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
+                                          const char* className,
+                                          const char* ownerName,
+                                          unsigned long long ownerUID,
+                                          unsigned long long sourceAssetUID);
 bool IsCelShadingEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
@@ -154,6 +159,8 @@ void InstStatPhysDSG::Display()
             const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
             const unsigned long long sourceAssetUID =
                 static_cast<unsigned long long>(GetSHAREnvironmentSourceAssetUID());
+            LogSHAREnvironmentMode10DSGClassOnce(this, "InstStatPhysDSG",
+                ownerName, ownerUID, sourceAssetUID);
             LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
                 mTranslucent, foliageMesh, roadCandidate, ownerUID, sourceAssetUID);
             SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);

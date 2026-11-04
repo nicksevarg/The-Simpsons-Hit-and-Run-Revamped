@@ -3466,6 +3466,26 @@ void pglPrimBuffer::Display(void)
     }
 #endif
 
+    if (environmentOutlineGeometryPass &&
+        gSHAREnvironmentOutlineDiagnosticMode == 10)
+    {
+        static std::unordered_set<const pglPrimBuffer*> reportedOutlineSubmissions;
+        if (reportedOutlineSubmissions.insert(this).second)
+        {
+            SDL_Log("[SHAR Outline Mode 10] outline-submit buffer=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d call=%s primType=%d count=%u",
+                    static_cast<const void*>(this),
+                    gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
+                    gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+                    gSHAREnvironmentDiagnosticOwnerUID,
+                    gSHAREnvironmentDiagnosticSourceAssetUID,
+                    gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
+                    gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
+                    (indexCount && indices) ? "glDrawElements" : "glDrawArrays",
+                    static_cast<int>(primType),
+                    (indexCount && indices) ? indexCount : total);
+        }
+    }
+
     if(indexCount && indices)
     {
         glDrawElements(primTypeTable[primType],indexCount,GL_UNSIGNED_SHORT,0);

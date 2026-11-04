@@ -50,7 +50,7 @@ void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
                                         unsigned long long sourceAssetUID)
 {
     static std::unordered_set<const void*> reportedEntities;
-    if (entityIdentity == NULL || reportedEntities.size() >= 3000)
+    if (entityIdentity == NULL || reportedEntities.size() >= 20000)
         return;
     if (!reportedEntities.insert(entityIdentity).second)
         return;
@@ -64,6 +64,21 @@ void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
             translucent ? 1 : 0,
             foliageCandidate ? 1 : 0,
             roadCandidate ? 1 : 0);
+}
+
+void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
+                                          const char* className,
+                                          const char* ownerName,
+                                          unsigned long long ownerUID,
+                                          unsigned long long sourceAssetUID)
+{
+    static std::unordered_set<const void*> reportedClasses;
+    if (entityIdentity == NULL || reportedClasses.size() >= 20000 ||
+        !reportedClasses.insert(entityIdentity).second)
+        return;
+    SDL_Log("[SHAR Outline Mode 10] dsg-display entity=%p class=%s owner=%s ownerUID=%016llx sourceAssetUID=%016llx",
+            entityIdentity, className ? className : "<unknown>",
+            ownerName ? ownerName : "<unnamed>", ownerUID, sourceAssetUID);
 }
 
 static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable,
@@ -340,6 +355,8 @@ void StaticEntityDSG::Display()
                 LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName,
                     isGeometry, mTranslucent, foliageMesh || foliageName, roadCandidate,
                     ownerUID, sourceAssetUID);
+                LogSHAREnvironmentMode10DSGClassOnce(this, "StaticEntityDSG",
+                    ownerName, ownerUID, sourceAssetUID);
                 SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
                 SetSHAREnvironmentCelDiagnosticEntityUIDs(
                     ownerUID, sourceAssetUID, foliageMesh || foliageName, roadCandidate);
