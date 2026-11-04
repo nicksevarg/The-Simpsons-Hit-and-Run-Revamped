@@ -29,6 +29,11 @@
 #include <constants/blobshadownames.h>
 #include <memory/srrmemory.h>
 
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+void RegisterSHARMode10FoliageUID(unsigned long long uid);
+#endif
+
 #include <atc/atcmanager.h>
 
 #ifndef RAD_RELEASE
@@ -191,6 +196,21 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
                     rmt::Matrix matrix;
                     f->GetData(&matrix,16,tFile::DWORD);
+#ifdef RAD_ANDROID
+                    tDrawable* foliageSourceDrawable = pCurDynaPhysDSG ?
+                        pCurDynaPhysDSG->pGeo() : pDrawable;
+                    const char* foliageDrawableName = foliageSourceDrawable ?
+                        foliageSourceDrawable->GetName() : NULL;
+                    const bool foliageSourceAsset =
+                        IsSHAREnvironmentFoliageEntityName(objName, foliageDrawableName);
+                    if (pCurDynaPhysDSG != NULL)
+                        pCurDynaPhysDSG->SetSHAREnvironmentFoliageMeshEligible(foliageSourceAsset);
+                    if (foliageSourceAsset && foliageSourceDrawable != NULL)
+                    {
+                        RegisterSHARMode10FoliageUID(
+                            static_cast<unsigned long long>(foliageSourceDrawable->GetUID()));
+                    }
+#endif
 
                     if(pCurDynaPhysDSG == 0)
                     {
@@ -199,6 +219,9 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         pCurDynaPhysDSG->SetName(name);
                         pCurDynaPhysDSG->mTranslucent = ( HasAlpha != 0 ) || pShadow;
                         pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
+#ifdef RAD_ANDROID
+                        pCurDynaPhysDSG->SetSHAREnvironmentFoliageMeshEligible(foliageSourceAsset);
+#endif
                         pSimState = sim::SimState::CreateSimState(pCollObj,pPhysObj);
 
                         // I suppose this could have just as easily gone into LoadSetUp
@@ -340,6 +363,16 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         pCurDynaPhysDSG->SetName(objName);
         pCurDynaPhysDSG->mTranslucent = HasAlpha != 0;
         pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
+#ifdef RAD_ANDROID
+        const bool foliageSourceAsset =
+            IsSHAREnvironmentFoliageEntityName(objName, pDrawable ? pDrawable->GetName() : NULL);
+        pCurDynaPhysDSG->SetSHAREnvironmentFoliageMeshEligible(foliageSourceAsset);
+        if (foliageSourceAsset && pDrawable != NULL)
+        {
+            RegisterSHARMode10FoliageUID(
+                static_cast<unsigned long long>(pDrawable->GetUID()));
+        }
+#endif
         pSimState = sim::SimState::CreateSimState(pCollObj, pPhysObj);
         pSimState->SetControl(sim::simAICtrl);
         pSimState->SetTransform(matrix);

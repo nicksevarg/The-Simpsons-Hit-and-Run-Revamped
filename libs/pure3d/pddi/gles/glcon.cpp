@@ -1123,22 +1123,22 @@ struct SHARMode10FoliagePassEventKeyHash
     }
 };
 
-static std::unordered_set<unsigned long long>& SHARMode10FoliageBreakableUIDs()
+static std::unordered_set<unsigned long long>& SHARMode10FoliageUIDs()
 {
     static std::unordered_set<unsigned long long> registeredUIDs;
     return registeredUIDs;
 }
 
-void RegisterSHARMode10FoliageBreakableUID(unsigned long long uid)
+void RegisterSHARMode10FoliageUID(unsigned long long uid)
 {
     if (uid != 0)
-        SHARMode10FoliageBreakableUIDs().insert(uid);
+        SHARMode10FoliageUIDs().insert(uid);
 }
 
-bool IsSHARMode10FoliageBreakableUID(unsigned long long uid)
+bool IsSHARMode10FoliageUID(unsigned long long uid)
 {
-    return uid != 0 && SHARMode10FoliageBreakableUIDs().find(uid) !=
-        SHARMode10FoliageBreakableUIDs().end();
+    return uid != 0 && SHARMode10FoliageUIDs().find(uid) !=
+        SHARMode10FoliageUIDs().end();
 }
 
 static bool SHARMode10ShouldLogFoliagePassEvent(unsigned char kind, bool enabled)

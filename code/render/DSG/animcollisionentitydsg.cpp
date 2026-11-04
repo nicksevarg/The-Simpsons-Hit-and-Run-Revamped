@@ -42,7 +42,7 @@
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 bool IsSHAREnvironmentRoadEntityName(const char* name);
-bool IsSHARMode10FoliageBreakableUID(unsigned long long uid);
+bool IsSHARMode10FoliageUID(unsigned long long uid);
 void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
                                           const char* className,
                                           const char* ownerName,
@@ -354,7 +354,7 @@ void AnimCollisionEntityDSG::Display()
         const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
         const unsigned long long sourceAssetUID = static_cast<unsigned long long>(mpDrawable->GetUID());
         const bool foliageCandidate =
-            IsSHARMode10FoliageBreakableUID(sourceAssetUID) ||
+            IsSHARMode10FoliageUID(sourceAssetUID) ||
             IsSHAREnvironmentFoliageEntityName(ownerName, drawableName);
         const bool roadCandidate =
             IsSHAREnvironmentRoadEntityName(ownerName) ||

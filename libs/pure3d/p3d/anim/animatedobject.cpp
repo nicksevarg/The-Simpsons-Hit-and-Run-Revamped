@@ -17,7 +17,7 @@
 #include <SDL.h>
 #include <ctype.h>
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
-void RegisterSHARMode10FoliageBreakableUID(unsigned long long uid);
+void RegisterSHARMode10FoliageUID(unsigned long long uid);
 static bool gSHARMode10BreakableFactoryLoadActive = false;
 void SetSHARMode10BreakableFactoryLoadActive(bool active)
 {
@@ -540,11 +540,11 @@ tEntity* tAnimatedObjectFactoryLoader::LoadObject(tChunkFile* f, tEntityStore* s
             SHARMode10IsKnownFoliageBreakableFactory(baseDrawableName);
         if (knownFoliageFactory)
         {
-            RegisterSHARMode10FoliageBreakableUID(
+            RegisterSHARMode10FoliageUID(
                 static_cast<unsigned long long>(factory->GetUID()));
             if (factory->baseObject != NULL)
             {
-                RegisterSHARMode10FoliageBreakableUID(
+                RegisterSHARMode10FoliageUID(
                     static_cast<unsigned long long>(factory->baseObject->GetUID()));
             }
         }

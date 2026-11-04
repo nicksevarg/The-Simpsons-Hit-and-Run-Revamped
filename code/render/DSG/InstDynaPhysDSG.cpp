@@ -42,7 +42,7 @@
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 bool IsSHAREnvironmentRoadEntityName(const char* name);
-bool IsSHARMode10FoliageBreakableUID(unsigned long long uid);
+bool IsSHARMode10FoliageUID(unsigned long long uid);
 void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
                                           const char* className,
                                           const char* ownerName,
@@ -66,8 +66,9 @@ bool IsCelShadingEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMeshPass = false)
 {
     if (drawable == NULL)
         return;
@@ -78,9 +79,13 @@ static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
     }
     SetSHAREnvironmentCelPassActive(true);
     SetCelShadingObjectEnabled(true);
+    if (foliageMeshPass)
+        SetSHAREnvironmentFoliageMeshPassActive(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    if (foliageMeshPass)
+        SetSHAREnvironmentFoliageMeshPassActive(false);
     drawable->Display();
     SetCelShadingObjectEnabled(false);
     SetSHAREnvironmentCelPassActive(false);
@@ -120,7 +125,8 @@ const float INST_DYNA_MASS_IMPULSE_PARTICLE_BIAS = 5.0f;
 //
 //========================================================================
 InstDynaPhysDSG::InstDynaPhysDSG()
-:  /*mIsHit( false ), moved up to DynaPhysDSG*/ mpGeo( NULL ), mHideOnHitIndex( -1 ), mSHAREnvironmentCelEligible( true )
+:  /*mIsHit( false ), moved up to DynaPhysDSG*/ mpGeo( NULL ), mHideOnHitIndex( -1 ),
+   mSHAREnvironmentCelEligible( true ), mSHAREnvironmentFoliageMeshEligible( false )
 {
 
     // move to DynaPhysDSG
@@ -185,7 +191,8 @@ void InstDynaPhysDSG::Display()
         const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
         const unsigned long long sourceAssetUID = static_cast<unsigned long long>(mpGeo->GetUID());
         const bool foliageCandidate =
-            IsSHARMode10FoliageBreakableUID(sourceAssetUID) ||
+            mSHAREnvironmentFoliageMeshEligible ||
+            IsSHARMode10FoliageUID(sourceAssetUID) ||
             IsSHAREnvironmentFoliageEntityName(ownerName, drawableName);
         const bool roadCandidate =
             IsSHAREnvironmentRoadEntityName(ownerName) ||
@@ -206,7 +213,7 @@ void InstDynaPhysDSG::Display()
     }
 #ifdef RAD_ANDROID
     if (mSHAREnvironmentCelEligible)
-        DisplaySHAREnvironmentCelDrawable(mpGeo);
+        DisplaySHAREnvironmentCelDrawable(mpGeo, mSHAREnvironmentFoliageMeshEligible);
     else
         mpGeo->Display();
 #else
@@ -710,6 +717,7 @@ InstDynaPhysDSG* InstDynaPhysDSG::Clone(const char* Name, const rmt::Matrix& iMa
     c->SetName(Name);
     c->mMatrix = iMatrix;
     c->mSHAREnvironmentCelEligible = this->mSHAREnvironmentCelEligible;
+    c->mSHAREnvironmentFoliageMeshEligible = this->mSHAREnvironmentFoliageMeshEligible;
     c->mpGeo = this->mpGeo;
     c->mpGeo->AddRef();
     c->SetCollisionAttributes(this->GetCollisionAttributes());

@@ -34,7 +34,7 @@ void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 bool IsSHAREnvironmentRoadEntityName(const char* name);
-bool IsSHARMode10FoliageBreakableUID(unsigned long long uid);
+bool IsSHARMode10FoliageUID(unsigned long long uid);
 void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
 void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
                                                 unsigned long long sourceAssetUID,
@@ -171,9 +171,9 @@ void BreakableObjectDSG::Init( tAnimatedObjectFactory* pFactory, tAnimatedObject
     const char* factoryName = pFactory->GetName();
     const char* drawableName = sourceDrawable ? sourceDrawable->GetName() : NULL;
     const bool foliageTag =
-        IsSHARMode10FoliageBreakableUID(
+        IsSHARMode10FoliageUID(
             static_cast<unsigned long long>(pFactory->GetUID())) ||
-        (sourceDrawable && IsSHARMode10FoliageBreakableUID(
+        (sourceDrawable && IsSHARMode10FoliageUID(
             static_cast<unsigned long long>(sourceDrawable->GetUID()))) ||
         IsSHAREnvironmentFoliageEntityName(factoryName, drawableName);
     const bool roadTag =
