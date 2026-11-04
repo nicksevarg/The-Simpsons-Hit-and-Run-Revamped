@@ -176,6 +176,14 @@ void BreakableObjectDSG::Init( tAnimatedObjectFactory* pFactory, tAnimatedObject
         IsSHAREnvironmentRoadEntityName(drawableName);
     tUID sourceAssetUID = sourceDrawable ?
         sourceDrawable->GetUID() : pFactory->GetUID();
+    if (IsSHAREnvironmentOutlineDiagnosticMode10())
+    {
+        SDL_Log("[SHAR Outline Mode 10] breakable-identity factoryUID=%016llx animatedObjectUID=%016llx baseDrawableUID=%016llx storedSourceAssetUID=%016llx",
+            static_cast<unsigned long long>(pFactory->GetUID()),
+            static_cast<unsigned long long>(mpObject->GetUID()),
+            sourceDrawable ? static_cast<unsigned long long>(sourceDrawable->GetUID()) : 0ULL,
+            static_cast<unsigned long long>(sourceAssetUID));
+    }
     SetSHAREnvironmentFoliageMesh(foliageTag);
     SetSHAREnvironmentRoadCandidate(roadTag);
     SetSHAREnvironmentSourceAssetUID(sourceAssetUID);

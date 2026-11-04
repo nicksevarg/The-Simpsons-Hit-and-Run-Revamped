@@ -29,6 +29,28 @@ void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
                                                 unsigned long long sourceAssetUID,
                                                 bool foliageCandidate,
                                                 bool roadCandidate);
+static void LogSHAREnvironmentMode10StatePropIdentityOnce(
+    unsigned long long statePropDataUID,
+    unsigned long long statePropUID,
+    unsigned long long drawableUID,
+    int collisionClassType,
+    bool isDynaLoaded,
+    bool useSharedtPose)
+{
+    static unsigned long long loggedStatePropDataUIDs[2048];
+    static unsigned int loggedStatePropDataCount = 0;
+    for (unsigned int i = 0; i < loggedStatePropDataCount; ++i)
+    {
+        if (loggedStatePropDataUIDs[i] == statePropDataUID)
+            return;
+    }
+    if (loggedStatePropDataCount >= 2048)
+        return;
+    loggedStatePropDataUIDs[loggedStatePropDataCount++] = statePropDataUID;
+    SDL_Log("[SHAR Outline Mode 10] stateprop-identity dataUID=%016llx statePropUID=%016llx drawableUID=%016llx collisionClass=%d dynaLoaded=%d sharedPose=%d",
+        statePropDataUID, statePropUID, drawableUID, collisionClassType,
+        isDynaLoaded ? 1 : 0, useSharedtPose ? 1 : 0);
+}
 void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
                                         const char* ownerName,
                                         const char* drawableName,
@@ -196,6 +218,17 @@ StatePropDSG::LoadSetup( CStatePropData* statePropData,
     }
     mpStateProp = CStateProp::CreateStateProp( statePropData, startState, tpose );
     mpStateProp->SetUID( statePropData->GetUID() );
+#ifdef RAD_ANDROID
+    if (IsSHAREnvironmentOutlineDiagnosticMode10())
+    {
+        tDrawable* statePropDrawable = mpStateProp->GetDrawable();
+        LogSHAREnvironmentMode10StatePropIdentityOnce(
+            static_cast<unsigned long long>(statePropData->GetUID()),
+            static_cast<unsigned long long>(mpStateProp->GetUID()),
+            statePropDrawable ? static_cast<unsigned long long>(statePropDrawable->GetUID()) : 0ULL,
+            type, isDynaLoaded, useSharedtPose);
+    }
+#endif
     mpStateProp->AddStatePropListener( this );
 
     // A new shared tPose was created, grab it off the composite drawable and insert it
