@@ -31,6 +31,9 @@ bool IsSHAREnvironmentOutlineDiagnosticMode10();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+bool IsSHAREnvironmentRoadEntityName(const char* name);
 void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
 void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
                                                 unsigned long long sourceAssetUID,
@@ -159,6 +162,32 @@ void BreakableObjectDSG::Init( tAnimatedObjectFactory* pFactory, tAnimatedObject
     mpObject = pFactory->CreateObject( mpController );
 
     mpObject->ProcessShaders(*this);
+#ifdef RAD_ANDROID
+    // Breakables are allocated from a shared animated-object factory. Tag the
+    // DSG from both the factory and its source drawable so release builds do
+    // not depend on instance names being retained.
+    tDrawable* sourceDrawable = mpObject->GetBaseObject();
+    const char* factoryName = pFactory->GetName();
+    const char* drawableName = sourceDrawable ? sourceDrawable->GetName() : NULL;
+    const bool foliageTag =
+        IsSHAREnvironmentFoliageEntityName(factoryName, drawableName);
+    const bool roadTag =
+        IsSHAREnvironmentRoadEntityName(factoryName) ||
+        IsSHAREnvironmentRoadEntityName(drawableName);
+    const tUID sourceAssetUID = sourceDrawable ?
+        sourceDrawable->GetUID() : pFactory->GetUID();
+    SetSHAREnvironmentFoliageMesh(foliageTag);
+    SetSHAREnvironmentRoadCandidate(roadTag);
+    SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+    if (IsSHAREnvironmentOutlineDiagnosticMode10() && (foliageTag || roadTag))
+    {
+        SDL_Log("[SHAR Outline Mode 10] asset-tag route=BreakableObject factory=%s drawable=%s sourceAssetUID=%016llx foliage=%d road=%d",
+            factoryName ? factoryName : "<unnamed-factory>",
+            drawableName ? drawableName : "<unnamed-drawable>",
+            static_cast<unsigned long long>(sourceAssetUID),
+            foliageTag ? 1 : 0, roadTag ? 1 : 0);
+    }
+#endif
 }
 //===========================================================================
 // BreakableObjectDSG::Display
@@ -187,25 +216,31 @@ void BreakableObjectDSG::Display()
     p3d::stack->PushMultiply( *mpMatrix );
 #ifdef RAD_ANDROID
     const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
-    if (mode10Diagnostics && mpObject != NULL && mpObject->GetBaseObject() != NULL)
+    const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
+    const bool roadCandidate = IsSHAREnvironmentRoadCandidate();
+    tDrawable* sourceDrawable = mpObject ? mpObject->GetBaseObject() : NULL;
+    if (mode10Diagnostics && sourceDrawable != NULL)
     {
         const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
         const unsigned long long sourceAssetUID =
-            static_cast<unsigned long long>(mpObject->GetBaseObject()->GetUID());
+            static_cast<unsigned long long>(GetSHAREnvironmentSourceAssetUID());
         const char* ownerName = GetName();
-        const char* drawableName = mpObject->GetBaseObject()->GetName();
+        const char* drawableName = sourceDrawable->GetName();
         LogSHAREnvironmentMode10DSGClassOnce(this, "BreakableObjectDSG",
             ownerName, ownerUID, sourceAssetUID);
         LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
-            mTranslucent, false, false, ownerUID, sourceAssetUID);
+            mTranslucent, foliageMesh, roadCandidate, ownerUID, sourceAssetUID);
         SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
-        SetSHAREnvironmentCelDiagnosticEntityUIDs(ownerUID, sourceAssetUID, false, false);
+        SetSHAREnvironmentCelDiagnosticEntityUIDs(
+            ownerUID, sourceAssetUID, foliageMesh, roadCandidate);
     }
 
     if (IsCelShadingEnabled())
     {
         SetSHAREnvironmentCelPassActive(true);
         SetCelShadingObjectEnabled(true);
+        if (foliageMesh)
+            SetSHAREnvironmentFoliageMeshPassActive(true);
         SetCelShadingOutlinePass(true);
         // The first animated-object display advances its accumulated time
         // and draws the updated base object as the outline shell. Draw the
@@ -213,8 +248,10 @@ void BreakableObjectDSG::Display()
         // the animation wrapper is not evaluated a second time.
         mpObject->Display();
         SetCelShadingOutlinePass(false);
-        if (mpObject->GetBaseObject() != NULL)
-            mpObject->GetBaseObject()->Display();
+        if (foliageMesh)
+            SetSHAREnvironmentFoliageMeshPassActive(false);
+        if (sourceDrawable != NULL)
+            sourceDrawable->Display();
         SetCelShadingObjectEnabled(false);
         SetSHAREnvironmentCelPassActive(false);
     }
@@ -227,6 +264,7 @@ void BreakableObjectDSG::Display()
     {
         SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
         SetSHAREnvironmentCelDiagnosticEntityUIDs(0, 0, false, false);
+        SetSHAREnvironmentFoliageMeshPassActive(false);
     }
 #else
     mpObject->Display();

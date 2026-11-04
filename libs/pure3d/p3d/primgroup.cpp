@@ -31,6 +31,12 @@ void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
                                                  bool alphaTestOnlyEligible,
                                                  bool translucent,
                                                  bool outlineWillDraw);
+void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
+                                           const char* shaderName,
+                                           bool environmentEligible,
+                                           bool alphaTestOnlyEligible,
+                                           bool translucent,
+                                           bool outlineWillDraw);
 #endif
 
 #ifdef RAD_ANDROID
@@ -155,6 +161,14 @@ void tPrimGroupOptimised::Display()
     const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
         (mShader == NULL ||
          (!mShader->mEnvironmentCelEligible && !foliageAlphaTestEligible));
+    if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
+        mShader != NULL)
+    {
+        LogSHAREnvironmentMode10MaterialState(
+            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
+            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
+            !environmentMaterialIneligible);
+    }
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
         mShader != NULL)
     {
@@ -302,6 +316,14 @@ void tPrimGroupStreamed::Display()
     const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
         (mShader == NULL ||
          (!mShader->mEnvironmentCelEligible && !foliageAlphaTestEligible));
+    if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
+        mShader != NULL)
+    {
+        LogSHAREnvironmentMode10MaterialState(
+            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
+            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
+            !environmentMaterialIneligible);
+    }
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
         mShader != NULL)
     {

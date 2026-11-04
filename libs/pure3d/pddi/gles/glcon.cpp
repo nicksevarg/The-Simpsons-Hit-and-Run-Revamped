@@ -1161,7 +1161,8 @@ bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawa
 {
     static const char* foliagePrefixes[] =
     {
-        "tree", "bush", "shrub", "forest", "pumpkin", "cemtree", "gens153"
+        "tree", "bush", "shrub", "forest", "pumpkin", "cemtree", "gens153",
+        "fern", "palm"
     };
     for (size_t i = 0; i < sizeof(foliagePrefixes) / sizeof(foliagePrefixes[0]); ++i)
     {
@@ -1185,6 +1186,69 @@ bool IsSHAREnvironmentRoadEntityName(const char* name)
             return true;
     }
     return false;
+}
+
+void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
+                                           const char* shaderName,
+                                           bool environmentEligible,
+                                           bool alphaTestOnlyEligible,
+                                           bool translucent,
+                                           bool outlineWillDraw)
+{
+    if (materialIdentity == NULL || !IsSHAREnvironmentOutlineDiagnosticMode10() ||
+        !gSHAREnvironmentCelPassActive || !gCelShadingOutlinePass)
+        return;
+
+    // One record per material/source-asset pair keeps logs useful without
+    // flooding them every frame or hiding different assets that share a shader.
+    struct MaterialUseKey
+    {
+        const void* materialIdentity;
+        unsigned long long ownerUID;
+        unsigned long long sourceAssetUID;
+        bool operator==(const MaterialUseKey& other) const
+        {
+            return materialIdentity == other.materialIdentity &&
+                   ownerUID == other.ownerUID &&
+                   sourceAssetUID == other.sourceAssetUID;
+        }
+    };
+    struct MaterialUseKeyHash
+    {
+        size_t operator()(const MaterialUseKey& key) const
+        {
+            size_t hash = static_cast<size_t>(
+                reinterpret_cast<uintptr_t>(key.materialIdentity));
+            hash ^= static_cast<size_t>(key.ownerUID) + 0x9e3779b9U +
+                    (hash << 6) + (hash >> 2);
+            hash ^= static_cast<size_t>(key.sourceAssetUID) + 0x9e3779b9U +
+                    (hash << 6) + (hash >> 2);
+            return hash;
+        }
+    };
+    static std::unordered_set<MaterialUseKey, MaterialUseKeyHash> reportedMaterialUses;
+    const MaterialUseKey key = {
+        materialIdentity,
+        gSHAREnvironmentDiagnosticOwnerUID,
+        gSHAREnvironmentDiagnosticSourceAssetUID
+    };
+    if (reportedMaterialUses.size() >= 2048 ||
+        !reportedMaterialUses.insert(key).second)
+        return;
+
+    SDL_Log("[SHAR Outline Mode 10] material-state material=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
+            materialIdentity,
+            gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
+            gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+            gSHAREnvironmentDiagnosticOwnerUID,
+            gSHAREnvironmentDiagnosticSourceAssetUID,
+            gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
+            gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
+            shaderName ? shaderName : "<unnamed-shader>",
+            environmentEligible ? 1 : 0,
+            alphaTestOnlyEligible ? 1 : 0,
+            translucent ? 1 : 0,
+            outlineWillDraw ? 1 : 0);
 }
 
 void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
