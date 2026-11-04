@@ -15,7 +15,9 @@
 #include <constants/chunkids.hpp>
 #ifdef RAD_ANDROID
 #include <SDL.h>
+#include <ctype.h>
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
+void RegisterSHARMode10FoliageBreakableUID(unsigned long long uid);
 static bool gSHARMode10BreakableFactoryLoadActive = false;
 void SetSHARMode10BreakableFactoryLoadActive(bool active)
 {
@@ -24,6 +26,49 @@ void SetSHARMode10BreakableFactoryLoadActive(bool active)
 static bool IsSHARMode10BreakableFactoryLoadActive()
 {
     return gSHARMode10BreakableFactoryLoadActive;
+}
+
+static bool SHARMode10NameEqualsNoCase(const char* left, const char* right)
+{
+    if (left == NULL || right == NULL)
+        return false;
+    while (*left != '\0' && *right != '\0')
+    {
+        if (tolower(static_cast<unsigned char>(*left)) !=
+            tolower(static_cast<unsigned char>(*right)))
+            return false;
+        ++left;
+        ++right;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static bool SHARMode10IsKnownFoliageBreakableFactory(const char* name)
+{
+    // These are exact names observed in the breakable factory chunks. Do not
+    // broaden this to a "tree" substring test (which would also match streetlamp).
+    static const char* foliageFactoryNames[] =
+    {
+        "tree",
+        "oaktree_S_fx",
+        "treemorn_fx",
+        "willowtree_fx",
+        "fx_evergreen",
+        "cypress_tree",
+        "deadtree",
+        "l3_treepalm",
+        "l3_treepalmtall",
+        "l6_treepalm",
+        "l6_treepalmtall"
+    };
+    for (size_t i = 0;
+         i < sizeof(foliageFactoryNames) / sizeof(foliageFactoryNames[0]);
+         ++i)
+    {
+        if (SHARMode10NameEqualsNoCase(name, foliageFactoryNames[i]))
+            return true;
+    }
+    return false;
 }
 #endif
 
@@ -488,13 +533,36 @@ tEntity* tAnimatedObjectFactoryLoader::LoadObject(tChunkFile* f, tEntityStore* s
     factory->baseObject = p3d::find<tCompositeDrawable>(store, baseDrawableName);
     P3DASSERT(factory->baseObject);
 #ifdef RAD_ANDROID
-    if (IsSHARMode10BreakableFactoryLoadActive() &&
-        IsSHAREnvironmentOutlineDiagnosticMode10())
+    if (IsSHARMode10BreakableFactoryLoadActive())
     {
-        SDL_Log("[SHAR Outline Mode 10] breakable-factory-load factoryName=%s drawableName=%s factoryUID=%016llx drawableUID=%016llx",
-            factoryName, baseDrawableName,
-            static_cast<unsigned long long>(factory->GetUID()),
-            factory->baseObject ? static_cast<unsigned long long>(factory->baseObject->GetUID()) : 0ULL);
+        const bool knownFoliageFactory =
+            SHARMode10IsKnownFoliageBreakableFactory(factoryName) ||
+            SHARMode10IsKnownFoliageBreakableFactory(baseDrawableName);
+        if (knownFoliageFactory)
+        {
+            RegisterSHARMode10FoliageBreakableUID(
+                static_cast<unsigned long long>(factory->GetUID()));
+            if (factory->baseObject != NULL)
+            {
+                RegisterSHARMode10FoliageBreakableUID(
+                    static_cast<unsigned long long>(factory->baseObject->GetUID()));
+            }
+        }
+
+        if (IsSHAREnvironmentOutlineDiagnosticMode10())
+        {
+            SDL_Log("[SHAR Outline Mode 10] breakable-factory-load factoryName=%s drawableName=%s factoryUID=%016llx drawableUID=%016llx",
+                factoryName, baseDrawableName,
+                static_cast<unsigned long long>(factory->GetUID()),
+                factory->baseObject ? static_cast<unsigned long long>(factory->baseObject->GetUID()) : 0ULL);
+            if (knownFoliageFactory)
+            {
+                SDL_Log("[SHAR Outline Mode 10] breakable-foliage-uid factoryName=%s drawableName=%s factoryUID=%016llx drawableUID=%016llx registered=1",
+                    factoryName, baseDrawableName,
+                    static_cast<unsigned long long>(factory->GetUID()),
+                    factory->baseObject ? static_cast<unsigned long long>(factory->baseObject->GetUID()) : 0ULL);
+            }
+        }
     }
 #endif
     factory->baseObject->AddRef();

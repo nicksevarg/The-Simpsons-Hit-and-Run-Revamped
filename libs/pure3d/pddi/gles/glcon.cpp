@@ -1099,11 +1099,68 @@ void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
     gSHAREnvironmentDiagnosticRoadCandidate = roadCandidate;
 }
 
+struct SHARMode10FoliagePassEventKey
+{
+    unsigned long long assetUID;
+    unsigned char kind;
+    bool enabled;
+
+    bool operator==(const SHARMode10FoliagePassEventKey& other) const
+    {
+        return assetUID == other.assetUID && kind == other.kind &&
+               enabled == other.enabled;
+    }
+};
+
+struct SHARMode10FoliagePassEventKeyHash
+{
+    size_t operator()(const SHARMode10FoliagePassEventKey& key) const
+    {
+        size_t hash = static_cast<size_t>(key.assetUID ^ (key.assetUID >> 32));
+        hash ^= static_cast<size_t>(key.kind) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
+        hash ^= static_cast<size_t>(key.enabled ? 1U : 0U) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
+        return hash;
+    }
+};
+
+static std::unordered_set<unsigned long long>& SHARMode10FoliageBreakableUIDs()
+{
+    static std::unordered_set<unsigned long long> registeredUIDs;
+    return registeredUIDs;
+}
+
+void RegisterSHARMode10FoliageBreakableUID(unsigned long long uid)
+{
+    if (uid != 0)
+        SHARMode10FoliageBreakableUIDs().insert(uid);
+}
+
+bool IsSHARMode10FoliageBreakableUID(unsigned long long uid)
+{
+    return uid != 0 && SHARMode10FoliageBreakableUIDs().find(uid) !=
+        SHARMode10FoliageBreakableUIDs().end();
+}
+
+static bool SHARMode10ShouldLogFoliagePassEvent(unsigned char kind, bool enabled)
+{
+    static std::unordered_set<SHARMode10FoliagePassEventKey,
+                              SHARMode10FoliagePassEventKeyHash> reportedEvents;
+    SHARMode10FoliagePassEventKey key = {
+        gSHAREnvironmentDiagnosticSourceAssetUID ?
+            gSHAREnvironmentDiagnosticSourceAssetUID :
+            gSHAREnvironmentDiagnosticOwnerUID,
+        kind,
+        enabled
+    };
+    return reportedEvents.insert(key).second;
+}
+
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled)
 {
     if (gSHAREnvironmentBillboardFoliagePassActive == enabled)
         return;
-    if (IsSHAREnvironmentOutlineDiagnosticMode10())
+    if (IsSHAREnvironmentOutlineDiagnosticMode10() &&
+        SHARMode10ShouldLogFoliagePassEvent(1, enabled))
     {
         SDL_Log("[SHAR Outline Mode 10] foliage-pass event=%s kind=billboard owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d celPassActive=%d outlinePass=%d",
             enabled ? "begin" : "end",
@@ -1138,7 +1195,8 @@ void SetSHAREnvironmentFoliageMeshPassActive(bool enabled)
 {
     if (gSHAREnvironmentFoliageMeshPassActive == enabled)
         return;
-    if (IsSHAREnvironmentOutlineDiagnosticMode10())
+    if (IsSHAREnvironmentOutlineDiagnosticMode10() &&
+        SHARMode10ShouldLogFoliagePassEvent(2, enabled))
     {
         SDL_Log("[SHAR Outline Mode 10] foliage-pass event=%s kind=mesh owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d celPassActive=%d outlinePass=%d",
             enabled ? "begin" : "end",
