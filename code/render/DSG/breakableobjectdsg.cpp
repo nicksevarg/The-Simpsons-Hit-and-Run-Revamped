@@ -19,6 +19,28 @@
 #include <p3d/utility.hpp>
 #include <p3d/anim/compositedrawable.hpp>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
+void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
+                                                unsigned long long sourceAssetUID,
+                                                bool foliageCandidate,
+                                                bool roadCandidate);
+void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
+                                        const char* ownerName,
+                                        const char* drawableName,
+                                        bool isGeometry,
+                                        bool translucent,
+                                        bool foliageCandidate,
+                                        bool roadCandidate,
+                                        unsigned long long ownerUID,
+                                        unsigned long long sourceAssetUID);
+#endif
+
 //===========================================================================
 // Local Constants, Typedefs, and Macros
 //===========================================================================
@@ -157,7 +179,45 @@ void BreakableObjectDSG::Display()
 #endif
     DSG_BEGIN_PROFILE(profileName)
     p3d::stack->PushMultiply( *mpMatrix );
-    mpObject->Display(); 
+#ifdef RAD_ANDROID
+    const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
+    if (mode10Diagnostics && mpObject != NULL && mpObject->GetBaseObject() != NULL)
+    {
+        const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
+        const unsigned long long sourceAssetUID =
+            static_cast<unsigned long long>(mpObject->GetBaseObject()->GetUID());
+        const char* ownerName = GetName();
+        const char* drawableName = mpObject->GetBaseObject()->GetName();
+        LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
+            mTranslucent, false, false, ownerUID, sourceAssetUID);
+        SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
+        SetSHAREnvironmentCelDiagnosticEntityUIDs(ownerUID, sourceAssetUID, false, false);
+    }
+
+    if (IsCelShadingEnabled())
+    {
+        SetSHAREnvironmentCelPassActive(true);
+        SetCelShadingObjectEnabled(true);
+        SetCelShadingOutlinePass(true);
+        mpObject->Display();
+        SetCelShadingOutlinePass(false);
+        mpObject->Display();
+        SetCelShadingObjectEnabled(false);
+        SetSHAREnvironmentCelPassActive(false);
+    }
+    else
+    {
+        mpObject->Display();
+    }
+
+    if (mode10Diagnostics)
+    {
+        SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
+        SetSHAREnvironmentCelDiagnosticEntityUIDs(0, 0, false, false);
+    }
+#else
+    mpObject->Display();
+#endif
     p3d::stack->Pop();
     DSG_END_PROFILE(profileName)
 }

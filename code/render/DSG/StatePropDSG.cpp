@@ -15,6 +15,24 @@
 #include <memory/classsizetracker.h>
 #include <radtime.hpp>
 #include <render/DSG/StatePropDSG.h>
+
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentOutlineDiagnosticMode10();
+void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
+void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
+                                                unsigned long long sourceAssetUID,
+                                                bool foliageCandidate,
+                                                bool roadCandidate);
+void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
+                                        const char* ownerName,
+                                        const char* drawableName,
+                                        bool isGeometry,
+                                        bool translucent,
+                                        bool foliageCandidate,
+                                        bool roadCandidate,
+                                        unsigned long long ownerUID,
+                                        unsigned long long sourceAssetUID);
+#endif
 #include <console/console.h>
 #include <stateprop/statepropdata.hpp>
 #include <render/RenderManager/RenderManager.h>
@@ -371,7 +389,30 @@ StatePropDSG::Display()
         BillboardQuadManager::Enable();
     }
     p3d::stack->PushMultiply( mTransform );
+#ifdef RAD_ANDROID
+    const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
+    if (mode10Diagnostics && mpStateProp != NULL)
+    {
+        const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
+        const unsigned long long sourceAssetUID =
+            static_cast<unsigned long long>(mpStateProp->GetUID());
+        const char* ownerName = GetName();
+        const char* drawableName = mpStateProp->GetDrawable() ?
+            mpStateProp->GetDrawable()->GetName() : NULL;
+        LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
+            mTranslucent, false, false, ownerUID, sourceAssetUID);
+        SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
+        SetSHAREnvironmentCelDiagnosticEntityUIDs(ownerUID, sourceAssetUID, false, false);
+    }
     mpStateProp->Display( mpProcAnimator );
+    if (mode10Diagnostics)
+    {
+        SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
+        SetSHAREnvironmentCelDiagnosticEntityUIDs(0, 0, false, false);
+    }
+#else
+    mpStateProp->Display( mpProcAnimator );
+#endif
     p3d::stack->Pop();
     if(CastsShadow())
     {

@@ -81,6 +81,23 @@ public:
 
     SpatialNode* mpSpatialNode;
 
+#ifdef RAD_ANDROID
+    // Compact source metadata used by the lightweight environment outline pass.
+    // Release builds retain UIDs even when textual entity names are omitted.
+    void SetSHAREnvironmentFoliageMesh(bool enabled) { mSHAREnvironmentFoliageMesh = enabled; }
+    bool IsSHAREnvironmentFoliageMesh() const { return mSHAREnvironmentFoliageMesh; }
+    void SetSHAREnvironmentRoadCandidate(bool enabled) { mSHAREnvironmentRoadCandidate = enabled; }
+    bool IsSHAREnvironmentRoadCandidate() const { return mSHAREnvironmentRoadCandidate; }
+    void SetSHAREnvironmentSourceAssetUID(tUID uid) { mSHAREnvironmentSourceAssetUID = uid; }
+    tUID GetSHAREnvironmentSourceAssetUID() const { return mSHAREnvironmentSourceAssetUID; }
+
+protected:
+    bool mSHAREnvironmentFoliageMesh;
+    bool mSHAREnvironmentRoadCandidate;
+    tUID mSHAREnvironmentSourceAssetUID;
+public:
+#endif
+
 #ifdef BREAK_DOWN_PROFILE
     static char msMarker;
     unsigned int mMicros;

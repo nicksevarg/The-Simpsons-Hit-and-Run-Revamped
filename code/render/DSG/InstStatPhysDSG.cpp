@@ -29,9 +29,21 @@ void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
-bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
 void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
+void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
+                                                unsigned long long sourceAssetUID,
+                                                bool foliageCandidate,
+                                                bool roadCandidate);
+void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
+                                        const char* ownerName,
+                                        const char* drawableName,
+                                        bool isGeometry,
+                                        bool translucent,
+                                        bool foliageCandidate,
+                                        bool roadCandidate,
+                                        unsigned long long ownerUID,
+                                        unsigned long long sourceAssetUID);
 
 static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh)
 {
@@ -134,13 +146,26 @@ void InstStatPhysDSG::Display()
 #ifdef RAD_ANDROID
         const char* ownerName = GetName();
         const char* drawableName = mpGeo ? mpGeo->GetName() : NULL;
-        const bool foliageMesh = IsSHAREnvironmentFoliageEntityName(ownerName, drawableName);
+        const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
+        const bool roadCandidate = IsSHAREnvironmentRoadCandidate();
         const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
         if (mode10Diagnostics)
+        {
+            const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
+            const unsigned long long sourceAssetUID =
+                static_cast<unsigned long long>(GetSHAREnvironmentSourceAssetUID());
+            LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
+                mTranslucent, foliageMesh, roadCandidate, ownerUID, sourceAssetUID);
             SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
+            SetSHAREnvironmentCelDiagnosticEntityUIDs(
+                ownerUID, sourceAssetUID, foliageMesh, roadCandidate);
+        }
         DisplaySHAREnvironmentCelDrawable(mpGeo, foliageMesh);
         if (mode10Diagnostics)
+        {
             SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
+            SetSHAREnvironmentCelDiagnosticEntityUIDs(0, 0, false, false);
+        }
 #else
         mpGeo->Display();
 #endif
@@ -408,6 +433,11 @@ InstStatPhysDSG* InstStatPhysDSG::Clone(const char* Name, const rmt::Matrix& iMa
     InstStatPhysDSG* c = new InstStatPhysDSG();
     rAssert(c);
     c->SetName(Name);
+#ifdef RAD_ANDROID
+    c->SetSHAREnvironmentFoliageMesh(this->IsSHAREnvironmentFoliageMesh());
+    c->SetSHAREnvironmentRoadCandidate(this->IsSHAREnvironmentRoadCandidate());
+    c->SetSHAREnvironmentSourceAssetUID(this->GetSHAREnvironmentSourceAssetUID());
+#endif
     c->mMatrix = iMatrix;
     c->mpGeo = this->mpGeo;
     c->mpGeo->AddRef();

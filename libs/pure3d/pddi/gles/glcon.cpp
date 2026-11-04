@@ -43,12 +43,16 @@ static float gSHARCelOutlineViewportHeight = 1.0f;
 // Temporary LITE outline diagnostics: 0=normal, 1=no depth test,
 // 2=no face culling, 3=no depth test and no face culling, 8=environment
 // outline depth writes; Mode 9 adds clip-space bias; Mode 10 investigates roads and foliage.
-static int gSHAREnvironmentOutlineDiagnosticMode = 0;
+static int gSHAREnvironmentOutlineDiagnosticMode = 10;
 static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
 // Monotonic per-process identity for retained primitive buffers in diagnostic logs.
 static unsigned gSHAREnvironmentDiagnosticMeshId = 0;
 static const char* gSHAREnvironmentDiagnosticOwnerName = NULL;
 static const char* gSHAREnvironmentDiagnosticDrawableName = NULL;
+static unsigned long long gSHAREnvironmentDiagnosticOwnerUID = 0;
+static unsigned long long gSHAREnvironmentDiagnosticSourceAssetUID = 0;
+static bool gSHAREnvironmentDiagnosticFoliageCandidate = false;
+static bool gSHAREnvironmentDiagnosticRoadCandidate = false;
 // Enabled by gameplay only for exterior Levels 1-6; Level 7 retains the prior behavior.
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
@@ -229,64 +233,9 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
 {
     if (gSHAREnvironmentOutlineDiagnosticsLoaded)
         return;
-
     gSHAREnvironmentOutlineDiagnosticsLoaded = true;
-
-    char filePath[512];
-    if (!BuildGraphicsConfigurationPath(
-            filePath, sizeof(filePath), "Simpsons_cel_outline_diagnostics.txt"))
-        return;
-
-    FILE* file = fopen(filePath, "r");
-    if (file == nullptr)
-    {
-        file = fopen(filePath, "w");
-        if (file != nullptr)
-        {
-            fprintf(file, "# Temporary environment cel-outline diagnostics.\n");
-            fprintf(file, "# Change the value and restart the game to select a test mode.\n");
-            fprintf(file, "# 0 = normal rendering (default).\n");
-            fprintf(file, "# 1 = disable depth testing during environment outline draws.\n");
-            fprintf(file, "# 2 = disable face culling during environment outline draws.\n");
-            fprintf(file, "# 3 = disable both depth testing and face culling.\n");
-            fprintf(file, "# 4 = opposite face culling (GL_FRONT), with depth testing enabled.\n");
-            fprintf(file, "# 5 = normal rendering plus indexed mesh-winding diagnostic logs.\n");
-            fprintf(file, "# 6 = normal rendering plus all-mesh diagnostics and actual duplicate-position normal comparisons.\n");
-            fprintf(file, "# 7 = colour the environment outline shell by projected-normal expansion (green=expanded, red=skipped).\n");
-            fprintf(file, "# 8 = Mode 7 visualisation plus depth writes enabled during environment outline draws.\n");
-            fprintf(file, "# 9 = Mode 8 plus a small positive clip-space depth bias on environment outline vertices.\n");
-            fprintf(file, "# 10 = Mode 9 plus road-entity diagnostics and opaque tree-billboard outlines.\n");
-            fprintf(file, "outline_diagnostic_mode=0\n");
-            fclose(file);
-        }
-        SDL_Log("[SHAR Outline Diagnostics] mode 0 (normal rendering)");
-        return;
-    }
-
-    char line[256];
-    while (fgets(line, sizeof(line), file) != nullptr)
-    {
-        char* value = strstr(line, "outline_diagnostic_mode=");
-        if (value == nullptr)
-            continue;
-
-        value += strlen("outline_diagnostic_mode=");
-        char* parseEnd = nullptr;
-        const long parsed = strtol(value, &parseEnd, 10);
-        if (parseEnd != value)
-        {
-            if (parsed < 0)
-                gSHAREnvironmentOutlineDiagnosticMode = 0;
-            else if (parsed > 10)
-                gSHAREnvironmentOutlineDiagnosticMode = 10;
-            else
-                gSHAREnvironmentOutlineDiagnosticMode = static_cast<int>(parsed);
-        }
-        break;
-    }
-    fclose(file);
-
-    SDL_Log("[SHAR Outline Diagnostics] mode %d", gSHAREnvironmentOutlineDiagnosticMode);
+    gSHAREnvironmentOutlineDiagnosticMode = 10;
+    SDL_Log("[SHAR Outline Diagnostics] mode 10 (compiled default; no external diagnostics file)");
 }
 
 static bool BuildLegacyRootConfigurationPath(char* filePath, size_t filePathSize, const char* fileName)
@@ -1139,6 +1088,17 @@ void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const cha
     gSHAREnvironmentDiagnosticDrawableName = drawableName;
 }
 
+void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
+                                                unsigned long long sourceAssetUID,
+                                                bool foliageCandidate,
+                                                bool roadCandidate)
+{
+    gSHAREnvironmentDiagnosticOwnerUID = ownerUID;
+    gSHAREnvironmentDiagnosticSourceAssetUID = sourceAssetUID;
+    gSHAREnvironmentDiagnosticFoliageCandidate = foliageCandidate;
+    gSHAREnvironmentDiagnosticRoadCandidate = roadCandidate;
+}
+
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled)
 {
     gSHAREnvironmentBillboardFoliagePassActive = enabled;
@@ -1203,11 +1163,25 @@ bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawa
     {
         "tree", "bush", "shrub", "forest", "pumpkin", "cemtree", "gens153"
     };
-
     for (size_t i = 0; i < sizeof(foliagePrefixes) / sizeof(foliagePrefixes[0]); ++i)
     {
         if (SHARNameHasFoliagePrefix(ownerName, foliagePrefixes[i]) ||
             SHARNameHasFoliagePrefix(drawableName, foliagePrefixes[i]))
+            return true;
+    }
+    return false;
+}
+
+bool IsSHAREnvironmentRoadEntityName(const char* name)
+{
+    static const char* roadTokens[] =
+    {
+        "road", "street", "track", "asphalt", "pavement", "sidewalk",
+        "curb", "kerb", "concrete", "walkway", "driveway", "path"
+    };
+    for (size_t i = 0; i < sizeof(roadTokens) / sizeof(roadTokens[0]); ++i)
+    {
+        if (SHARNameHasFoliagePrefix(name, roadTokens[i]))
             return true;
     }
     return false;
@@ -1229,10 +1203,14 @@ void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
         !reportedMaterials.insert(materialIdentity).second)
         return;
 
-    SDL_Log("[SHAR Outline Mode 10] foliage-material material=%p owner=%s drawable=%s shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
+    SDL_Log("[SHAR Outline Mode 10] foliage-material material=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
             materialIdentity,
             gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
             gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+            gSHAREnvironmentDiagnosticOwnerUID,
+            gSHAREnvironmentDiagnosticSourceAssetUID,
+            gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
+            gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
             shaderName ? shaderName : "<unnamed-shader>",
             environmentEligible ? 1 : 0,
             alphaTestOnlyEligible ? 1 : 0,
@@ -3305,11 +3283,15 @@ void pglPrimBuffer::Display(void)
         gSHAREnvironmentOutlineDiagnosticMode == 10 &&
         !environmentOutlineDiagnosticsReported)
     {
-        SDL_Log("[SHAR Outline Mode 10] outline-mesh id=%u buffer=%p owner=%s drawable=%s primType=%d vertexType=0x%X allocated=%u total=%u indices=%u sourceNormals=%d generatedNormals=%d outlineNormals=%d smoothedGroups=%u smoothedVertices=%u creasePairs=%u",
+        SDL_Log("[SHAR Outline Mode 10] outline-mesh id=%u buffer=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d primType=%d vertexType=0x%X allocated=%u total=%u indices=%u sourceNormals=%d generatedNormals=%d outlineNormals=%d smoothedGroups=%u smoothedVertices=%u creasePairs=%u",
                 environmentDiagnosticMeshId,
                 static_cast<void*>(this),
                 gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
                 gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+                gSHAREnvironmentDiagnosticOwnerUID,
+                gSHAREnvironmentDiagnosticSourceAssetUID,
+                gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
+                gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
                 (int)primType,
                 vertexType,
                 allocated,

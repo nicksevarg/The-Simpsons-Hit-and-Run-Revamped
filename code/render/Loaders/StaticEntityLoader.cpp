@@ -28,7 +28,9 @@
 #include <render/Loaders/AllWrappers.h>
 #include <string.h>
 #ifdef RAD_ANDROID
-#include <android/log.h>
+#include <SDL.h>
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+bool IsSHAREnvironmentRoadEntityName(const char* name);
 #endif
 
 //************************************************************************
@@ -107,40 +109,17 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                 rAssert(pGeo!=NULL);
                 pStaticEntityDSG->SetGeometry(pGeo);
 #ifdef RAD_ANDROID
-                // Trace the static-entity route too: environmental props and
-                // tree meshes can be loaded here instead of StaticPhysLoader.
-                // Log an initial sample plus tree-like names later in streaming.
-                static int staticEntitySampleCount = 0;
-                static int staticEntityTreeCount = 0;
-                static int staticEntityLogSequence = 0;
-                const bool treeLike =
-                    strstr(name, "tree") != NULL ||
-                    strstr(name, "Tree") != NULL ||
-                    strstr(name, "TREE") != NULL ||
-                    strstr(name, "shrub") != NULL ||
-                    strstr(name, "Shrub") != NULL ||
-                    strstr(name, "bush") != NULL ||
-                    strstr(name, "Bush") != NULL;
-                bool logStaticEntity = false;
-                if (staticEntitySampleCount < 300)
+                const bool foliageTag = IsSHAREnvironmentFoliageEntityName(name, NULL);
+                const bool roadTag = IsSHAREnvironmentRoadEntityName(name);
+                const tUID sourceAssetUID = tName::MakeUID(name);
+                pStaticEntityDSG->SetSHAREnvironmentFoliageMesh(foliageTag);
+                pStaticEntityDSG->SetSHAREnvironmentRoadCandidate(roadTag);
+                pStaticEntityDSG->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+                if (foliageTag || roadTag)
                 {
-                    ++staticEntitySampleCount;
-                    logStaticEntity = true;
-                }
-                if (treeLike && staticEntityTreeCount < 400)
-                {
-                    ++staticEntityTreeCount;
-                    logStaticEntity = true;
-                }
-                if (logStaticEntity)
-                {
-                    __android_log_print(ANDROID_LOG_INFO, "SHR-StaticEntity",
-                        "STATIC_ENTITY_LOAD[%d] owner=%s geometry=%s treeLike=%d castsShadow=%d",
-                        staticEntityLogSequence++,
-                        name,
-                        (pGeo != NULL && pGeo->GetName() != NULL) ? pGeo->GetName() : "<null>",
-                        treeLike ? 1 : 0,
-                        pGeo != NULL && pGeo->CastsShadow() ? 1 : 0);
+                    SDL_Log("[SHAR Outline Mode 10] asset-tag route=StaticEntity source=%s sourceAssetUID=%016llx foliage=%d road=%d",
+                        name, static_cast<unsigned long long>(sourceAssetUID),
+                        foliageTag ? 1 : 0, roadTag ? 1 : 0);
                 }
 #endif
             }

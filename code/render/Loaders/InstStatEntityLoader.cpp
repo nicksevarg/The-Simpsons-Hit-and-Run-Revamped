@@ -12,6 +12,12 @@
 // System Includes
 //========================================
 #include <p3d/chunkfile.hpp>
+#include <string.h>
+#ifdef RAD_ANDROID
+#include <SDL.h>
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+bool IsSHAREnvironmentRoadEntityName(const char* name);
+#endif
 
 //========================================
 // Project Includes
@@ -78,6 +84,21 @@ tEntity* InstStatEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     IEntityDSG::msDeletionsSafe=true;
     char name[255];
     f->GetPString(name);
+    char sourceAssetName[255];
+    strncpy(sourceAssetName, name, sizeof(sourceAssetName) - 1);
+    sourceAssetName[sizeof(sourceAssetName) - 1] = '\0';
+
+#ifdef RAD_ANDROID
+    const bool sourceFoliageTag = IsSHAREnvironmentFoliageEntityName(sourceAssetName, NULL);
+    const bool sourceRoadTag = IsSHAREnvironmentRoadEntityName(sourceAssetName);
+    const tUID sourceAssetUID = tName::MakeUID(sourceAssetName);
+    if (sourceFoliageTag || sourceRoadTag)
+    {
+        SDL_Log("[SHAR Outline Mode 10] asset-tag route=InstStatEntity source=%s sourceAssetUID=%016llx foliage=%d road=%d",
+            sourceAssetName, static_cast<unsigned long long>(sourceAssetUID),
+            sourceFoliageTag ? 1 : 0, sourceRoadTag ? 1 : 0);
+    }
+#endif
 
     int version = f->GetLong();
     int HasAlpha = f->GetLong();
@@ -121,6 +142,21 @@ tEntity* InstStatEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
                     pCurStatEntity = new InstStatEntityDSG;
                     pCurStatEntity->SetName(name);
+#ifdef RAD_ANDROID
+                    const bool foliageTag = sourceFoliageTag ||
+                        IsSHAREnvironmentFoliageEntityName(name, NULL);
+                    const bool roadTag = sourceRoadTag ||
+                        IsSHAREnvironmentRoadEntityName(name);
+                    pCurStatEntity->SetSHAREnvironmentFoliageMesh(foliageTag);
+                    pCurStatEntity->SetSHAREnvironmentRoadCandidate(roadTag);
+                    pCurStatEntity->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+                    if ((foliageTag || roadTag) && !(sourceFoliageTag || sourceRoadTag))
+                    {
+                        SDL_Log("[SHAR Outline Mode 10] instance-tag route=InstStatEntity instance=%s sourceAssetUID=%016llx foliage=%d road=%d",
+                            name, static_cast<unsigned long long>(sourceAssetUID),
+                            foliageTag ? 1 : 0, roadTag ? 1 : 0);
+                    }
+#endif
 
                     if(HasAlpha)
                     {
