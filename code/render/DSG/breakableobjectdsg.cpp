@@ -199,9 +199,14 @@ void BreakableObjectDSG::Display()
         SetSHAREnvironmentCelPassActive(true);
         SetCelShadingObjectEnabled(true);
         SetCelShadingOutlinePass(true);
+        // The first animated-object display advances its accumulated time
+        // and draws the updated base object as the outline shell. Draw the
+        // already-updated base drawable directly for the normal surface so
+        // the animation wrapper is not evaluated a second time.
         mpObject->Display();
         SetCelShadingOutlinePass(false);
-        mpObject->Display();
+        if (mpObject->GetBaseObject() != NULL)
+            mpObject->GetBaseObject()->Display();
         SetCelShadingObjectEnabled(false);
         SetSHAREnvironmentCelPassActive(false);
     }
