@@ -1381,6 +1381,54 @@ void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
             translucent ? 1 : 0, outlineWillDraw ? 1 : 0);
 }
 
+void LogSHAREnvironmentFoliageRejectedMaterial(const void* materialIdentity,
+                                                const char* shaderName,
+                                                unsigned long long materialUID,
+                                                bool hasAlphaTest,
+                                                bool hasAlphaBlend,
+                                                bool hasTranslucency,
+                                                float alphaRef,
+                                                int alphaCompare,
+                                                bool twoSided,
+                                                unsigned long long textureUID,
+                                                bool foliageCutoutEligible,
+                                                bool outlineWillDraw)
+{
+    if (materialIdentity == NULL || !IsSHAREnvironmentOutlineDiagnosticMode10() ||
+        !gSHAREnvironmentFoliageMeshPassActive || !gCelShadingOutlinePass)
+        return;
+
+    const int alphaRefMilli = static_cast<int>(
+        alphaRef * 1000.0f + (alphaRef >= 0.0f ? 0.5f : -0.5f));
+    unsigned int detailHash = static_cast<unsigned int>(alphaRefMilli);
+    detailHash ^= static_cast<unsigned int>(materialUID ^ (materialUID >> 32)) +
+        0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
+    detailHash ^= static_cast<unsigned int>(textureUID ^ (textureUID >> 32)) +
+        0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
+    detailHash ^= static_cast<unsigned int>(alphaCompare) +
+        0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
+    detailHash ^= static_cast<unsigned int>((hasAlphaTest ? 1U : 0U) |
+        (hasAlphaBlend ? 2U : 0U) | (hasTranslucency ? 4U : 0U) |
+        (twoSided ? 8U : 0U) | (foliageCutoutEligible ? 16U : 0U));
+
+    // The caller invokes this only for materials rejected by the legacy gate.
+    // Keying through SHARMode10RecordMaterialSummary deduplicates by source
+    // asset UID, shader identity/name and the captured material state.
+    if (!SHARMode10RecordMaterialSummary(shaderName, false, false,
+        hasTranslucency, outlineWillDraw, true, detailHash))
+        return;
+
+    SDL_Log("[SHAR Outline Mode 10] foliage-cutout-gate owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx materialUID=%016llx shader=%s previousGateRejected=1 hasAlphaTest=%d hasAlphaBlend=%d HasTranslucency=%d alphaRef=%.3f alphaCompare=%d twoSided=%d textureUID=%016llx foliageCutoutEligible=%d outlineWillDraw=%d",
+        gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
+        gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
+        gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
+        materialUID, shaderName ? shaderName : "<unnamed-shader>",
+        hasAlphaTest ? 1 : 0, hasAlphaBlend ? 1 : 0,
+        hasTranslucency ? 1 : 0, alphaRef, alphaCompare,
+        twoSided ? 1 : 0, textureUID,
+        foliageCutoutEligible ? 1 : 0, outlineWillDraw ? 1 : 0);
+}
+
 void LogSHAREnvironmentMode10RuntimeMaterial(bool alphaTest, float alphaRef,
                                               int alphaCompare, int blendMode,
                                               bool twoSided, bool hasTexture)

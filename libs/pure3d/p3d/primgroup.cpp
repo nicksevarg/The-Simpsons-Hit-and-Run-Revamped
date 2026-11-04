@@ -31,6 +31,18 @@ void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
                                                  bool alphaTestOnlyEligible,
                                                  bool translucent,
                                                  bool outlineWillDraw);
+void LogSHAREnvironmentFoliageRejectedMaterial(const void* materialIdentity,
+                                                const char* shaderName,
+                                                unsigned long long materialUID,
+                                                bool hasAlphaTest,
+                                                bool hasAlphaBlend,
+                                                bool hasTranslucency,
+                                                float alphaRef,
+                                                int alphaCompare,
+                                                bool twoSided,
+                                                unsigned long long textureUID,
+                                                bool foliageCutoutEligible,
+                                                bool outlineWillDraw);
 void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
                                            const char* shaderName,
                                            bool environmentEligible,
@@ -158,9 +170,14 @@ void tPrimGroupOptimised::Display()
         IsSHAREnvironmentFoliageMeshPassActive() &&
         mShader != NULL &&
         mShader->mEnvironmentCelAlphaTestEligible;
+    const bool foliageCutoutEligible =
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL &&
+        mShader->mEnvironmentCelFoliageCutoutEligible;
     const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
         (mShader == NULL ||
-         (!mShader->mEnvironmentCelEligible && !foliageAlphaTestEligible));
+         (!mShader->mEnvironmentCelEligible &&
+          !foliageAlphaTestEligible && !foliageCutoutEligible));
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
         mShader != NULL)
     {
@@ -176,6 +193,22 @@ void tPrimGroupOptimised::Display()
             mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
             mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
             !environmentMaterialIneligible);
+        if (!mShader->mEnvironmentCelEligible &&
+            !mShader->mEnvironmentCelAlphaTestEligible)
+        {
+            LogSHAREnvironmentFoliageRejectedMaterial(
+                mShader, mShader->GetName(),
+                static_cast<unsigned long long>(mShader->GetUID()),
+                mShader->mEnvironmentCelHasAlphaTest,
+                mShader->mEnvironmentCelHasAlphaBlend,
+                mShader->mEnvironmentCelHasTranslucency,
+                mShader->mEnvironmentCelAlphaRef,
+                mShader->mEnvironmentCelAlphaCompare,
+                mShader->mEnvironmentCelTwoSided,
+                mShader->mEnvironmentCelBaseTextureUID,
+                mShader->mEnvironmentCelFoliageCutoutEligible,
+                !environmentMaterialIneligible);
+        }
     }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
@@ -313,9 +346,14 @@ void tPrimGroupStreamed::Display()
         IsSHAREnvironmentFoliageMeshPassActive() &&
         mShader != NULL &&
         mShader->mEnvironmentCelAlphaTestEligible;
+    const bool foliageCutoutEligible =
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL &&
+        mShader->mEnvironmentCelFoliageCutoutEligible;
     const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
         (mShader == NULL ||
-         (!mShader->mEnvironmentCelEligible && !foliageAlphaTestEligible));
+         (!mShader->mEnvironmentCelEligible &&
+          !foliageAlphaTestEligible && !foliageCutoutEligible));
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
         mShader != NULL)
     {
@@ -331,6 +369,22 @@ void tPrimGroupStreamed::Display()
             mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
             mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
             !environmentMaterialIneligible);
+        if (!mShader->mEnvironmentCelEligible &&
+            !mShader->mEnvironmentCelAlphaTestEligible)
+        {
+            LogSHAREnvironmentFoliageRejectedMaterial(
+                mShader, mShader->GetName(),
+                static_cast<unsigned long long>(mShader->GetUID()),
+                mShader->mEnvironmentCelHasAlphaTest,
+                mShader->mEnvironmentCelHasAlphaBlend,
+                mShader->mEnvironmentCelHasTranslucency,
+                mShader->mEnvironmentCelAlphaRef,
+                mShader->mEnvironmentCelAlphaCompare,
+                mShader->mEnvironmentCelTwoSided,
+                mShader->mEnvironmentCelBaseTextureUID,
+                mShader->mEnvironmentCelFoliageCutoutEligible,
+                !environmentMaterialIneligible);
+        }
     }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
