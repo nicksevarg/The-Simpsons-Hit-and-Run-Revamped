@@ -174,7 +174,7 @@ void BreakableObjectDSG::Init( tAnimatedObjectFactory* pFactory, tAnimatedObject
     const bool roadTag =
         IsSHAREnvironmentRoadEntityName(factoryName) ||
         IsSHAREnvironmentRoadEntityName(drawableName);
-    const tUID sourceAssetUID = sourceDrawable ?
+    tUID sourceAssetUID = sourceDrawable ?
         sourceDrawable->GetUID() : pFactory->GetUID();
     SetSHAREnvironmentFoliageMesh(foliageTag);
     SetSHAREnvironmentRoadCandidate(roadTag);
