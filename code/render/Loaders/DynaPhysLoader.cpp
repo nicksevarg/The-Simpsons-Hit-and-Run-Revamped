@@ -218,9 +218,14 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         rAssert(pCurDynaPhysDSG);
                         pCurDynaPhysDSG->SetName(name);
                         pCurDynaPhysDSG->mTranslucent = ( HasAlpha != 0 ) || pShadow;
-                        pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
 #ifdef RAD_ANDROID
+                        // Foliage may use alpha-tested leaf textures. Allow only
+                        // tagged foliage into the existing material eligibility path.
+                        pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(
+                            (HasAlpha == 0) || foliageSourceAsset);
                         pCurDynaPhysDSG->SetSHAREnvironmentFoliageMeshEligible(foliageSourceAsset);
+#else
+                        pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
 #endif
                         pSimState = sim::SimState::CreateSimState(pCollObj,pPhysObj);
 
@@ -362,16 +367,19 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         rAssert(pCurDynaPhysDSG);
         pCurDynaPhysDSG->SetName(objName);
         pCurDynaPhysDSG->mTranslucent = HasAlpha != 0;
-        pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
 #ifdef RAD_ANDROID
         const bool foliageSourceAsset =
             IsSHAREnvironmentFoliageEntityName(objName, pDrawable ? pDrawable->GetName() : NULL);
+        pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(
+            (HasAlpha == 0) || foliageSourceAsset);
         pCurDynaPhysDSG->SetSHAREnvironmentFoliageMeshEligible(foliageSourceAsset);
         if (foliageSourceAsset && pDrawable != NULL)
         {
             RegisterSHARMode10FoliageUID(
                 static_cast<unsigned long long>(pDrawable->GetUID()));
         }
+#else
+        pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
 #endif
         pSimState = sim::SimState::CreateSimState(pCollObj, pPhysObj);
         pSimState->SetControl(sim::simAICtrl);
