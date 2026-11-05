@@ -208,7 +208,6 @@ void tPrimGroupOptimised::Display()
          (!mShader->mEnvironmentCelEligible &&
           !foliageAlphaTestEligible && !foliageCutoutEligible &&
           !foliageBlendedCutoutEligible));
-    }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
     if (environmentMaterialIneligible)
@@ -376,7 +375,6 @@ void tPrimGroupStreamed::Display()
          (!mShader->mEnvironmentCelEligible &&
           !foliageAlphaTestEligible && !foliageCutoutEligible &&
           !foliageBlendedCutoutEligible));
-    }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
     if (environmentMaterialIneligible)
