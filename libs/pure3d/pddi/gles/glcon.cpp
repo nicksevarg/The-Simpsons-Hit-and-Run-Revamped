@@ -45,7 +45,7 @@ static float gSHARCelOutlineViewportHeight = 1.0f;
 // Optional LITE outline diagnostics (disabled by default): 1=no depth test,
 // 2=no face culling, 3=no depth test and no face culling; higher modes are
 // reserved for targeted environment-outline investigations.
-static int gSHAREnvironmentOutlineDiagnosticMode = 0;
+static int gSHAREnvironmentOutlineDiagnosticMode = 10;
 static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
 // Monotonic per-process identity for retained primitive buffers in diagnostic logs.
 static unsigned gSHAREnvironmentDiagnosticMeshId = 0;
@@ -247,7 +247,8 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
     if (gSHAREnvironmentOutlineDiagnosticsLoaded)
         return;
     gSHAREnvironmentOutlineDiagnosticsLoaded = true;
-    gSHAREnvironmentOutlineDiagnosticMode = 0;
+    gSHAREnvironmentOutlineDiagnosticMode = 10;
+    SDL_Log("[SHAR Outline Diagnostics] Mode 10 logging enabled; black outline rendering retained");
 }
 
 static bool BuildLegacyRootConfigurationPath(char* filePath, size_t filePathSize, const char* fileName)
