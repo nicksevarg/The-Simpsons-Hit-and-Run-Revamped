@@ -1629,10 +1629,10 @@ tBillboardQuadGroup::Display()
 #ifdef RAD_ANDROID
         const bool foliageOutlineBatch =
             mSHAREnvironmentFoliageBillboard &&
-            IsSHAREnvironmentOutlineDiagnosticMode10() &&
             IsCelShadingEnabled();
         static std::unordered_set<const tBillboardQuadGroup*> reportedOutlineBatches;
-        if (foliageOutlineBatch && reportedOutlineBatches.insert(this).second)
+        if (foliageOutlineBatch && IsSHAREnvironmentOutlineDiagnosticMode10() &&
+            reportedOutlineBatches.insert(this).second)
         {
             SDL_Log("[SHAR Outline Mode 10] billboard-outline-batch group=%p name=%s shader=%s bakedQuads=%d zTest=%d zWrite=%d route=BillboardQuadManager",
                     static_cast<const void*>(this),

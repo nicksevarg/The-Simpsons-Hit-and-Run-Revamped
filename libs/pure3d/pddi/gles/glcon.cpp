@@ -42,10 +42,10 @@ static bool gSHAREnvironmentFoliageCardOutlineNormalModeActive = false;
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
 static float gSHARCelOutlineViewportHeight = 1.0f;
-// Temporary LITE outline diagnostics: 0=normal, 1=no depth test,
-// 2=no face culling, 3=no depth test and no face culling, 8=environment
-// outline depth writes; Mode 9 adds clip-space bias; Mode 10 investigates roads and foliage.
-static int gSHAREnvironmentOutlineDiagnosticMode = 10;
+// Optional LITE outline diagnostics (disabled by default): 1=no depth test,
+// 2=no face culling, 3=no depth test and no face culling; higher modes are
+// reserved for targeted environment-outline investigations.
+static int gSHAREnvironmentOutlineDiagnosticMode = 0;
 static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
 // Monotonic per-process identity for retained primitive buffers in diagnostic logs.
 static unsigned gSHAREnvironmentDiagnosticMeshId = 0;
@@ -247,8 +247,7 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
     if (gSHAREnvironmentOutlineDiagnosticsLoaded)
         return;
     gSHAREnvironmentOutlineDiagnosticsLoaded = true;
-    gSHAREnvironmentOutlineDiagnosticMode = 10;
-    SDL_Log("[SHAR Outline Diagnostics] mode 10 (compiled default; no external diagnostics file)");
+    gSHAREnvironmentOutlineDiagnosticMode = 0;
 }
 
 static bool BuildLegacyRootConfigurationPath(char* filePath, size_t filePathSize, const char* fileName)
@@ -1020,16 +1019,12 @@ void SetCelShadingOutlinePass(bool enabled)
                 gCelShadingContext->SetGLCullEnabled(true);
                 gCelShadingContext->SetGLCullFace(GL_BACK);
             }
-            // Mode 8 tests whether later opaque objects erase outlines because
-            // outline fragments do not populate the depth buffer. Keep this
-            // override limited to environment shells; character/vehicle outlines
-            // retain their original no-depth-write behaviour.
+            // Eligible environment shells write depth independently of the
+            // diagnostic mode so later opaque objects occlude their outlines.
+            // Character/vehicle outlines retain their original no-depth-write behaviour.
             const bool writeEnvironmentOutlineDepth =
                 gSHAREnvironmentCelPassActive &&
-                gSHAREnvironmentCelMaterialEligible &&
-                (gSHAREnvironmentOutlineDiagnosticMode == 8 ||
-                 gSHAREnvironmentOutlineDiagnosticMode == 9 ||
-                 gSHAREnvironmentOutlineDiagnosticMode == 10);
+                gSHAREnvironmentCelMaterialEligible;
             gCelShadingContext->SetGLDepthMask(writeEnvironmentOutlineDepth ? GL_TRUE : GL_FALSE);
         }
         else
@@ -1047,10 +1042,7 @@ void SetCelShadingOutlinePass(bool enabled)
             }
             const bool writeEnvironmentOutlineDepth =
                 gSHAREnvironmentCelPassActive &&
-                gSHAREnvironmentCelMaterialEligible &&
-                (gSHAREnvironmentOutlineDiagnosticMode == 8 ||
-                 gSHAREnvironmentOutlineDiagnosticMode == 9 ||
-                 gSHAREnvironmentOutlineDiagnosticMode == 10);
+                gSHAREnvironmentCelMaterialEligible;
             glDepthMask(writeEnvironmentOutlineDepth ? GL_TRUE : GL_FALSE);
         }
     }
@@ -1770,7 +1762,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "                    clipPosition.xy += ndcOffset * clipPosition.w;\n"
         "                }\n"
         "            }\n"
-        "            if ((toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10) && clipPosition.w > 0.00001) {\n"
+        "            if (clipPosition.w > 0.00001) {\n"
         "                // Move the expanded shell slightly farther away so the original mesh wins.\n"
         "                clipPosition.z += 0.00025 * clipPosition.w;\n"
         "            }\n"
@@ -1891,13 +1883,6 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         (toonLighting +
         "void main() {\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
-#ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
-        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
-        "            gl_FragColor = vec4(diagnosticColour, cpri.a * dcm.a);\n"
-        "            return;\n"
-        "        }\n"
-#endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, cpri.a * dcm.a);\n"
         "        return;\n"
         "    }\n"
@@ -1917,13 +1902,6 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "void main() {\n"
         "    vec4 base = texture2D(tex, tc) * cpri;\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
-#ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
-        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
-        "            gl_FragColor = vec4(diagnosticColour, base.a);\n"
-        "            return;\n"
-        "        }\n"
-#endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, base.a);\n"
         "        return;\n"
         "    }\n"
@@ -1945,13 +1923,6 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec4 base = texture2D(tex, tc) * cpri;\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
         "        if (base.a < alpharef) discard;\n"
-#ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
-        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
-        "            gl_FragColor = vec4(diagnosticColour, base.a);\n"
-        "            return;\n"
-        "        }\n"
-#endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, base.a);\n"
         "        return;\n"
         "    }\n"

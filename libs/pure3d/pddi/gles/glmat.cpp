@@ -329,7 +329,8 @@ void pglMat::SetDevPass(unsigned pass)
     {
         // Intentionally leave the GL depth-write state untouched.
     }
-    else if (IsCelShadingEnabled() && !IsCelShadingObjectEnabled() &&
+    else if (IsCelShadingEnabled() &&
+             (!IsCelShadingObjectEnabled() || IsSHAREnvironmentCelPassActive()) &&
              texEnv[i].alphaBlendMode != PDDI_BLEND_NONE && !texEnv[i].alphaTest &&
              !IsSHARExteriorTransparencyDepthWriteFixActive())
     {

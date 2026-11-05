@@ -339,7 +339,6 @@ void StaticEntityDSG::Display()
             const char* drawableName = mpDrawstuff->GetName();
             const bool foliageName = mSHAREnvironmentFoliageBillboard;
             const bool foliageBillboard =
-                IsSHAREnvironmentOutlineDiagnosticMode10() &&
                 !isGeometry && !mTranslucent && foliageName;
             const bool foliageMesh =
                 isGeometry && IsSHAREnvironmentFoliageMesh();
