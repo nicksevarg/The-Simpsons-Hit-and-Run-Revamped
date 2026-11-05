@@ -55,6 +55,8 @@ void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
 extern bool IsSHAREnvironmentCelPassActive();
 extern bool IsCelShadingOutlinePass();
 extern void SetSHAREnvironmentCelMaterialEligible(bool eligible);
+extern bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
+extern void SetSHAREnvironmentFoliageCardOutlineNormalMode(bool enabled);
 
 // Experimental alpha-cutout outline exception, restricted to the four
 // foliage textures identified in the Level 3/6 diagnostics.
@@ -72,6 +74,30 @@ static bool IsSHARExperimentalFoliageBlendCutoutTarget(const tShader* shader)
         case 0x0c85d79b35f85dbdULL: // Large evergreen leaves
         case 0x34390eaf4e3bfa98ULL: // Palm fronds
         case 0xb101faa4375fb8a2ULL: // Willow foliage
+        case 0x2049f045f8179e61ULL: // Small oak leaves (OakS.bmp)
+        case 0x9dcfdb55f768fa6cULL: // Small evergreen leaves (EverS.bmp)
+        case 0x2687e3f726e18356ULL: // Small orange oak leaves (OakSOrnge.BMP)
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Flat-card outline normals are restricted to palm/willow and small-tree leaves
+// whose source P3D material and texture definitions were checked explicitly.
+static bool IsSHARExperimentalFoliageCardOutlineTarget(const tShader* shader)
+{
+    if (shader == NULL || !shader->mEnvironmentCelHasAlphaTest)
+        return false;
+
+    switch (shader->mEnvironmentCelBaseTextureUID)
+    {
+        case 0x34390eaf4e3bfa98ULL: // Palmtrees.bmp
+        case 0xb101faa4375fb8a2ULL: // Treewillow.BMP1
+        case 0x2b330f712dc9f2adULL: // Treewillow.BMP
+        case 0x2049f045f8179e61ULL: // OakS.bmp
+        case 0x9dcfdb55f768fa6cULL: // EverS.bmp
+        case 0x2687e3f726e18356ULL: // OakSOrnge.BMP
             return true;
         default:
             return false;
@@ -247,6 +273,15 @@ void tPrimGroupOptimised::Display()
         mShader != NULL ? mShader->mEnvironmentCelBlendMode : PDDI_BLEND_NONE;
     if (useFoliageBlendCutoutOverride)
         mShader->SetInt(PDDI_SP_BLENDMODE, PDDI_BLEND_NONE);
+
+    const bool originalFoliageCardOutlineNormalMode =
+        IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
+    const bool useFoliageCardOutlineNormalMode =
+        IsCelShadingOutlinePass() &&
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        IsSHARExperimentalFoliageCardOutlineTarget(mShader);
+    SetSHAREnvironmentFoliageCardOutlineNormalMode(
+        useFoliageCardOutlineNormalMode);
 #endif
 
 #ifdef RAD_PS2
@@ -271,6 +306,8 @@ void tPrimGroupOptimised::Display()
     p3d::pddi->DrawPrimBuffer( shader, mBuffer );
 #endif
 #ifdef RAD_ANDROID
+    SetSHAREnvironmentFoliageCardOutlineNormalMode(
+        originalFoliageCardOutlineNormalMode);
     if (useFoliageBlendCutoutOverride)
         mShader->SetInt(PDDI_SP_BLENDMODE, originalFoliageBlendMode);
     if (environmentMaterialIneligible)

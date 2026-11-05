@@ -14,6 +14,7 @@
 #ifdef RAD_ANDROID
 bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsSHAREnvironmentFoliageMeshPassActive();
+bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
 void LogSHAREnvironmentMode10RuntimeMaterial(bool alphaTest, float alphaRef,
                                               int alphaCompare, int blendMode,
                                               bool twoSided, bool hasTexture);
@@ -360,9 +361,13 @@ void pglMat::SetDevPass(unsigned pass)
     if (IsCelShadingEnabled() && IsCelShadingObjectEnabled() &&
         IsCelShadingOutlinePass())
     {
-        if (IsSHAREnvironmentBillboardFoliagePassActive())
+        if (IsSHAREnvironmentBillboardFoliagePassActive() ||
+            (IsSHAREnvironmentFoliageMeshPassActive() &&
+             (texEnv[i].twoSided ||
+              IsSHAREnvironmentFoliageCardOutlineNormalModeActive())))
         {
-            // A flat alpha-cutout card has no back-facing shell surface.
+            // Honour two-sided foliage materials. The explicitly identified
+            // flat leaf cards also draw without culling in the outline pass.
             context->SetGLCullEnabled(false);
         }
         else

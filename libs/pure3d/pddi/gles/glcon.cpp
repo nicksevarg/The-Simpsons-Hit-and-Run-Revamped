@@ -36,6 +36,8 @@ static bool gSHAREnvironmentCelPassActive = false;
 static bool gSHAREnvironmentCelMaterialEligible = true;
 static bool gSHAREnvironmentBillboardFoliagePassActive = false;
 static bool gSHAREnvironmentFoliageMeshPassActive = false;
+// Enabled only around draws using one of the verified flat leaf-card materials.
+static bool gSHAREnvironmentFoliageCardOutlineNormalModeActive = false;
 // The viewport is supplied to the environment silhouette shader so its extrusion
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
@@ -996,8 +998,10 @@ void SetCelShadingOutlinePass(bool enabled)
         // two-sided instead of culling the visible card away.
         if (gCelShadingContext)
         {
-            if (gSHAREnvironmentBillboardFoliagePassActive)
+            if (gSHAREnvironmentBillboardFoliagePassActive ||
+                gSHAREnvironmentFoliageMeshPassActive)
             {
+                // pglMat::SetDevPass selects the actual per-material cull state.
                 gCelShadingContext->SetGLCullEnabled(false);
             }
             else
@@ -1019,8 +1023,10 @@ void SetCelShadingOutlinePass(bool enabled)
         }
         else
         {
-            if (gSHAREnvironmentBillboardFoliagePassActive)
+            if (gSHAREnvironmentBillboardFoliagePassActive ||
+                gSHAREnvironmentFoliageMeshPassActive)
             {
+                // pglMat::SetDevPass selects the actual per-material cull state.
                 glDisable(GL_CULL_FACE);
             }
             else
@@ -1264,6 +1270,16 @@ void SetSHAREnvironmentFoliageMeshPassActive(bool enabled)
 bool IsSHAREnvironmentFoliageMeshPassActive()
 {
     return gSHAREnvironmentFoliageMeshPassActive;
+}
+
+void SetSHAREnvironmentFoliageCardOutlineNormalMode(bool enabled)
+{
+    gSHAREnvironmentFoliageCardOutlineNormalModeActive = enabled;
+}
+
+bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive()
+{
+    return gSHAREnvironmentFoliageCardOutlineNormalModeActive;
 }
 
 static bool SHARNameHasFoliagePrefix(const char* name, const char* token)
@@ -2559,8 +2575,11 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     environmentOutlineNormalsAttempted = false;
     environmentOutlineNormalsAvailable = false;
     environmentOutlineNormalsUploaded = false;
+    environmentOutlineNormalsRadialMode = false;
     environmentOutlineNormals = NULL;
     environmentOutlineNormalBuffer = 0;
+    environmentOutlineRadialComponents = 0;
+    environmentOutlineRadialVertices = 0;
     environmentOutlineSmoothedGroups = 0;
     environmentOutlineSmoothedVertices = 0;
     environmentOutlineCreaseSeparatedPairs = 0;
@@ -2667,6 +2686,9 @@ void pglPrimBuffer::Unlock(pddiPrimBufferStream* stream)
     environmentOutlineNormalsAttempted = false;
     environmentOutlineNormalsAvailable = false;
     environmentOutlineNormalsUploaded = false;
+    environmentOutlineNormalsRadialMode = false;
+    environmentOutlineRadialComponents = 0;
+    environmentOutlineRadialVertices = 0;
     environmentOutlineSmoothedGroups = 0;
     environmentOutlineSmoothedVertices = 0;
     environmentOutlineCreaseSeparatedPairs = 0;
@@ -3374,10 +3396,27 @@ bool pglPrimBuffer::GenerateEnvironmentNormals()
 
 bool pglPrimBuffer::GenerateEnvironmentOutlineNormals()
 {
-    if (environmentOutlineNormalsAttempted)
+    const bool radialCardMode =
+        IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
+    if (environmentOutlineNormalsAttempted &&
+        environmentOutlineNormalsRadialMode == radialCardMode)
         return environmentOutlineNormalsAvailable;
+
+    // A retained buffer can be drawn by different materials. If its outline
+    // mode changes, rebuild the separate outline-only stream for that mode.
+    if (environmentOutlineNormalsAttempted)
+    {
+        delete [] environmentOutlineNormals;
+        environmentOutlineNormals = NULL;
+        environmentOutlineNormalsAvailable = false;
+        environmentOutlineNormalsUploaded = false;
+    }
+
     environmentOutlineNormalsAttempted = true;
+    environmentOutlineNormalsRadialMode = radialCardMode;
     environmentOutlineNormalsAvailable = false;
+    environmentOutlineRadialComponents = 0;
+    environmentOutlineRadialVertices = 0;
     environmentOutlineSmoothedGroups = 0;
     environmentOutlineSmoothedVertices = 0;
     environmentOutlineCreaseSeparatedPairs = 0;
@@ -3428,6 +3467,352 @@ bool pglPrimBuffer::GenerateEnvironmentOutlineNormals()
             return static_cast<size_t>(hash ^ (hash >> 32));
         }
     };
+
+    // Alpha-cutout leaf cards need an in-plane expansion direction. Face
+    // normals move the whole card sideways, leaving a one-sided outline fringe.
+    // Group connected, nearly-coplanar triangles and expand each patch around
+    // its own centroid. Only the separate outline normal stream is modified.
+    if (radialCardMode &&
+        (primType == PDDI_PRIM_TRIANGLES || primType == PDDI_PRIM_TRISTRIP))
+    {
+        struct OutlineTriangle
+        {
+            unsigned a, b, c;
+            float nx, ny, nz;
+            float weight;
+        };
+
+        const int radialElementCount = (indexCount > 0 && indices != NULL)
+            ? static_cast<int>(indexCount) : static_cast<int>(total);
+        std::vector<OutlinePosition> vertexPositions(allocated);
+        std::vector<unsigned char> validVertexPositions(allocated, 0);
+        for (unsigned i = 0; i < allocated; ++i)
+        {
+            const float* p = (const float*)((const unsigned char*)coord + i * stride);
+            if (!isfinite(p[0]) || !isfinite(p[1]) || !isfinite(p[2]))
+                continue;
+
+            OutlinePosition key;
+            key.x = static_cast<int64_t>(llround(static_cast<double>(p[0]) * 10000.0));
+            key.y = static_cast<int64_t>(llround(static_cast<double>(p[1]) * 10000.0));
+            key.z = static_cast<int64_t>(llround(static_cast<double>(p[2]) * 10000.0));
+            vertexPositions[i] = key;
+            validVertexPositions[i] = 1;
+        }
+
+        std::vector<OutlineTriangle> triangles;
+        triangles.reserve(radialElementCount > 0
+            ? static_cast<size_t>(radialElementCount / 3) : 0);
+        const auto appendTriangle = [this, &triangles](unsigned a, unsigned b, unsigned c)
+        {
+            if (a >= allocated || b >= allocated || c >= allocated ||
+                a == b || b == c || a == c)
+                return;
+
+            const float* pa = (const float*)((const unsigned char*)coord + a * stride);
+            const float* pb = (const float*)((const unsigned char*)coord + b * stride);
+            const float* pc = (const float*)((const unsigned char*)coord + c * stride);
+            if (!isfinite(pa[0]) || !isfinite(pa[1]) || !isfinite(pa[2]) ||
+                !isfinite(pb[0]) || !isfinite(pb[1]) || !isfinite(pb[2]) ||
+                !isfinite(pc[0]) || !isfinite(pc[1]) || !isfinite(pc[2]))
+                return;
+
+            const float abx = pb[0] - pa[0], aby = pb[1] - pa[1], abz = pb[2] - pa[2];
+            const float acx = pc[0] - pa[0], acy = pc[1] - pa[1], acz = pc[2] - pa[2];
+            const float nx = aby * acz - abz * acy;
+            const float ny = abz * acx - abx * acz;
+            const float nz = abx * acy - aby * acx;
+            const float lengthSquared = nx * nx + ny * ny + nz * nz;
+            if (lengthSquared <= 1.0e-12f)
+                return;
+
+            const float length = sqrtf(lengthSquared);
+            OutlineTriangle triangle;
+            triangle.a = a;
+            triangle.b = b;
+            triangle.c = c;
+            triangle.nx = nx / length;
+            triangle.ny = ny / length;
+            triangle.nz = nz / length;
+            triangle.weight = length;
+            triangles.push_back(triangle);
+        };
+
+        if (primType == PDDI_PRIM_TRIANGLES)
+        {
+            for (int i = 0; i + 2 < radialElementCount; i += 3)
+                appendTriangle(indices ? indices[i] : static_cast<unsigned>(i),
+                               indices ? indices[i + 1] : static_cast<unsigned>(i + 1),
+                               indices ? indices[i + 2] : static_cast<unsigned>(i + 2));
+        }
+        else
+        {
+            // Match generated-normal strip parity across degenerate joins.
+            for (int i = 0; i + 2 < radialElementCount; ++i)
+            {
+                unsigned a = indices ? indices[i] : static_cast<unsigned>(i);
+                unsigned b = indices ? indices[i + 1] : static_cast<unsigned>(i + 1);
+                const unsigned c = indices ? indices[i + 2] : static_cast<unsigned>(i + 2);
+                if (i & 1) { const unsigned swap = a; a = b; b = swap; }
+                appendTriangle(a, b, c);
+            }
+        }
+
+        struct OutlineEdge
+        {
+            OutlinePosition first;
+            OutlinePosition second;
+            bool operator==(const OutlineEdge& other) const
+            {
+                return first == other.first && second == other.second;
+            }
+        };
+        struct OutlineEdgeHash
+        {
+            size_t operator()(const OutlineEdge& edge) const
+            {
+                OutlinePositionHash hash;
+                const size_t firstHash = hash(edge.first);
+                const size_t secondHash = hash(edge.second);
+                return firstHash ^ (secondHash + 0x9e3779b9U +
+                                    (firstHash << 6) + (firstHash >> 2));
+            }
+        };
+
+        const auto lessPosition = [](const OutlinePosition& a, const OutlinePosition& b)
+        {
+            if (a.x != b.x) return a.x < b.x;
+            if (a.y != b.y) return a.y < b.y;
+            return a.z < b.z;
+        };
+        std::unordered_map<OutlineEdge, std::vector<unsigned>, OutlineEdgeHash> edgeTriangles;
+        edgeTriangles.reserve(triangles.size() * 3);
+        const auto addEdge = [&edgeTriangles, &vertexPositions, &validVertexPositions,
+                              &lessPosition](unsigned a, unsigned b, unsigned triangleIndex)
+        {
+            if (a >= validVertexPositions.size() || b >= validVertexPositions.size() ||
+                !validVertexPositions[a] || !validVertexPositions[b])
+                return;
+
+            OutlineEdge edge;
+            edge.first = vertexPositions[a];
+            edge.second = vertexPositions[b];
+            if (lessPosition(edge.second, edge.first))
+            {
+                const OutlinePosition swap = edge.first;
+                edge.first = edge.second;
+                edge.second = swap;
+            }
+            edgeTriangles[edge].push_back(triangleIndex);
+        };
+
+        for (unsigned i = 0; i < triangles.size(); ++i)
+        {
+            addEdge(triangles[i].a, triangles[i].b, i);
+            addEdge(triangles[i].b, triangles[i].c, i);
+            addEdge(triangles[i].c, triangles[i].a, i);
+        }
+
+        std::vector<unsigned> componentParent(triangles.size());
+        std::vector<unsigned char> componentRank(triangles.size(), 0);
+        for (unsigned i = 0; i < componentParent.size(); ++i)
+            componentParent[i] = i;
+        const auto findComponentRoot = [&componentParent](unsigned value) -> unsigned
+        {
+            while (componentParent[value] != value)
+            {
+                componentParent[value] = componentParent[componentParent[value]];
+                value = componentParent[value];
+            }
+            return value;
+        };
+        const auto joinComponents = [&componentParent, &componentRank, &findComponentRoot]
+            (unsigned first, unsigned second)
+        {
+            first = findComponentRoot(first);
+            second = findComponentRoot(second);
+            if (first == second)
+                return;
+            if (componentRank[first] < componentRank[second])
+                componentParent[first] = second;
+            else if (componentRank[first] > componentRank[second])
+                componentParent[second] = first;
+            else
+            {
+                componentParent[second] = first;
+                ++componentRank[first];
+            }
+        };
+
+        const float coplanarEdgeCosine = 0.985f;
+        for (std::unordered_map<OutlineEdge, std::vector<unsigned>, OutlineEdgeHash>::const_iterator
+                 edge = edgeTriangles.begin(); edge != edgeTriangles.end(); ++edge)
+        {
+            const std::vector<unsigned>& adjacent = edge->second;
+            for (size_t i = 0; i < adjacent.size(); ++i)
+            {
+                for (size_t j = i + 1; j < adjacent.size(); ++j)
+                {
+                    const OutlineTriangle& a = triangles[adjacent[i]];
+                    const OutlineTriangle& b = triangles[adjacent[j]];
+                    const float alignment = fabsf(a.nx * b.nx + a.ny * b.ny + a.nz * b.nz);
+                    if (alignment >= coplanarEdgeCosine)
+                        joinComponents(adjacent[i], adjacent[j]);
+                }
+            }
+        }
+
+        std::unordered_map<unsigned, std::vector<unsigned> > patchTriangles;
+        patchTriangles.reserve(triangles.size());
+        for (unsigned i = 0; i < triangles.size(); ++i)
+            patchTriangles[findComponentRoot(i)].push_back(i);
+
+        const unsigned noComponent = 0xffffffffU;
+        std::vector<unsigned> vertexComponents(allocated, noComponent);
+        std::vector<unsigned char> vertexAmbiguous(allocated, 0);
+        std::vector<float> radialNormals(static_cast<size_t>(allocated) * 3, 0.0f);
+
+        for (std::unordered_map<unsigned, std::vector<unsigned> >::const_iterator
+                 patch = patchTriangles.begin(); patch != patchTriangles.end(); ++patch)
+        {
+            const std::vector<unsigned>& patchTriangleIndices = patch->second;
+            if (patchTriangleIndices.empty())
+                continue;
+
+            const OutlineTriangle& referenceTriangle = triangles[patchTriangleIndices[0]];
+            float normalSumX = 0.0f, normalSumY = 0.0f, normalSumZ = 0.0f;
+            float centroidSumX = 0.0f, centroidSumY = 0.0f, centroidSumZ = 0.0f;
+            std::unordered_set<OutlinePosition, OutlinePositionHash> patchPositions;
+            std::unordered_set<unsigned> patchVertexIndices;
+            patchPositions.reserve(patchTriangleIndices.size() * 2);
+            patchVertexIndices.reserve(patchTriangleIndices.size() * 2);
+
+            for (size_t i = 0; i < patchTriangleIndices.size(); ++i)
+            {
+                const OutlineTriangle& triangle = triangles[patchTriangleIndices[i]];
+                const float orientation =
+                    triangle.nx * referenceTriangle.nx +
+                    triangle.ny * referenceTriangle.ny +
+                    triangle.nz * referenceTriangle.nz;
+                const float sign = orientation < 0.0f ? -1.0f : 1.0f;
+                normalSumX += triangle.nx * triangle.weight * sign;
+                normalSumY += triangle.ny * triangle.weight * sign;
+                normalSumZ += triangle.nz * triangle.weight * sign;
+
+                const unsigned vertices[3] = { triangle.a, triangle.b, triangle.c };
+                for (int v = 0; v < 3; ++v)
+                {
+                    const unsigned vertex = vertices[v];
+                    if (vertex >= allocated || !validVertexPositions[vertex])
+                        continue;
+                    patchVertexIndices.insert(vertex);
+                    if (patchPositions.insert(vertexPositions[vertex]).second)
+                    {
+                        const float* p = (const float*)((const unsigned char*)coord +
+                                                        vertex * stride);
+                        centroidSumX += p[0];
+                        centroidSumY += p[1];
+                        centroidSumZ += p[2];
+                    }
+                }
+            }
+
+            const float normalLengthSquared =
+                normalSumX * normalSumX + normalSumY * normalSumY + normalSumZ * normalSumZ;
+            if (patchPositions.size() < 3 || normalLengthSquared <= 1.0e-12f)
+                continue;
+
+            const float inverseNormalLength = 1.0f / sqrtf(normalLengthSquared);
+            const float planeNormalX = normalSumX * inverseNormalLength;
+            const float planeNormalY = normalSumY * inverseNormalLength;
+            const float planeNormalZ = normalSumZ * inverseNormalLength;
+            bool planarPatch = true;
+            for (size_t i = 0; i < patchTriangleIndices.size(); ++i)
+            {
+                const OutlineTriangle& triangle = triangles[patchTriangleIndices[i]];
+                const float alignment = fabsf(
+                    planeNormalX * triangle.nx +
+                    planeNormalY * triangle.ny +
+                    planeNormalZ * triangle.nz);
+                if (alignment < coplanarEdgeCosine)
+                {
+                    planarPatch = false;
+                    break;
+                }
+            }
+            if (!planarPatch)
+                continue;
+
+            const float inversePositionCount = 1.0f / static_cast<float>(patchPositions.size());
+            const float centroidX = centroidSumX * inversePositionCount;
+            const float centroidY = centroidSumY * inversePositionCount;
+            const float centroidZ = centroidSumZ * inversePositionCount;
+
+            for (std::unordered_set<unsigned>::const_iterator vertexIt =
+                     patchVertexIndices.begin(); vertexIt != patchVertexIndices.end(); ++vertexIt)
+            {
+                const unsigned vertex = *vertexIt;
+                const float* p = (const float*)((const unsigned char*)coord + vertex * stride);
+                float radialX = p[0] - centroidX;
+                float radialY = p[1] - centroidY;
+                float radialZ = p[2] - centroidZ;
+                const float normalComponent =
+                    radialX * planeNormalX +
+                    radialY * planeNormalY +
+                    radialZ * planeNormalZ;
+                radialX -= planeNormalX * normalComponent;
+                radialY -= planeNormalY * normalComponent;
+                radialZ -= planeNormalZ * normalComponent;
+
+                const float radialLengthSquared =
+                    radialX * radialX + radialY * radialY + radialZ * radialZ;
+                if (radialLengthSquared <= 1.0e-10f)
+                    continue;
+
+                const float inverseRadialLength = 1.0f / sqrtf(radialLengthSquared);
+                radialX *= inverseRadialLength;
+                radialY *= inverseRadialLength;
+                radialZ *= inverseRadialLength;
+
+                if (vertexComponents[vertex] == noComponent)
+                {
+                    vertexComponents[vertex] = patch->first;
+                    radialNormals[vertex * 3] = radialX;
+                    radialNormals[vertex * 3 + 1] = radialY;
+                    radialNormals[vertex * 3 + 2] = radialZ;
+                }
+                else if (vertexComponents[vertex] != patch->first)
+                {
+                    // A shared indexed vertex between distinct planes has no
+                    // unique radial direction; retain its generated face normal.
+                    vertexAmbiguous[vertex] = 1;
+                }
+            }
+        }
+
+        std::unordered_set<unsigned> contributedComponents;
+        for (unsigned i = 0; i < allocated; ++i)
+        {
+            if (vertexComponents[i] == noComponent || vertexAmbiguous[i])
+                continue;
+            outlineData[i * 3] = radialNormals[i * 3];
+            outlineData[i * 3 + 1] = radialNormals[i * 3 + 1];
+            outlineData[i * 3 + 2] = radialNormals[i * 3 + 2];
+            contributedComponents.insert(vertexComponents[i]);
+            ++environmentOutlineRadialVertices;
+        }
+        environmentOutlineRadialComponents =
+            static_cast<unsigned>(contributedComponents.size());
+
+        if (environmentOutlineRadialVertices > 0)
+        {
+            environmentOutlineNormals = outlineData;
+            environmentOutlineNormalsAvailable = true;
+            environmentOutlineNormalsUploaded = false;
+            return true;
+        }
+    }
+
 
     std::unordered_map<OutlinePosition, std::vector<unsigned>, OutlinePositionHash> positionVertices;
     positionVertices.reserve(allocated);
@@ -3586,7 +3971,7 @@ void pglPrimBuffer::Display(void)
         gSHAREnvironmentOutlineDiagnosticMode == 10 &&
         shouldLogEnvironmentOutlineMesh)
     {
-        SDL_Log("[SHAR Outline Mode 10] outline-mesh id=%u buffer=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d primType=%d vertexType=0x%X allocated=%u total=%u indices=%u sourceNormals=%d generatedNormals=%d outlineNormals=%d smoothedGroups=%u smoothedVertices=%u creasePairs=%u",
+        SDL_Log("[SHAR Outline Mode 10] outline-mesh id=%u buffer=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d primType=%d vertexType=0x%X allocated=%u total=%u indices=%u sourceNormals=%d generatedNormals=%d outlineNormals=%d radialComponents=%u radialVertices=%u smoothedGroups=%u smoothedVertices=%u creasePairs=%u",
                 environmentDiagnosticMeshId,
                 static_cast<void*>(this),
                 gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
@@ -3603,6 +3988,8 @@ void pglPrimBuffer::Display(void)
                 (vertexType & PDDI_V_NORMAL) ? 1 : 0,
                 environmentNormalsAvailable ? 1 : 0,
                 environmentOutlineNormalsAvailable ? 1 : 0,
+                environmentOutlineRadialComponents,
+                environmentOutlineRadialVertices,
                 environmentOutlineSmoothedGroups,
                 environmentOutlineSmoothedVertices,
                 environmentOutlineCreaseSeparatedPairs);
