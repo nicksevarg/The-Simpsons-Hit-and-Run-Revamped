@@ -24,8 +24,66 @@
 #include <string.h>
 
 #ifdef RAD_ANDROID
-bool IsSHAREnvironmentCelPassActive();
-bool IsCelShadingOutlinePass();
+bool IsCelShadingEnabled();
+bool IsSHARGagCatapultCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+
+static bool IsSHARCatapultStaticProp(tDrawable* drawable)
+{
+    if (drawable == NULL || !IsSHARGagCatapultCelPassActive())
+        return false;
+
+    const char* name = drawable->GetName();
+    if (name == NULL)
+        return false;
+
+    static const char* catapultProps[] =
+    {
+        "catapult_bodyShape",
+        "handleShape",
+        "handleShape2",
+        "wheel3Shape",
+        "scoopShape",
+        "pads1Shape",
+        "rope1Shape",
+        "wheel5Shape",
+        "wheel6Shape",
+        "wheel7Shape"
+    };
+
+    for (unsigned i = 0; i < sizeof(catapultProps) / sizeof(catapultProps[0]); ++i)
+    {
+        if (strcmp(name, catapultProps[i]) == 0)
+            return true;
+    }
+    return false;
+}
+
+static void DisplaySHARCatapultStaticProp(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+
+    SetCelShadingOutlinePass(false);
+    drawable->Display();
+
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
 #endif
 
 const int resizeElementSize = 2;
@@ -358,7 +416,12 @@ void tCompositeDrawable::DrawablePropElement::Draw(tPose* pose)
     P3DASSERTMSG(prop, "No prop attached", "tCompositeDrawable::DrawPropElement()");
 
     p3d::stack->PushMultiply( (pose->GetJoint(poseIndex))->worldMatrix );
-    prop->Display();
+#ifdef RAD_ANDROID
+    if (IsSHARCatapultStaticProp(prop))
+        DisplaySHARCatapultStaticProp(prop);
+    else
+#endif
+        prop->Display();
     p3d::stack->Pop();
 }
 

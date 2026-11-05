@@ -42,10 +42,9 @@ static bool gSHAREnvironmentFoliageCardOutlineNormalModeActive = false;
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
 static float gSHARCelOutlineViewportHeight = 1.0f;
-// Temporary LITE outline diagnostics: 0=normal, 1=no depth test,
-// 2=no face culling, 3=no depth test and no face culling, 8=environment
-// outline depth writes; Mode 9 adds clip-space bias; Mode 10 investigates roads and foliage.
-static int gSHAREnvironmentOutlineDiagnosticMode = 10;
+// Keep the tested environment-outline clip-space bias and depth behaviour,
+// without enabling Mode 10's red/green diagnostic overlay or logging.
+static int gSHAREnvironmentOutlineDiagnosticMode = 9;
 static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
 // Monotonic per-process identity for retained primitive buffers in diagnostic logs.
 static unsigned gSHAREnvironmentDiagnosticMeshId = 0;
@@ -70,6 +69,7 @@ static bool gSHARCharacterMaskAlphaWriteRequested = true;
 // Actual skinned meshes use this flag to receive the same two-pass toon
 // silhouette treatment as CharacterRenderable; static gag props are untouched.
 static bool gSHARGagCharacterCelPassActive = false;
+static bool gSHARGagCatapultCelPassActive = false;
 // Enabled while Scrooby displays the main-menu camera set. This is separate
 // from the NIS gag flag because the front-end scene is not rendered by NISPlayer.
 static bool gSHARFrontendMenuCelPassActive = false;
@@ -156,6 +156,16 @@ bool IsSHARGagCharacterCelPassActive()
     return gSHARGagCharacterCelPassActive;
 }
 
+void SetSHARGagCatapultCelPassActive(bool enabled)
+{
+    gSHARGagCatapultCelPassActive = enabled;
+}
+
+bool IsSHARGagCatapultCelPassActive()
+{
+    return gSHARGagCatapultCelPassActive;
+}
+
 void SetSHARFrontendMenuCelPassActive(bool enabled)
 {
     gSHARFrontendMenuCelPassActive = enabled;
@@ -236,8 +246,7 @@ static void LoadSHAREnvironmentOutlineDiagnostics()
     if (gSHAREnvironmentOutlineDiagnosticsLoaded)
         return;
     gSHAREnvironmentOutlineDiagnosticsLoaded = true;
-    gSHAREnvironmentOutlineDiagnosticMode = 10;
-    SDL_Log("[SHAR Outline Diagnostics] mode 10 (compiled default; no external diagnostics file)");
+    gSHAREnvironmentOutlineDiagnosticMode = 9;
 }
 
 static bool BuildLegacyRootConfigurationPath(char* filePath, size_t filePathSize, const char* fileName)
@@ -1015,10 +1024,7 @@ void SetCelShadingOutlinePass(bool enabled)
             // retain their original no-depth-write behaviour.
             const bool writeEnvironmentOutlineDepth =
                 gSHAREnvironmentCelPassActive &&
-                gSHAREnvironmentCelMaterialEligible &&
-                (gSHAREnvironmentOutlineDiagnosticMode == 8 ||
-                 gSHAREnvironmentOutlineDiagnosticMode == 9 ||
-                 gSHAREnvironmentOutlineDiagnosticMode == 10);
+                gSHAREnvironmentCelMaterialEligible;
             gCelShadingContext->SetGLDepthMask(writeEnvironmentOutlineDepth ? GL_TRUE : GL_FALSE);
         }
         else
@@ -1312,7 +1318,7 @@ bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawa
     static const char* foliagePrefixes[] =
     {
         "tree", "bush", "shrub", "forest", "pumpkin", "cemtree", "gens153",
-        "fern", "palm"
+        "fern", "palm", "plant", "pottedplant"
     };
     for (size_t i = 0; i < sizeof(foliagePrefixes) / sizeof(foliagePrefixes[0]); ++i)
     {

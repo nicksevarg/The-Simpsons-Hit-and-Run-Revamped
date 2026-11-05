@@ -16,10 +16,56 @@
 
 #include <string.h>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHARFrontendMenuCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+#endif
+
 namespace Scenegraph 
 {
 static rmt::Matrix identity(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
 static rmt::Matrix tmp;
+
+#ifdef RAD_ANDROID
+static bool IsSHARFrontendLivingRoomPlantDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL || !IsSHARFrontendMenuCelPassActive())
+        return false;
+
+    const char* name = drawable->GetName();
+    return name != NULL && strcmp(name, "FE_plantShape") == 0;
+}
+
+static void DisplaySHARFrontendLivingRoomPlant(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+
+    SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentFoliageMeshPassActive(true);
+    SetCelShadingObjectEnabled(true);
+
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+
+    SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentFoliageMeshPassActive(false);
+    drawable->Display();
+
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
 
 // Scenegraph  -----------------------------------------------
 Scenegraph::Scenegraph() : root(NULL)
@@ -616,7 +662,12 @@ void Drawable::Display(const rmt::Matrix&, DisplayList& list)
         }
         else
         {
-            draw->Display();
+#ifdef RAD_ANDROID
+            if (IsSHARFrontendLivingRoomPlantDrawable(draw))
+                DisplaySHARFrontendLivingRoomPlant(draw);
+            else
+#endif
+                draw->Display();
         }
     }
 }

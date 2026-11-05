@@ -23,8 +23,10 @@
 #include <presentation/nisplayer.h>
 #ifdef RAD_ANDROID
 void SetSHARGagCharacterCelPassActive(bool enabled);
+void SetSHARGagCatapultCelPassActive(bool enabled);
 void SetSHARObjectDimming(float brightness, float saturation);
 
+#include <string.h>
 #include <contexts/contextenum.h>
 #include <gameflow/gameflow.h>
 #include <interiors/interiormanager.h>
@@ -207,11 +209,19 @@ void NISPlayer::DoRender()
             SetSHARInteriorGagDimmingForCurrentLevel();
         }
 
-        // Enable character-only cel-pass handling for this presentation scene.
-        // The skinned-mesh layer filters the actual tPolySkin draws, so static
-        // props and effects are not needlessly rendered twice.
+        // Enable the gag-character pass and, only for the two catapult gag
+        // scenes, the dedicated pass for the ten named static catapult pieces.
+        // Other gag props and effects remain single-pass.
+        const char* gagAnimationName = GetAnimationName();
+        const bool isCatapultGag =
+            gagAnimationName != NULL &&
+            (strstr(gagAnimationName, "gag_cata") != NULL ||
+             strstr(gagAnimationName, "L05_cata") != NULL);
+
         SetSHARGagCharacterCelPassActive(true);
+        SetSHARGagCatapultCelPassActive(isCatapultGag);
         mpSceneGraph->Display();
+        SetSHARGagCatapultCelPassActive(false);
         SetSHARGagCharacterCelPassActive(false);
 
         // Avoid leaking this scene's lighting adjustment into later rendering.
