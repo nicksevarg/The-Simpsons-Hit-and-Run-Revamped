@@ -36,8 +36,8 @@ bool IsSHAREnvironmentRoadEntityName(const char* name);
 
 static bool IsSHARHouseLeafMaterial(const tShader* shader)
 {
-    const char* shaderName = shader != NULL ? shader->GetName() : NULL;
-    return shaderName != NULL && strcmp(shaderName, "int_sh_leaf_m") == 0;
+    return shader != NULL &&
+        static_cast<unsigned long long>(shader->GetUID()) == 0x396C6BB87163F912ULL;
 }
 #endif
 
@@ -118,18 +118,19 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                 pStaticEntityDSG->SetGeometry(pGeo);
 #ifdef RAD_ANDROID
                 const bool foliageNameTag = IsSHAREnvironmentFoliageEntityName(name, NULL);
-                const char* matchedHouseLeafShader = NULL;
+                bool houseLeafMaterialTag = false;
+                unsigned long long matchedHouseLeafShaderUID = 0;
                 for (int shaderIndex = 0; shaderIndex < pGeo->GetNumShader(); ++shaderIndex)
                 {
                     tShader* shader = pGeo->GetShader(shaderIndex);
                     if (IsSHARHouseLeafMaterial(shader))
                     {
-                        matchedHouseLeafShader = shader->GetName();
+                        houseLeafMaterialTag = true;
+                        matchedHouseLeafShaderUID =
+                            static_cast<unsigned long long>(shader->GetUID());
                         break;
                     }
                 }
-
-                const bool houseLeafMaterialTag = matchedHouseLeafShader != NULL;
                 const bool foliageTag = foliageNameTag || houseLeafMaterialTag;
                 const bool roadTag = IsSHAREnvironmentRoadEntityName(name);
                 tUID sourceAssetUID = tName::MakeUID(name);
@@ -149,9 +150,9 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         levelLabel[1] = sourceFile[1];
                     }
 
-                    SDL_Log("[SHAR House Plant Tag] level=%s sourceFile=%s entity=%s shader=%s",
+                    SDL_Log("[SHAR House Plant Tag] level=%s sourceFile=%s entity=%s shaderUID=%016llx",
                         levelLabel, sourceFile != NULL ? sourceFile : "<unknown>",
-                        name, matchedHouseLeafShader);
+                        name, matchedHouseLeafShaderUID);
                 }
 
                 if (foliageTag || roadTag)

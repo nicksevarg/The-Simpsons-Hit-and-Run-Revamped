@@ -37,27 +37,27 @@ static bool IsSHARCatapultStaticProp(tDrawable* drawable)
     if (drawable == NULL || !IsSHARGagCatapultCelPassActive())
         return false;
 
-    const char* name = drawable->GetName();
-    if (name == NULL)
-        return false;
-
-    static const char* catapultProps[] =
+    // Release builds do not retain Pure3D entity names. Match only the
+    // ten solid catapult components by their verified 64-bit geometry UIDs.
+    static const unsigned long long catapultPropUIDs[] =
     {
-        "catapult_bodyShape",
-        "handleShape",
-        "handleShape2",
-        "wheel3Shape",
-        "scoopShape",
-        "pads1Shape",
-        "rope1Shape",
-        "wheel5Shape",
-        "wheel6Shape",
-        "wheel7Shape"
+        0x34F5EECE3D25F2D2ULL, // catapult_bodyShape
+        0xC6E6B129EE50B649ULL, // handleShape
+        0xA3EF87A25C25DBC5ULL, // handleShape2
+        0xA5F3A41A957C4E8BULL, // wheel3Shape
+        0x87CF2C9F17F4F253ULL, // scoopShape
+        0xD2A9CBC74D728C5AULL, // pads1Shape
+        0x92DB7271AABBB4DCULL, // rope1Shape
+        0x6BA1D77559721009ULL, // wheel5Shape
+        0x4CA77C46F1A05148ULL, // wheel6Shape
+        0x3942FF4D2537D587ULL  // wheel7Shape
     };
 
-    for (unsigned i = 0; i < sizeof(catapultProps) / sizeof(catapultProps[0]); ++i)
+    const unsigned long long drawableUID =
+        static_cast<unsigned long long>(drawable->GetUID());
+    for (unsigned i = 0; i < sizeof(catapultPropUIDs) / sizeof(catapultPropUIDs[0]); ++i)
     {
-        if (strcmp(name, catapultProps[i]) == 0)
+        if (drawableUID == catapultPropUIDs[i])
             return true;
     }
     return false;

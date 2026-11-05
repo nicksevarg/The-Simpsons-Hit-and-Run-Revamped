@@ -68,10 +68,8 @@ static bool IsSHARExperimentalFoliageBlendCutoutTarget(const tShader* shader)
         shader->mEnvironmentCelBlendMode == PDDI_BLEND_NONE)
         return false;
 
-    // The house-interior leaf shader is identified by its authored material
-    // name, avoiding reliance on a texture UID that is not stable to verify.
-    const char* shaderName = shader->GetName();
-    if (shaderName != NULL && strcmp(shaderName, "int_sh_leaf_m") == 0)
+    // Exact house-interior leaf material UID from int_sh_leaf_m.
+    if (static_cast<unsigned long long>(shader->GetUID()) == 0x396C6BB87163F912ULL)
         return true;
 
     switch (shader->mEnvironmentCelBaseTextureUID)
@@ -96,9 +94,8 @@ static bool IsSHARExperimentalFoliageCardOutlineTarget(const tShader* shader)
     if (shader == NULL || !shader->mEnvironmentCelHasAlphaTest)
         return false;
 
-    // Keep the house leaf-card outline path keyed to the exact material name.
-    const char* shaderName = shader->GetName();
-    if (shaderName != NULL && strcmp(shaderName, "int_sh_leaf_m") == 0)
+    // Keep the house leaf-card outline path keyed to the exact material UID.
+    if (static_cast<unsigned long long>(shader->GetUID()) == 0x396C6BB87163F912ULL)
         return true;
 
     switch (shader->mEnvironmentCelBaseTextureUID)
