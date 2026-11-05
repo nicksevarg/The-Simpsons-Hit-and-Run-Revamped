@@ -3108,8 +3108,7 @@ void pglPrimBuffer::Display(void)
     {
         glDrawArrays(primTypeTable[primType], 0, total);
     }
-
-
+}
 
 /*
 protected:
