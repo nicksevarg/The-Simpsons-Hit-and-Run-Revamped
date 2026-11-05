@@ -16,19 +16,24 @@
 
 #include <string.h>
 
-namespace Scenegraph 
-{
-static rmt::Matrix identity(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
-static rmt::Matrix tmp;
-
 #ifdef RAD_ANDROID
+// These renderer controls are implemented in the global namespace by the
+// Android GLES backend. Declare them before entering Scenegraph so calls from
+// this namespace resolve to the global symbols at link time.
 bool IsCelShadingEnabled();
 bool IsSHARFrontendMenuCelPassActive();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+#endif
 
+namespace Scenegraph 
+{
+static rmt::Matrix identity(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
+static rmt::Matrix tmp;
+
+#ifdef RAD_ANDROID
 static bool IsSHARFrontendLivingRoomPlantDrawable(tDrawable* drawable)
 {
     if (drawable == NULL || !IsSHARFrontendMenuCelPassActive())
