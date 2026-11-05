@@ -40,7 +40,25 @@ static bool IsSHARFrontendLivingRoomPlantDrawable(tDrawable* drawable)
         return false;
 
     const char* name = drawable->GetName();
-    return name != NULL && strcmp(name, "FE_plantShape") == 0;
+    static const char plantPrefix[] = "FE_plantShape";
+    const unsigned int prefixLength = sizeof(plantPrefix) - 1;
+
+    if (name == NULL || strncmp(name, plantPrefix, prefixLength) != 0)
+        return false;
+
+    const char* suffix = name + prefixLength;
+    if (*suffix == '\0')
+        return false;
+
+    // Only match the numbered living-room plant meshes (FE_plantShape1...N).
+    while (*suffix != '\0')
+    {
+        if (*suffix < '0' || *suffix > '9')
+            return false;
+        ++suffix;
+    }
+
+    return true;
 }
 
 static void DisplaySHARFrontendLivingRoomPlant(tDrawable* drawable)

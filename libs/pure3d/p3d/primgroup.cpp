@@ -68,6 +68,12 @@ static bool IsSHARExperimentalFoliageBlendCutoutTarget(const tShader* shader)
         shader->mEnvironmentCelBlendMode == PDDI_BLEND_NONE)
         return false;
 
+    // The house-interior leaf shader is identified by its authored material
+    // name, avoiding reliance on a texture UID that is not stable to verify.
+    const char* shaderName = shader->GetName();
+    if (shaderName != NULL && strcmp(shaderName, "int_sh_leaf_m") == 0)
+        return true;
+
     switch (shader->mEnvironmentCelBaseTextureUID)
     {
         case 0x2d6bcef01ba0c272ULL: // Large green/red oak leaves
@@ -75,9 +81,8 @@ static bool IsSHARExperimentalFoliageBlendCutoutTarget(const tShader* shader)
         case 0x34390eaf4e3bfa98ULL: // Palm fronds
         case 0xb101faa4375fb8a2ULL: // Willow foliage
         case 0x2049f045f8179e61ULL: // Small oak leaves (OakS.bmp)
-        case 0x9dcfdb55f768fa6cULL: // Small evergreen leaves (EverS.bmp)
+        case 0x9dcfdb55f768fa6cULL: // Small evergreen leaves (EverS.BMP)
         case 0x2687e3f726e18356ULL: // Small orange oak leaves (OakSOrnge.BMP)
-        case 0xc00cd29ba59c71edULL: // Simpsons house leaves (int_sh_leaf.bmp)
             return true;
         default:
             return false;
@@ -91,6 +96,11 @@ static bool IsSHARExperimentalFoliageCardOutlineTarget(const tShader* shader)
     if (shader == NULL || !shader->mEnvironmentCelHasAlphaTest)
         return false;
 
+    // Keep the house leaf-card outline path keyed to the exact material name.
+    const char* shaderName = shader->GetName();
+    if (shaderName != NULL && strcmp(shaderName, "int_sh_leaf_m") == 0)
+        return true;
+
     switch (shader->mEnvironmentCelBaseTextureUID)
     {
         case 0x34390eaf4e3bfa98ULL: // Palmtrees.bmp
@@ -99,7 +109,6 @@ static bool IsSHARExperimentalFoliageCardOutlineTarget(const tShader* shader)
         case 0x2049f045f8179e61ULL: // OakS.bmp
         case 0x9dcfdb55f768fa6cULL: // EverS.bmp
         case 0x2687e3f726e18356ULL: // OakSOrnge.BMP
-        case 0xc00cd29ba59c71edULL: // int_sh_leaf.bmp house leaf cards
             return true;
         default:
             return false;

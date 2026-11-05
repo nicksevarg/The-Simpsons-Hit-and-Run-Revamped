@@ -13,6 +13,8 @@
 //========================================
 #include <p3d/chunkfile.hpp>
 #include <p3d/utility.hpp>
+#include <p3d/geometry.hpp>
+#include <p3d/shader.hpp>
 
 //========================================
 // Project Includes
@@ -31,6 +33,12 @@
 #include <SDL.h>
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 bool IsSHAREnvironmentRoadEntityName(const char* name);
+
+static bool IsSHARHouseLeafMaterial(const tShader* shader)
+{
+    const char* shaderName = shader != NULL ? shader->GetName() : NULL;
+    return shaderName != NULL && strcmp(shaderName, "int_sh_leaf_m") == 0;
+}
 #endif
 
 //************************************************************************
@@ -109,12 +117,43 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                 rAssert(pGeo!=NULL);
                 pStaticEntityDSG->SetGeometry(pGeo);
 #ifdef RAD_ANDROID
-                const bool foliageTag = IsSHAREnvironmentFoliageEntityName(name, NULL);
+                const bool foliageNameTag = IsSHAREnvironmentFoliageEntityName(name, NULL);
+                const char* matchedHouseLeafShader = NULL;
+                for (int shaderIndex = 0; shaderIndex < pGeo->GetNumShader(); ++shaderIndex)
+                {
+                    tShader* shader = pGeo->GetShader(shaderIndex);
+                    if (IsSHARHouseLeafMaterial(shader))
+                    {
+                        matchedHouseLeafShader = shader->GetName();
+                        break;
+                    }
+                }
+
+                const bool houseLeafMaterialTag = matchedHouseLeafShader != NULL;
+                const bool foliageTag = foliageNameTag || houseLeafMaterialTag;
                 const bool roadTag = IsSHAREnvironmentRoadEntityName(name);
                 tUID sourceAssetUID = tName::MakeUID(name);
                 pStaticEntityDSG->SetSHAREnvironmentFoliageMesh(foliageTag);
                 pStaticEntityDSG->SetSHAREnvironmentRoadCandidate(roadTag);
                 pStaticEntityDSG->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+
+                if (houseLeafMaterialTag)
+                {
+                    const char* sourceFile = f->GetFilename();
+                    char levelLabel[3] = "??";
+                    if (sourceFile != NULL &&
+                        (sourceFile[0] == 'l' || sourceFile[0] == 'L') &&
+                        sourceFile[1] >= '0' && sourceFile[1] <= '9')
+                    {
+                        levelLabel[0] = 'L';
+                        levelLabel[1] = sourceFile[1];
+                    }
+
+                    SDL_Log("[SHAR House Plant Tag] level=%s sourceFile=%s entity=%s shader=%s",
+                        levelLabel, sourceFile != NULL ? sourceFile : "<unknown>",
+                        name, matchedHouseLeafShader);
+                }
+
                 if (foliageTag || roadTag)
                 {
                     SDL_Log("[SHAR Outline Mode 10] asset-tag route=StaticEntity source=%s sourceAssetUID=%016llx foliage=%d road=%d",
