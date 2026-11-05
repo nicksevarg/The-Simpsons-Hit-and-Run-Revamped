@@ -23,32 +23,7 @@
 
 #ifdef RAD_ANDROID
 bool IsSHAREnvironmentFoliageMeshPassActive();
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsCelShadingOutlinePass();
-void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
-                                                 const char* shaderName,
-                                                 bool environmentEligible,
-                                                 bool alphaTestOnlyEligible,
-                                                 bool translucent,
-                                                 bool outlineWillDraw);
-void LogSHAREnvironmentFoliageRejectedMaterial(const void* materialIdentity,
-                                                const char* shaderName,
-                                                unsigned long long materialUID,
-                                                bool hasAlphaTest,
-                                                bool hasAlphaBlend,
-                                                bool hasTranslucency,
-                                                float alphaRef,
-                                                int alphaCompare,
-                                                bool twoSided,
-                                                unsigned long long textureUID,
-                                                bool foliageCutoutEligible,
-                                                bool outlineWillDraw);
-void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
-                                           const char* shaderName,
-                                           bool environmentEligible,
-                                           bool alphaTestOnlyEligible,
-                                           bool translucent,
-                                           bool outlineWillDraw);
 #endif
 
 #ifdef RAD_ANDROID
@@ -59,7 +34,7 @@ extern bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
 extern void SetSHAREnvironmentFoliageCardOutlineNormalMode(bool enabled);
 
 // Experimental alpha-cutout outline exception, restricted to the four
-// foliage textures identified in the Level 3/6 diagnostics.
+// foliage textures verified in the extracted foliage materials.
 static bool IsSHARExperimentalFoliageBlendCutoutTarget(const tShader* shader)
 {
     if (shader == NULL ||
@@ -233,38 +208,6 @@ void tPrimGroupOptimised::Display()
          (!mShader->mEnvironmentCelEligible &&
           !foliageAlphaTestEligible && !foliageCutoutEligible &&
           !foliageBlendedCutoutEligible));
-    if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
-        mShader != NULL)
-    {
-        LogSHAREnvironmentMode10MaterialState(
-            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
-            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
-            !environmentMaterialIneligible);
-    }
-    if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
-        mShader != NULL)
-    {
-        LogSHAREnvironmentFoliageMaterialDiagnostic(
-            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
-            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
-            !environmentMaterialIneligible);
-        if (!mShader->mEnvironmentCelEligible &&
-            !mShader->mEnvironmentCelAlphaTestEligible &&
-            !foliageBlendedCutoutEligible)
-        {
-            LogSHAREnvironmentFoliageRejectedMaterial(
-                mShader, mShader->GetName(),
-                static_cast<unsigned long long>(mShader->GetUID()),
-                mShader->mEnvironmentCelHasAlphaTest,
-                mShader->mEnvironmentCelHasAlphaBlend,
-                mShader->mEnvironmentCelHasTranslucency,
-                mShader->mEnvironmentCelAlphaRef,
-                mShader->mEnvironmentCelAlphaCompare,
-                mShader->mEnvironmentCelTwoSided,
-                mShader->mEnvironmentCelBaseTextureUID,
-                mShader->mEnvironmentCelFoliageCutoutEligible,
-                !environmentMaterialIneligible);
-        }
     }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
@@ -433,38 +376,6 @@ void tPrimGroupStreamed::Display()
          (!mShader->mEnvironmentCelEligible &&
           !foliageAlphaTestEligible && !foliageCutoutEligible &&
           !foliageBlendedCutoutEligible));
-    if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
-        mShader != NULL)
-    {
-        LogSHAREnvironmentMode10MaterialState(
-            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
-            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
-            !environmentMaterialIneligible);
-    }
-    if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
-        mShader != NULL)
-    {
-        LogSHAREnvironmentFoliageMaterialDiagnostic(
-            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
-            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
-            !environmentMaterialIneligible);
-        if (!mShader->mEnvironmentCelEligible &&
-            !mShader->mEnvironmentCelAlphaTestEligible &&
-            !foliageBlendedCutoutEligible)
-        {
-            LogSHAREnvironmentFoliageRejectedMaterial(
-                mShader, mShader->GetName(),
-                static_cast<unsigned long long>(mShader->GetUID()),
-                mShader->mEnvironmentCelHasAlphaTest,
-                mShader->mEnvironmentCelHasAlphaBlend,
-                mShader->mEnvironmentCelHasTranslucency,
-                mShader->mEnvironmentCelAlphaRef,
-                mShader->mEnvironmentCelAlphaCompare,
-                mShader->mEnvironmentCelTwoSided,
-                mShader->mEnvironmentCelBaseTextureUID,
-                mShader->mEnvironmentCelFoliageCutoutEligible,
-                !environmentMaterialIneligible);
-        }
     }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;

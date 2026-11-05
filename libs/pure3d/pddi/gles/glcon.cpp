@@ -42,18 +42,6 @@ static bool gSHAREnvironmentFoliageCardOutlineNormalModeActive = false;
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
 static float gSHARCelOutlineViewportHeight = 1.0f;
-// Keep the tested environment-outline clip-space bias and depth behaviour,
-// without enabling Mode 10's red/green diagnostic overlay or logging.
-static int gSHAREnvironmentOutlineDiagnosticMode = 9;
-static bool gSHAREnvironmentOutlineDiagnosticsLoaded = false;
-// Monotonic per-process identity for retained primitive buffers in diagnostic logs.
-static unsigned gSHAREnvironmentDiagnosticMeshId = 0;
-static const char* gSHAREnvironmentDiagnosticOwnerName = NULL;
-static const char* gSHAREnvironmentDiagnosticDrawableName = NULL;
-static unsigned long long gSHAREnvironmentDiagnosticOwnerUID = 0;
-static unsigned long long gSHAREnvironmentDiagnosticSourceAssetUID = 0;
-static bool gSHAREnvironmentDiagnosticFoliageCandidate = false;
-static bool gSHAREnvironmentDiagnosticRoadCandidate = false;
 // Enabled by gameplay only for exterior Levels 1-6; Level 7 retains the prior behavior.
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
@@ -239,14 +227,6 @@ static bool BuildGraphicsConfigurationPath(char* filePath, size_t filePathSize, 
 
     snprintf(filePath, filePathSize, "%s/%s", graphicsPath, fileName);
     return true;
-}
-
-static void LoadSHAREnvironmentOutlineDiagnostics()
-{
-    if (gSHAREnvironmentOutlineDiagnosticsLoaded)
-        return;
-    gSHAREnvironmentOutlineDiagnosticsLoaded = true;
-    gSHAREnvironmentOutlineDiagnosticMode = 9;
 }
 
 static bool BuildLegacyRootConfigurationPath(char* filePath, size_t filePathSize, const char* fileName)
@@ -1018,10 +998,9 @@ void SetCelShadingOutlinePass(bool enabled)
                 gCelShadingContext->SetGLCullEnabled(true);
                 gCelShadingContext->SetGLCullFace(GL_BACK);
             }
-            // Mode 8 tests whether later opaque objects erase outlines because
-            // outline fragments do not populate the depth buffer. Keep this
-            // override limited to environment shells; character/vehicle outlines
-            // retain their original no-depth-write behaviour.
+            // Environment silhouette shells write depth so later opaque
+            // geometry is tested against their expanded contour; character and
+            // vehicle outlines retain their original no-depth-write behaviour.
             const bool writeEnvironmentOutlineDepth =
                 gSHAREnvironmentCelPassActive &&
                 gSHAREnvironmentCelMaterialEligible;
@@ -1042,10 +1021,7 @@ void SetCelShadingOutlinePass(bool enabled)
             }
             const bool writeEnvironmentOutlineDepth =
                 gSHAREnvironmentCelPassActive &&
-                gSHAREnvironmentCelMaterialEligible &&
-                (gSHAREnvironmentOutlineDiagnosticMode == 8 ||
-                 gSHAREnvironmentOutlineDiagnosticMode == 9 ||
-                 gSHAREnvironmentOutlineDiagnosticMode == 10);
+                gSHAREnvironmentCelMaterialEligible;
             glDepthMask(writeEnvironmentOutlineDepth ? GL_TRUE : GL_FALSE);
         }
     }
@@ -1088,152 +1064,26 @@ void SetSHAREnvironmentCelPassActive(bool enabled)
     ApplyCelShadingState();
 }
 
-bool IsSHAREnvironmentOutlineDiagnosticMode10()
+static std::unordered_set<unsigned long long>& SHAREnvironmentFoliageUIDs()
 {
-    LoadSHAREnvironmentOutlineDiagnostics();
-    return gSHAREnvironmentOutlineDiagnosticMode == 10;
+    static std::unordered_set<unsigned long long> foliageUIDs;
+    return foliageUIDs;
 }
 
-void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName)
-{
-    gSHAREnvironmentDiagnosticOwnerName = ownerName;
-    gSHAREnvironmentDiagnosticDrawableName = drawableName;
-}
-
-void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
-                                                unsigned long long sourceAssetUID,
-                                                bool foliageCandidate,
-                                                bool roadCandidate)
-{
-    gSHAREnvironmentDiagnosticOwnerUID = ownerUID;
-    gSHAREnvironmentDiagnosticSourceAssetUID = sourceAssetUID;
-    gSHAREnvironmentDiagnosticFoliageCandidate = foliageCandidate;
-    gSHAREnvironmentDiagnosticRoadCandidate = roadCandidate;
-}
-
-struct SHARMode10FoliagePassEventKey
-{
-    unsigned long long assetUID;
-    unsigned long long ownerUID;
-    unsigned char kind;
-    bool enabled;
-
-    bool operator==(const SHARMode10FoliagePassEventKey& other) const
-    {
-        return assetUID == other.assetUID && ownerUID == other.ownerUID &&
-               kind == other.kind && enabled == other.enabled;
-    }
-};
-
-struct SHARMode10FoliagePassEventKeyHash
-{
-    size_t operator()(const SHARMode10FoliagePassEventKey& key) const
-    {
-        size_t hash = static_cast<size_t>(key.assetUID ^ (key.assetUID >> 32));
-        hash ^= static_cast<size_t>(key.ownerUID ^ (key.ownerUID >> 32)) +
-            0x9e3779b9U + (hash << 6) + (hash >> 2);
-        hash ^= static_cast<size_t>(key.kind) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
-        hash ^= static_cast<size_t>(key.enabled ? 1U : 0U) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
-        return hash;
-    }
-};
-
-static std::unordered_set<unsigned long long>& SHARMode10FoliageUIDs()
-{
-    static std::unordered_set<unsigned long long> registeredUIDs;
-    return registeredUIDs;
-}
-
-void RegisterSHARMode10FoliageUID(unsigned long long uid)
+void RegisterSHAREnvironmentFoliageUID(unsigned long long uid)
 {
     if (uid != 0)
-        SHARMode10FoliageUIDs().insert(uid);
+        SHAREnvironmentFoliageUIDs().insert(uid);
 }
 
-bool IsSHARMode10FoliageUID(unsigned long long uid)
+bool IsSHAREnvironmentFoliageUID(unsigned long long uid)
 {
-    return uid != 0 && SHARMode10FoliageUIDs().find(uid) !=
-        SHARMode10FoliageUIDs().end();
-}
-
-static bool SHARMode10ShouldLogFoliagePassEvent(unsigned char kind, bool enabled)
-{
-    static std::unordered_set<SHARMode10FoliagePassEventKey,
-                              SHARMode10FoliagePassEventKeyHash> reportedEvents;
-    SHARMode10FoliagePassEventKey key = {
-        gSHAREnvironmentDiagnosticSourceAssetUID ?
-            gSHAREnvironmentDiagnosticSourceAssetUID :
-            gSHAREnvironmentDiagnosticOwnerUID,
-        gSHAREnvironmentDiagnosticFoliageCandidate ?
-            gSHAREnvironmentDiagnosticOwnerUID : 0ULL,
-        kind,
-        enabled
-    };
-    if (reportedEvents.size() >= 50000)
-        return false;
-    return reportedEvents.insert(key).second;
-}
-
-struct SHARMode10OutlineBufferLogKey
-{
-    const void* bufferIdentity;
-    unsigned long long ownerUID;
-    unsigned char kind;
-
-    bool operator==(const SHARMode10OutlineBufferLogKey& other) const
-    {
-        return bufferIdentity == other.bufferIdentity &&
-               ownerUID == other.ownerUID && kind == other.kind;
-    }
-};
-
-struct SHARMode10OutlineBufferLogKeyHash
-{
-    size_t operator()(const SHARMode10OutlineBufferLogKey& key) const
-    {
-        size_t hash = reinterpret_cast<size_t>(key.bufferIdentity);
-        hash ^= static_cast<size_t>(key.ownerUID ^ (key.ownerUID >> 32)) +
-            0x9e3779b9U + (hash << 6) + (hash >> 2);
-        hash ^= static_cast<size_t>(key.kind) + 0x9e3779b9U +
-            (hash << 6) + (hash >> 2);
-        return hash;
-    }
-};
-
-static bool SHARMode10ShouldLogOutlineBufferForCurrentOwner(
-    const void* bufferIdentity, unsigned char kind)
-{
-    if (bufferIdentity == NULL)
-        return false;
-
-    static std::unordered_set<SHARMode10OutlineBufferLogKey,
-                              SHARMode10OutlineBufferLogKeyHash> reportedBuffers;
-    const SHARMode10OutlineBufferLogKey key = {
-        bufferIdentity,
-        gSHAREnvironmentDiagnosticFoliageCandidate ?
-            gSHAREnvironmentDiagnosticOwnerUID : 0ULL,
-        kind
-    };
-    if (reportedBuffers.size() >= 50000)
-        return false;
-    return reportedBuffers.insert(key).second;
+    return uid != 0 &&
+        SHAREnvironmentFoliageUIDs().find(uid) != SHAREnvironmentFoliageUIDs().end();
 }
 
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled)
 {
-    if (gSHAREnvironmentBillboardFoliagePassActive == enabled)
-        return;
-    if (IsSHAREnvironmentOutlineDiagnosticMode10() &&
-        SHARMode10ShouldLogFoliagePassEvent(1, enabled))
-    {
-        SDL_Log("[SHAR Outline Mode 10] foliage-pass event=%s kind=billboard owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d celPassActive=%d outlinePass=%d",
-            enabled ? "begin" : "end",
-            gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
-            gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-            gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
-            gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
-            gSHAREnvironmentCelPassActive ? 1 : 0, gCelShadingOutlinePass ? 1 : 0);
-    }
     gSHAREnvironmentBillboardFoliagePassActive = enabled;
 }
 
@@ -1257,19 +1107,6 @@ void SetSHAREnvironmentCelMaterialEligible(bool eligible)
 
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled)
 {
-    if (gSHAREnvironmentFoliageMeshPassActive == enabled)
-        return;
-    if (IsSHAREnvironmentOutlineDiagnosticMode10() &&
-        SHARMode10ShouldLogFoliagePassEvent(2, enabled))
-    {
-        SDL_Log("[SHAR Outline Mode 10] foliage-pass event=%s kind=mesh owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d celPassActive=%d outlinePass=%d",
-            enabled ? "begin" : "end",
-            gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
-            gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-            gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
-            gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
-            gSHAREnvironmentCelPassActive ? 1 : 0, gCelShadingOutlinePass ? 1 : 0);
-    }
     gSHAREnvironmentFoliageMeshPassActive = enabled;
 }
 
@@ -1292,21 +1129,16 @@ static bool SHARNameHasFoliagePrefix(const char* name, const char* token)
 {
     if (name == NULL || token == NULL || token[0] == '\0')
         return false;
-
     const size_t tokenLength = strlen(token);
     for (const char* start = name; *start != '\0'; ++start)
     {
-        // Require a name boundary so "street" is not mistaken for "tree".
         if (start != name && start[-1] != '_' && start[-1] != '-' && start[-1] != '/')
             continue;
-
         size_t i = 0;
         while (i < tokenLength && start[i] != '\0' &&
                tolower(static_cast<unsigned char>(start[i])) ==
                tolower(static_cast<unsigned char>(token[i])))
-        {
             ++i;
-        }
         if (i == tokenLength)
             return true;
     }
@@ -1329,214 +1161,6 @@ bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawa
     return false;
 }
 
-bool IsSHAREnvironmentRoadEntityName(const char* name)
-{
-    static const char* roadTokens[] =
-    {
-        "road", "street", "track", "asphalt", "pavement", "sidewalk",
-        "curb", "kerb", "concrete", "walkway", "driveway", "path"
-    };
-    for (size_t i = 0; i < sizeof(roadTokens) / sizeof(roadTokens[0]); ++i)
-    {
-        if (SHARNameHasFoliagePrefix(name, roadTokens[i]))
-            return true;
-    }
-    return false;
-}
-
-// Deduplicate by source asset + shader + eligibility state rather than by the
-// transient material pointer. That retains unique material behaviour throughout
-// the level sequence without exhausting a global pointer-count budget.
-struct SHARMode10MaterialSummaryKey
-{
-    unsigned long long assetUID;
-    unsigned long long ownerUID;
-    unsigned int shaderHash;
-    unsigned int detailHash;
-    unsigned char eligibilityFlags;
-    bool foliagePass;
-    bool operator==(const SHARMode10MaterialSummaryKey& other) const
-    {
-        return assetUID == other.assetUID && ownerUID == other.ownerUID &&
-               shaderHash == other.shaderHash && detailHash == other.detailHash &&
-               eligibilityFlags == other.eligibilityFlags &&
-               foliagePass == other.foliagePass;
-    }
-};
-struct SHARMode10MaterialSummaryKeyHash
-{
-    size_t operator()(const SHARMode10MaterialSummaryKey& key) const
-    {
-        size_t hash = static_cast<size_t>(key.assetUID);
-        hash ^= static_cast<size_t>(key.ownerUID ^ (key.ownerUID >> 32)) +
-            0x9e3779b9U + (hash << 6) + (hash >> 2);
-        hash ^= static_cast<size_t>(key.shaderHash) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
-        hash ^= static_cast<size_t>(key.detailHash) + 0x9e3779b9U + (hash << 6) + (hash >> 2);
-        hash ^= static_cast<size_t>(key.eligibilityFlags) + (hash << 6) + (hash >> 2);
-        hash ^= static_cast<size_t>(key.foliagePass ? 1U : 0U) + (hash << 6) + (hash >> 2);
-        return hash;
-    }
-};
-static unsigned int SHARMode10HashText(const char* value)
-{
-    unsigned int hash = 2166136261U;
-    if (value != NULL)
-    {
-        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(value); *p; ++p)
-        {
-            hash ^= *p;
-            hash *= 16777619U;
-        }
-    }
-    return hash;
-}
-static bool SHARMode10RecordMaterialSummary(const char* shaderName,
-                                             bool environmentEligible,
-                                             bool alphaTestOnlyEligible,
-                                             bool translucent,
-                                             bool outlineWillDraw,
-                                             bool foliagePass,
-                                             unsigned int detailHash)
-{
-    static std::unordered_set<SHARMode10MaterialSummaryKey, SHARMode10MaterialSummaryKeyHash> reported;
-    const SHARMode10MaterialSummaryKey key = {
-        gSHAREnvironmentDiagnosticSourceAssetUID ? gSHAREnvironmentDiagnosticSourceAssetUID : gSHAREnvironmentDiagnosticOwnerUID,
-        (foliagePass || gSHAREnvironmentDiagnosticFoliageCandidate) ?
-            gSHAREnvironmentDiagnosticOwnerUID : 0ULL,
-        SHARMode10HashText(shaderName), detailHash,
-        static_cast<unsigned char>((environmentEligible ? 1 : 0) |
-            (alphaTestOnlyEligible ? 2 : 0) | (translucent ? 4 : 0) |
-            (outlineWillDraw ? 8 : 0)),
-        foliagePass
-    };
-    if (reported.size() >= 50000)
-        return false;
-    return reported.insert(key).second;
-}
-
-void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
-                                           const char* shaderName,
-                                           bool environmentEligible,
-                                           bool alphaTestOnlyEligible,
-                                           bool translucent,
-                                           bool outlineWillDraw)
-{
-    if (materialIdentity == NULL || !IsSHAREnvironmentOutlineDiagnosticMode10() ||
-        !gSHAREnvironmentCelPassActive || !gCelShadingOutlinePass)
-        return;
-    if (!SHARMode10RecordMaterialSummary(shaderName, environmentEligible,
-        alphaTestOnlyEligible, translucent, outlineWillDraw, false, 0))
-        return;
-
-    SDL_Log("[SHAR Outline Mode 10] material-state owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
-            gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
-            gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-            gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
-            gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
-            gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
-            shaderName ? shaderName : "<unnamed-shader>",
-            environmentEligible ? 1 : 0, alphaTestOnlyEligible ? 1 : 0,
-            translucent ? 1 : 0, outlineWillDraw ? 1 : 0);
-}
-
-void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
-                                                 const char* shaderName,
-                                                 bool environmentEligible,
-                                                 bool alphaTestOnlyEligible,
-                                                 bool translucent,
-                                                 bool outlineWillDraw)
-{
-    if (materialIdentity == NULL || !IsSHAREnvironmentOutlineDiagnosticMode10() ||
-        !gSHAREnvironmentFoliageMeshPassActive || !gCelShadingOutlinePass)
-        return;
-    if (!SHARMode10RecordMaterialSummary(shaderName, environmentEligible,
-        alphaTestOnlyEligible, translucent, outlineWillDraw, true, 0))
-        return;
-
-    SDL_Log("[SHAR Outline Mode 10] foliage-material callbackActive=1 passActive=1 owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d shader=%s environmentEligible=%d alphaTestOnlyEligible=%d translucent=%d outlineWillDraw=%d",
-            gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
-            gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-            gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
-            gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
-            shaderName ? shaderName : "<unnamed-shader>",
-            environmentEligible ? 1 : 0, alphaTestOnlyEligible ? 1 : 0,
-            translucent ? 1 : 0, outlineWillDraw ? 1 : 0);
-}
-
-void LogSHAREnvironmentFoliageRejectedMaterial(const void* materialIdentity,
-                                                const char* shaderName,
-                                                unsigned long long materialUID,
-                                                bool hasAlphaTest,
-                                                bool hasAlphaBlend,
-                                                bool hasTranslucency,
-                                                float alphaRef,
-                                                int alphaCompare,
-                                                bool twoSided,
-                                                unsigned long long textureUID,
-                                                bool foliageCutoutEligible,
-                                                bool outlineWillDraw)
-{
-    if (materialIdentity == NULL || !IsSHAREnvironmentOutlineDiagnosticMode10() ||
-        !gSHAREnvironmentFoliageMeshPassActive || !gCelShadingOutlinePass)
-        return;
-
-    const int alphaRefMilli = static_cast<int>(
-        alphaRef * 1000.0f + (alphaRef >= 0.0f ? 0.5f : -0.5f));
-    unsigned int detailHash = static_cast<unsigned int>(alphaRefMilli);
-    detailHash ^= static_cast<unsigned int>(materialUID ^ (materialUID >> 32)) +
-        0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
-    detailHash ^= static_cast<unsigned int>(textureUID ^ (textureUID >> 32)) +
-        0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
-    detailHash ^= static_cast<unsigned int>(alphaCompare) +
-        0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
-    detailHash ^= static_cast<unsigned int>((hasAlphaTest ? 1U : 0U) |
-        (hasAlphaBlend ? 2U : 0U) | (hasTranslucency ? 4U : 0U) |
-        (twoSided ? 8U : 0U) | (foliageCutoutEligible ? 16U : 0U));
-
-    // The caller invokes this only for materials rejected by the legacy gate.
-    // Keying through SHARMode10RecordMaterialSummary deduplicates by source
-    // asset UID, shader identity/name and the captured material state.
-    if (!SHARMode10RecordMaterialSummary(shaderName, false, false,
-        hasTranslucency, outlineWillDraw, true, detailHash))
-        return;
-
-    SDL_Log("[SHAR Outline Mode 10] foliage-cutout-gate owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx materialUID=%016llx shader=%s previousGateRejected=1 hasAlphaTest=%d hasAlphaBlend=%d HasTranslucency=%d alphaRef=%.3f alphaCompare=%d twoSided=%d textureUID=%016llx foliageCutoutEligible=%d outlineWillDraw=%d",
-        gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
-        gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-        gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
-        materialUID, shaderName ? shaderName : "<unnamed-shader>",
-        hasAlphaTest ? 1 : 0, hasAlphaBlend ? 1 : 0,
-        hasTranslucency ? 1 : 0, alphaRef, alphaCompare,
-        twoSided ? 1 : 0, textureUID,
-        foliageCutoutEligible ? 1 : 0, outlineWillDraw ? 1 : 0);
-}
-
-void LogSHAREnvironmentMode10RuntimeMaterial(bool alphaTest, float alphaRef,
-                                              int alphaCompare, int blendMode,
-                                              bool twoSided, bool hasTexture)
-{
-    if (!IsSHAREnvironmentOutlineDiagnosticMode10() || !gSHAREnvironmentCelPassActive ||
-        !gCelShadingOutlinePass ||
-        (!gSHAREnvironmentFoliageMeshPassActive && !gSHAREnvironmentBillboardFoliagePassActive))
-        return;
-    const int alphaRefMilli = static_cast<int>(alphaRef * 1000.0f + (alphaRef >= 0.0f ? 0.5f : -0.5f));
-    unsigned int detailHash = static_cast<unsigned int>(alphaRefMilli);
-    detailHash ^= static_cast<unsigned int>(alphaCompare) + 0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
-    detailHash ^= static_cast<unsigned int>(blendMode) + 0x9e3779b9U + (detailHash << 6) + (detailHash >> 2);
-    detailHash ^= static_cast<unsigned int>((twoSided ? 1 : 0) | (hasTexture ? 2 : 0) | (alphaTest ? 4 : 0));
-    detailHash ^= gSHAREnvironmentBillboardFoliagePassActive ? 0xB111B04DU : 0xA11CE001U;
-    if (!SHARMode10RecordMaterialSummary("<runtime-pddi-state>", alphaTest, false,
-        blendMode != 0, true, true, detailHash))
-        return;
-
-    SDL_Log("[SHAR Outline Mode 10] foliage-runtime-material owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx pass=%s alphaTest=%d alphaRef=%.3f alphaCompare=%d blendMode=%d twoSided=%d hasTexture=%d",
-        gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
-        gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-        gSHAREnvironmentDiagnosticOwnerUID, gSHAREnvironmentDiagnosticSourceAssetUID,
-        gSHAREnvironmentFoliageMeshPassActive ? "mesh" : "billboard",
-        alphaTest ? 1 : 0, alphaRef, alphaCompare, blendMode,
-        twoSided ? 1 : 0, hasTexture ? 1 : 0);
-}
 
 #endif
 
@@ -1731,12 +1355,10 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "varying vec3 toonNormal;\n"
         "varying vec3 toonViewPos;\n"
 #ifdef RAD_ANDROID
-        "varying float toonOutlineProjectionState;\n"
         "uniform int toonEnabled;\n"
         "uniform int toonObjectEnabled;\n"
         "uniform int toonOutlinePass;\n"
         "uniform int toonEnvironmentPass;\n"
-        "uniform int toonOutlineDiagnosticMode;\n"
         "uniform float toonOutlineWidth;\n"
         "uniform vec2 toonViewportSize;\n"
 #endif
@@ -1750,22 +1372,19 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
 #endif
         "    vec4 clipPosition = projection * V;\n"
 #ifdef RAD_ANDROID
-        "    toonOutlineProjectionState = 1.0;\n"
         "    if (toonEnabled != 0 && toonObjectEnabled != 0 && toonOutlinePass != 0) {\n"
         "        if (toonEnvironmentPass != 0) {\n"
-        "            toonOutlineProjectionState = 0.0;\n"
         "            if (clipPosition.w > 0.00001) {\n"
         "                vec4 clipNormal = projection * vec4(toonNormal, 0.0);\n"
         "                vec2 projectedNormalPixels = (clipNormal.xy * clipPosition.w - clipPosition.xy * clipNormal.w) * toonViewportSize;\n"
         "                float projectedNormalLength = length(projectedNormalPixels);\n"
         "                if (projectedNormalLength > 0.00001) {\n"
-        "                    toonOutlineProjectionState = 1.0;\n"
         "                    vec2 pixelDirection = projectedNormalPixels / projectedNormalLength;\n"
         "                    vec2 ndcOffset = pixelDirection * (2.0 * toonOutlineWidth / toonViewportSize);\n"
         "                    clipPosition.xy += ndcOffset * clipPosition.w;\n"
         "                }\n"
         "            }\n"
-        "            if ((toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10) && clipPosition.w > 0.00001) {\n"
+        "            if (clipPosition.w > 0.00001) {\n"
         "                // Move the expanded shell slightly farther away so the original mesh wins.\n"
         "                clipPosition.z += 0.00025 * clipPosition.w;\n"
         "            }\n"
@@ -1812,11 +1431,9 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform int toonRimEnabled;\n"
         "uniform int toonOutlinePass;\n"
         "uniform int toonEnvironmentPass;\n"
-        "uniform int toonOutlineDiagnosticMode;\n"
         "uniform float toonOutlineWidth;\n"
         "uniform float nightObjectBrightness;\n"
         "uniform float nightObjectSaturation;\n"
-        "varying float toonOutlineProjectionState;\n"
 #endif
 
         "vec3 direction(vec4 p1, vec4 p2) { return normalize(p2.xyz * sign(p1.w) - p1.xyz * sign(p2.w)); }\n"
@@ -1887,12 +1504,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "void main() {\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
 #ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
-        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
-        "            gl_FragColor = vec4(diagnosticColour, cpri.a * dcm.a);\n"
-        "            return;\n"
-        "        }\n"
-#endif
+        #endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, cpri.a * dcm.a);\n"
         "        return;\n"
         "    }\n"
@@ -1913,12 +1525,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec4 base = texture2D(tex, tc) * cpri;\n"
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
 #ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
-        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
-        "            gl_FragColor = vec4(diagnosticColour, base.a);\n"
-        "            return;\n"
-        "        }\n"
-#endif
+        #endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, base.a);\n"
         "        return;\n"
         "    }\n"
@@ -1941,12 +1548,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    if (toonOutlinePass != 0 && toonEnabled != 0 && toonObjectEnabled != 0) {\n"
         "        if (base.a < alpharef) discard;\n"
 #ifdef RAD_ANDROID
-        "        if (toonEnvironmentPass != 0 && (toonOutlineDiagnosticMode == 7 || toonOutlineDiagnosticMode == 8 || toonOutlineDiagnosticMode == 9 || toonOutlineDiagnosticMode == 10)) {\n"
-        "            vec3 diagnosticColour = mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), clamp(toonOutlineProjectionState, 0.0, 1.0));\n"
-        "            gl_FragColor = vec4(diagnosticColour, base.a);\n"
-        "            return;\n"
-        "        }\n"
-#endif
+        #endif
         "        gl_FragColor = vec4(0.0, 0.0, 0.0, base.a);\n"
         "        return;\n"
         "    }\n"
@@ -2589,10 +2191,6 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     environmentOutlineSmoothedGroups = 0;
     environmentOutlineSmoothedVertices = 0;
     environmentOutlineCreaseSeparatedPairs = 0;
-    environmentWindingDiagnosticsReported = false;
-    environmentMeshQualityDiagnosticsReported = false;
-    environmentOutlineDiagnosticsReported = false;
-    environmentDiagnosticMeshId = ++gSHAREnvironmentDiagnosticMeshId;
 #endif
     vertexBuffer = indexBuffer = vertexArray = 0;
 
@@ -2735,566 +2333,6 @@ void pglPrimBuffer::SetIndices(unsigned short* i, int count)
 }
 
 #ifdef RAD_ANDROID
-bool pglPrimBuffer::DiagnoseEnvironmentWinding()
-{
-    if (environmentWindingDiagnosticsReported)
-        return true;
-
-    environmentWindingDiagnosticsReported = true;
-    if (coord == NULL || allocated < 3)
-        return false;
-
-    const int elementCount = (indexCount > 0 && indices != NULL)
-        ? (int)indexCount : (int)total;
-    if (elementCount < 3)
-        return false;
-
-    struct EdgeUseCounts
-    {
-        unsigned forward;
-        unsigned reverse;
-        EdgeUseCounts() : forward(0), reverse(0) {}
-    };
-
-    std::unordered_map<uint64_t, EdgeUseCounts> edgeUses;
-    edgeUses.reserve((size_t)elementCount);
-
-    unsigned validTriangles = 0;
-    unsigned degenerateTriangles = 0;
-    unsigned invalidIndexTriangles = 0;
-
-    const auto addEdge = [&edgeUses](unsigned a, unsigned b)
-    {
-        const unsigned low = a < b ? a : b;
-        const unsigned high = a < b ? b : a;
-        const uint64_t key = (static_cast<uint64_t>(low) << 32) |
-                             static_cast<uint64_t>(high);
-        EdgeUseCounts& use = edgeUses[key];
-        if (a < b)
-            ++use.forward;
-        else
-            ++use.reverse;
-    };
-
-    const auto addTriangle = [this, &addEdge, &validTriangles,
-                              &degenerateTriangles, &invalidIndexTriangles]
-                             (unsigned a, unsigned b, unsigned c)
-    {
-        if (a >= allocated || b >= allocated || c >= allocated)
-        {
-            ++invalidIndexTriangles;
-            return;
-        }
-        if (a == b || b == c || a == c)
-        {
-            ++degenerateTriangles;
-            return;
-        }
-
-        const float* pa = (const float*)((const unsigned char*)coord + a * stride);
-        const float* pb = (const float*)((const unsigned char*)coord + b * stride);
-        const float* pc = (const float*)((const unsigned char*)coord + c * stride);
-        const float abx = pb[0] - pa[0], aby = pb[1] - pa[1], abz = pb[2] - pa[2];
-        const float acx = pc[0] - pa[0], acy = pc[1] - pa[1], acz = pc[2] - pa[2];
-        const float nx = aby * acz - abz * acy;
-        const float ny = abz * acx - abx * acz;
-        const float nz = abx * acy - aby * acx;
-        if (nx * nx + ny * ny + nz * nz <= 1.0e-12f)
-        {
-            ++degenerateTriangles;
-            return;
-        }
-
-        ++validTriangles;
-        addEdge(a, b);
-        addEdge(b, c);
-        addEdge(c, a);
-    };
-
-    if (primType == PDDI_PRIM_TRIANGLES)
-    {
-        for (int i = 0; i + 2 < elementCount; i += 3)
-            addTriangle(indices ? indices[i] : (unsigned)i,
-                        indices ? indices[i + 1] : (unsigned)(i + 1),
-                        indices ? indices[i + 2] : (unsigned)(i + 2));
-    }
-    else if (primType == PDDI_PRIM_TRISTRIP)
-    {
-        for (int i = 0; i + 2 < elementCount; ++i)
-        {
-            unsigned a = indices ? indices[i] : (unsigned)i;
-            unsigned b = indices ? indices[i + 1] : (unsigned)(i + 1);
-            const unsigned c = indices ? indices[i + 2] : (unsigned)(i + 2);
-            if (i & 1) { const unsigned swap = a; a = b; b = swap; }
-            addTriangle(a, b, c);
-        }
-    }
-    else
-    {
-        return false;
-    }
-
-    unsigned boundaryEdges = 0;
-    unsigned sharedEdges = 0;
-    unsigned windingConflictEdges = 0;
-    unsigned nonManifoldEdges = 0;
-    for (std::unordered_map<uint64_t, EdgeUseCounts>::const_iterator it = edgeUses.begin();
-         it != edgeUses.end(); ++it)
-    {
-        const unsigned totalUses = it->second.forward + it->second.reverse;
-        if (totalUses == 1)
-            ++boundaryEdges;
-        else if (totalUses >= 2)
-        {
-            ++sharedEdges;
-            if (it->second.forward == 0 || it->second.reverse == 0)
-                ++windingConflictEdges;
-            if (totalUses > 2)
-                ++nonManifoldEdges;
-        }
-    }
-
-    static unsigned reportedEnvironmentMeshes = 0;
-    if (reportedEnvironmentMeshes < 96)
-    {
-        SDL_Log("[SHAR Outline Winding] mesh=%p prim=%d vertexType=0x%X "
-                "vertices=%u elements=%d triangles=%u boundaryEdges=%u "
-                "sharedEdges=%u sameDirectionSharedEdges=%u nonManifoldEdges=%u "
-                "degenerateTriangles=%u invalidIndexTriangles=%u",
-                static_cast<void*>(this), (int)primType, vertexType,
-                allocated, elementCount, validTriangles, boundaryEdges,
-                sharedEdges, windingConflictEdges, nonManifoldEdges,
-                degenerateTriangles, invalidIndexTriangles);
-        ++reportedEnvironmentMeshes;
-    }
-
-    return true;
-}
-
-bool pglPrimBuffer::DiagnoseEnvironmentMeshQuality()
-{
-    if (environmentMeshQualityDiagnosticsReported)
-        return true;
-    environmentMeshQualityDiagnosticsReported = true;
-
-    if (coord == NULL || normal == NULL || allocated < 3)
-        return false;
-
-    const int elementCount = (indexCount > 0 && indices != NULL)
-        ? (int)indexCount : (int)total;
-    if (elementCount < 3)
-        return false;
-
-    struct QuantizedPoint
-    {
-        int64_t x, y, z;
-        bool operator==(const QuantizedPoint& other) const
-        {
-            return x == other.x && y == other.y && z == other.z;
-        }
-    };
-    struct QuantizedPointHash
-    {
-        size_t operator()(const QuantizedPoint& p) const
-        {
-            uint64_t hash = 1469598103934665603ULL;
-            const int64_t values[3] = { p.x, p.y, p.z };
-            for (int i = 0; i < 3; ++i)
-            {
-                const uint64_t value = static_cast<uint64_t>(values[i]);
-                for (unsigned byte = 0; byte < 8; ++byte)
-                {
-                    hash ^= (value >> (byte * 8)) & 0xffULL;
-                    hash *= 1099511628211ULL;
-                }
-            }
-            return static_cast<size_t>(hash ^ (hash >> 32));
-        }
-    };
-    struct GeometricEdge
-    {
-        QuantizedPoint low;
-        QuantizedPoint high;
-        bool operator==(const GeometricEdge& other) const
-        {
-            return low == other.low && high == other.high;
-        }
-    };
-    struct GeometricEdgeHash
-    {
-        size_t operator()(const GeometricEdge& edge) const
-        {
-            QuantizedPointHash pointHash;
-            const uint64_t a = static_cast<uint64_t>(pointHash(edge.low));
-            const uint64_t b = static_cast<uint64_t>(pointHash(edge.high));
-            const uint64_t combined = (a * 0x9e3779b185ebca87ULL) ^
-                                      (b + 0x9e3779b97f4a7c15ULL);
-            return static_cast<size_t>(combined ^ (combined >> 32));
-        }
-    };
-    struct GeometricEdgeUse
-    {
-        unsigned forward;
-        unsigned reverse;
-        std::unordered_set<uint64_t> indexedVariants;
-        GeometricEdgeUse() : forward(0), reverse(0) {}
-    };
-    struct NormalAccumulation
-    {
-        double x, y, z;
-        double totalMagnitude;
-        unsigned contributions;
-        NormalAccumulation() : x(0.0), y(0.0), z(0.0),
-                               totalMagnitude(0.0), contributions(0) {}
-    };
-    struct PositionNormalGroup
-    {
-        float referenceX, referenceY, referenceZ;
-        float minDotToFirstCopy;
-        unsigned count;
-        PositionNormalGroup()
-            : referenceX(0.0f), referenceY(0.0f), referenceZ(0.0f),
-              minDotToFirstCopy(1.0f), count(0) {}
-    };
-
-    const auto quantizePoint = [](const float* position, QuantizedPoint* point) -> bool
-    {
-        if (!isfinite(position[0]) || !isfinite(position[1]) || !isfinite(position[2]))
-            return false;
-        // Quantize local positions to 0.0001 units to reconnect duplicated seam vertices.
-        point->x = static_cast<int64_t>(llround(static_cast<double>(position[0]) * 10000.0));
-        point->y = static_cast<int64_t>(llround(static_cast<double>(position[1]) * 10000.0));
-        point->z = static_cast<int64_t>(llround(static_cast<double>(position[2]) * 10000.0));
-        return true;
-    };
-    const auto pointLess = [](const QuantizedPoint& a, const QuantizedPoint& b) -> bool
-    {
-        if (a.x != b.x) return a.x < b.x;
-        if (a.y != b.y) return a.y < b.y;
-        return a.z < b.z;
-    };
-
-    std::unordered_map<GeometricEdge, GeometricEdgeUse, GeometricEdgeHash> geometricEdges;
-    std::unordered_map<QuantizedPoint, unsigned, QuantizedPointHash> vertexPositionUses;
-    std::unordered_map<QuantizedPoint, PositionNormalGroup, QuantizedPointHash> positionNormalGroups;
-    geometricEdges.reserve(static_cast<size_t>(elementCount));
-    vertexPositionUses.reserve(static_cast<size_t>(allocated));
-    positionNormalGroups.reserve(static_cast<size_t>(allocated));
-    std::vector<NormalAccumulation> normalAccumulations(allocated);
-    unsigned zeroLengthActualNormals = 0;
-
-    // Stable FNV-1a ID over quantized positions and the primitive index stream.
-    // Unlike a pointer, this can identify equivalent mesh buffers in separate runs.
-    uint64_t fingerprint = 1469598103934665603ULL;
-    const auto hashValue = [&fingerprint](uint64_t value)
-    {
-        for (unsigned byte = 0; byte < 8; ++byte)
-        {
-            fingerprint ^= (value >> (byte * 8)) & 0xffULL;
-            fingerprint *= 1099511628211ULL;
-        }
-    };
-    hashValue(static_cast<uint64_t>(primType));
-    hashValue(static_cast<uint64_t>(vertexType));
-    hashValue(static_cast<uint64_t>(allocated));
-    hashValue(static_cast<uint64_t>(elementCount));
-
-    for (unsigned i = 0; i < allocated; ++i)
-    {
-        const float* position = (const float*)((const unsigned char*)coord + i * stride);
-        QuantizedPoint point;
-        if (quantizePoint(position, &point))
-        {
-            hashValue(static_cast<uint64_t>(point.x));
-            hashValue(static_cast<uint64_t>(point.y));
-            hashValue(static_cast<uint64_t>(point.z));
-            ++vertexPositionUses[point];
-
-            // Compare the actual normal attribute consumed by the outline shader
-            // for vertex indices that occupy the same quantized local position.
-            const float* sourceNormal =
-                (const float*)((const unsigned char*)normal + i * stride);
-            const float normalLengthSquared =
-                sourceNormal[0] * sourceNormal[0] +
-                sourceNormal[1] * sourceNormal[1] +
-                sourceNormal[2] * sourceNormal[2];
-            if (isfinite(sourceNormal[0]) && isfinite(sourceNormal[1]) &&
-                isfinite(sourceNormal[2]) && normalLengthSquared > 1.0e-12f)
-            {
-                const float inverseLength = 1.0f / sqrtf(normalLengthSquared);
-                const float nx = sourceNormal[0] * inverseLength;
-                const float ny = sourceNormal[1] * inverseLength;
-                const float nz = sourceNormal[2] * inverseLength;
-                PositionNormalGroup& group = positionNormalGroups[point];
-                if (group.count == 0)
-                {
-                    group.referenceX = nx;
-                    group.referenceY = ny;
-                    group.referenceZ = nz;
-                }
-                else
-                {
-                    const float dot = nx * group.referenceX +
-                                      ny * group.referenceY +
-                                      nz * group.referenceZ;
-                    group.minDotToFirstCopy = fminf(group.minDotToFirstCopy, dot);
-                }
-                ++group.count;
-            }
-            else
-            {
-                ++zeroLengthActualNormals;
-            }
-        }
-        else
-        {
-            hashValue(0xffffffffffffffffULL);
-            hashValue(0xfffffffffffffffeULL);
-            hashValue(0xfffffffffffffffdULL);
-        }
-    }
-    for (int i = 0; i < elementCount; ++i)
-    {
-        const unsigned index = (indices != NULL) ? indices[i] : static_cast<unsigned>(i);
-        hashValue(static_cast<uint64_t>(index));
-    }
-
-    unsigned validTriangles = 0;
-    unsigned degenerateTriangles = 0;
-    unsigned invalidIndexTriangles = 0;
-    unsigned invalidPositionTriangles = 0;
-    unsigned collapsedPositionEdges = 0;
-
-    const auto addGeometricEdge = [&geometricEdges, &pointLess, &collapsedPositionEdges]
-        (unsigned indexA, unsigned indexB,
-         const QuantizedPoint& pointA, const QuantizedPoint& pointB)
-    {
-        if (pointA == pointB)
-        {
-            ++collapsedPositionEdges;
-            return;
-        }
-        GeometricEdge edge;
-        const bool forward = pointLess(pointA, pointB);
-        if (forward)
-        {
-            edge.low = pointA;
-            edge.high = pointB;
-        }
-        else
-        {
-            edge.low = pointB;
-            edge.high = pointA;
-        }
-        GeometricEdgeUse& use = geometricEdges[edge];
-        if (forward) ++use.forward;
-        else ++use.reverse;
-
-        const unsigned lowIndex = indexA < indexB ? indexA : indexB;
-        const unsigned highIndex = indexA < indexB ? indexB : indexA;
-        const uint64_t indexEdge = (static_cast<uint64_t>(lowIndex) << 32) |
-                                   static_cast<uint64_t>(highIndex);
-        use.indexedVariants.insert(indexEdge);
-    };
-
-    const auto addTriangle = [this, &quantizePoint, &normalAccumulations,
-                              &addGeometricEdge, &validTriangles,
-                              &degenerateTriangles, &invalidIndexTriangles,
-                              &invalidPositionTriangles]
-                             (unsigned a, unsigned b, unsigned c)
-    {
-        if (a >= allocated || b >= allocated || c >= allocated)
-        {
-            ++invalidIndexTriangles;
-            return;
-        }
-        if (a == b || b == c || a == c)
-        {
-            ++degenerateTriangles;
-            return;
-        }
-
-        const float* pa = (const float*)((const unsigned char*)coord + a * stride);
-        const float* pb = (const float*)((const unsigned char*)coord + b * stride);
-        const float* pc = (const float*)((const unsigned char*)coord + c * stride);
-        QuantizedPoint qa, qb, qc;
-        if (!quantizePoint(pa, &qa) || !quantizePoint(pb, &qb) ||
-            !quantizePoint(pc, &qc))
-        {
-            ++invalidPositionTriangles;
-            return;
-        }
-
-        const float abx = pb[0] - pa[0], aby = pb[1] - pa[1], abz = pb[2] - pa[2];
-        const float acx = pc[0] - pa[0], acy = pc[1] - pa[1], acz = pc[2] - pa[2];
-        const double nx = static_cast<double>(aby) * acz - static_cast<double>(abz) * acy;
-        const double ny = static_cast<double>(abz) * acx - static_cast<double>(abx) * acz;
-        const double nz = static_cast<double>(abx) * acy - static_cast<double>(aby) * acx;
-        const double lengthSquared = nx * nx + ny * ny + nz * nz;
-        if (lengthSquared <= 1.0e-12)
-        {
-            ++degenerateTriangles;
-            return;
-        }
-
-        const double magnitude = sqrt(lengthSquared);
-        const unsigned vertexIndices[3] = { a, b, c };
-        for (int vertex = 0; vertex < 3; ++vertex)
-        {
-            NormalAccumulation& accumulation = normalAccumulations[vertexIndices[vertex]];
-            accumulation.x += nx;
-            accumulation.y += ny;
-            accumulation.z += nz;
-            accumulation.totalMagnitude += magnitude;
-            ++accumulation.contributions;
-        }
-        addGeometricEdge(a, b, qa, qb);
-        addGeometricEdge(b, c, qb, qc);
-        addGeometricEdge(c, a, qc, qa);
-        ++validTriangles;
-    };
-
-    if (primType == PDDI_PRIM_TRIANGLES)
-    {
-        for (int i = 0; i + 2 < elementCount; i += 3)
-            addTriangle(indices ? indices[i] : static_cast<unsigned>(i),
-                        indices ? indices[i + 1] : static_cast<unsigned>(i + 1),
-                        indices ? indices[i + 2] : static_cast<unsigned>(i + 2));
-    }
-    else if (primType == PDDI_PRIM_TRISTRIP)
-    {
-        for (int i = 0; i + 2 < elementCount; ++i)
-        {
-            unsigned a = indices ? indices[i] : static_cast<unsigned>(i);
-            unsigned b = indices ? indices[i + 1] : static_cast<unsigned>(i + 1);
-            const unsigned c = indices ? indices[i + 2] : static_cast<unsigned>(i + 2);
-            if (i & 1) { const unsigned swap = a; a = b; b = swap; }
-            addTriangle(a, b, c);
-        }
-    }
-    else
-    {
-        return false;
-    }
-
-    unsigned duplicatePositionVertices = 0;
-    for (std::unordered_map<QuantizedPoint, unsigned, QuantizedPointHash>::const_iterator it =
-             vertexPositionUses.begin(); it != vertexPositionUses.end(); ++it)
-    {
-        if (it->second > 1)
-            duplicatePositionVertices += it->second - 1;
-    }
-
-    unsigned duplicateNormalGroups = 0;
-    unsigned normalMismatchGroups5Deg = 0;
-    unsigned normalMismatchGroups15Deg = 0;
-    unsigned normalMismatchGroups30Deg = 0;
-    unsigned normalMismatchGroups60Deg = 0;
-    double maximumNormalAngleFromFirstCopy = 0.0;
-    double sumMaximumNormalAngleFromFirstCopy = 0.0;
-    for (std::unordered_map<QuantizedPoint, PositionNormalGroup, QuantizedPointHash>::const_iterator it =
-             positionNormalGroups.begin(); it != positionNormalGroups.end(); ++it)
-    {
-        const PositionNormalGroup& group = it->second;
-        if (group.count < 2)
-            continue;
-
-        const double dot = fmax(-1.0, fmin(1.0, (double)group.minDotToFirstCopy));
-        const double angleDegrees = acos(dot) * 57.29577951308232;
-        ++duplicateNormalGroups;
-        if (angleDegrees > 5.0) ++normalMismatchGroups5Deg;
-        if (angleDegrees > 15.0) ++normalMismatchGroups15Deg;
-        if (angleDegrees > 30.0) ++normalMismatchGroups30Deg;
-        if (angleDegrees > 60.0) ++normalMismatchGroups60Deg;
-        if (angleDegrees > maximumNormalAngleFromFirstCopy)
-            maximumNormalAngleFromFirstCopy = angleDegrees;
-        sumMaximumNormalAngleFromFirstCopy += angleDegrees;
-    }
-    const double averageMaximumNormalAngleFromFirstCopy = duplicateNormalGroups > 0
-        ? sumMaximumNormalAngleFromFirstCopy / duplicateNormalGroups : 0.0;
-
-    unsigned geometricBoundaryEdges = 0;
-    unsigned geometricSharedEdges = 0;
-    unsigned geometricWindingConflicts = 0;
-    unsigned geometricNonManifoldEdges = 0;
-    unsigned splitIndexEdges = 0;
-    for (std::unordered_map<GeometricEdge, GeometricEdgeUse, GeometricEdgeHash>::const_iterator it =
-             geometricEdges.begin(); it != geometricEdges.end(); ++it)
-    {
-        const unsigned totalUses = it->second.forward + it->second.reverse;
-        if (totalUses == 1) ++geometricBoundaryEdges;
-        else if (totalUses == 2) ++geometricSharedEdges;
-        else if (totalUses > 2) ++geometricNonManifoldEdges;
-        if (totalUses >= 2 &&
-            (it->second.forward == 0 || it->second.reverse == 0))
-            ++geometricWindingConflicts;
-        if (totalUses >= 2 && it->second.indexedVariants.size() > 1)
-            ++splitIndexEdges;
-    }
-
-    // This describes triangle-derived face-normal coherence per vertex index;
-    // it is separate from the actual attribute comparison across duplicate positions.
-    unsigned normalVertices = 0;
-    unsigned lowCoherenceVertices = 0;
-    unsigned mediumCoherenceVertices = 0;
-    unsigned zeroResultantVertices = 0;
-    double coherenceSum = 0.0;
-    double minimumCoherence = 1.0;
-    for (unsigned i = 0; i < allocated; ++i)
-    {
-        const NormalAccumulation& accumulation = normalAccumulations[i];
-        if (accumulation.contributions == 0 || accumulation.totalMagnitude <= 0.0)
-            continue;
-        const double resultant = sqrt(accumulation.x * accumulation.x +
-                                       accumulation.y * accumulation.y +
-                                       accumulation.z * accumulation.z);
-        double coherence = resultant / accumulation.totalMagnitude;
-        if (coherence > 1.0) coherence = 1.0;
-        if (coherence < 0.0) coherence = 0.0;
-        ++normalVertices;
-        coherenceSum += coherence;
-        if (coherence < minimumCoherence) minimumCoherence = coherence;
-        if (coherence < 0.25) ++lowCoherenceVertices;
-        else if (coherence < 0.50) ++mediumCoherenceVertices;
-        if (resultant <= 1.0e-8) ++zeroResultantVertices;
-    }
-
-    const double averageCoherence = normalVertices > 0
-        ? coherenceSum / normalVertices : 0.0;
-    if (normalVertices == 0) minimumCoherence = 0.0;
-
-    SDL_Log("[SHAR Outline MeshQuality] meshId=%u mesh=%p fingerprint=%016llX "
-            "normalSource=%s prim=%d vertexType=0x%X vertices=%u elements=%d "
-            "triangles=%u degenerateTriangles=%u invalidIndexTriangles=%u "
-            "invalidPositionTriangles=%u duplicatePositionVertices=%u "
-            "actualZeroLengthNormals=%u duplicateNormalGroups=%u "
-            "normalMismatchGroups(>5deg)=%u (>15deg)=%u (>30deg)=%u (>60deg)=%u "
-            "maxAngleFromFirstCopy=%.2f avgMaxAngleFromFirstCopy=%.2f "
-            "faceAccumulationVertices=%u lowFaceCoherence(<0.25)=%u mediumFaceCoherence(<0.50)=%u "
-            "zeroResultantFaceNormals=%u avgIndexFaceCoherence=%.4f minIndexFaceCoherence=%.4f "
-            "geoBoundaryEdges=%u geoSharedEdges=%u geoWindingConflicts=%u "
-            "geoNonManifoldEdges=%u splitIndexEdges=%u collapsedPositionEdges=%u "
-            "outlineSmoothedPositionGroups=%u outlineSmoothedVertices=%u "
-            "outlineCreaseSeparatedPairs=%u positionTolerance=0.0001",
-            environmentDiagnosticMeshId, static_cast<void*>(this),
-            static_cast<unsigned long long>(fingerprint),
-            (vertexType & PDDI_V_NORMAL) ? "authored" : "generated",
-            (int)primType, vertexType, allocated, elementCount, validTriangles,
-            degenerateTriangles, invalidIndexTriangles, invalidPositionTriangles,
-            duplicatePositionVertices, zeroLengthActualNormals, duplicateNormalGroups,
-            normalMismatchGroups5Deg, normalMismatchGroups15Deg,
-            normalMismatchGroups30Deg, normalMismatchGroups60Deg,
-            maximumNormalAngleFromFirstCopy, averageMaximumNormalAngleFromFirstCopy,
-            normalVertices, lowCoherenceVertices, mediumCoherenceVertices,
-            zeroResultantVertices, averageCoherence, minimumCoherence,
-            geometricBoundaryEdges, geometricSharedEdges, geometricWindingConflicts,
-            geometricNonManifoldEdges, splitIndexEdges, collapsedPositionEdges,
-            environmentOutlineSmoothedGroups, environmentOutlineSmoothedVertices,
-            environmentOutlineCreaseSeparatedPairs);
-
-    return true;
-}
-
 bool pglPrimBuffer::GenerateEnvironmentNormals()
 {
     if (environmentNormalsAttempted)
@@ -3937,70 +2975,10 @@ void pglPrimBuffer::Display(void)
     const bool environmentOutlineGeometryPass =
         gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible &&
         gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass;
-    if (environmentOutlineGeometryPass)
-    {
-        LoadSHAREnvironmentOutlineDiagnostics();
-        if (gSHAREnvironmentOutlineDiagnosticMode == 4 ||
-            gSHAREnvironmentOutlineDiagnosticMode == 5)
-            DiagnoseEnvironmentWinding();
-    }
-
-    if (environmentOutlineGeometryPass &&
-        !(vertexType & PDDI_V_NORMAL) && !GenerateEnvironmentNormals())
-    {
-        static unsigned skippedEnvironmentOutlineBuffers = 0;
-        if (gSHAREnvironmentOutlineDiagnosticMode != 0 &&
-            skippedEnvironmentOutlineBuffers < 32)
-        {
-            SDL_Log("[SHAR Outline Diagnostics] mesh skipped: generated normals unavailable; "
-                    "primType=%d vertexType=0x%X allocated=%u total=%u indices=%u",
-                    (int)primType, vertexType, allocated, total, indexCount);
-            ++skippedEnvironmentOutlineBuffers;
-        }
-        return;
-    }
 
     if (environmentOutlineGeometryPass && !(vertexType & PDDI_V_NORMAL))
         useCreaseAwareEnvironmentOutlineNormals = GenerateEnvironmentOutlineNormals();
 
-    // Run after both normal-generation stages so Mode 6 can report the original
-    // generated normals alongside the number of outline-only crease corrections.
-    if (environmentOutlineGeometryPass &&
-        gSHAREnvironmentOutlineDiagnosticMode == 6)
-        DiagnoseEnvironmentMeshQuality();
-
-    const bool shouldLogEnvironmentOutlineMesh =
-        gSHAREnvironmentDiagnosticFoliageCandidate ?
-            SHARMode10ShouldLogOutlineBufferForCurrentOwner(this, 1) :
-            !environmentOutlineDiagnosticsReported;
-    if (environmentOutlineGeometryPass &&
-        gSHAREnvironmentOutlineDiagnosticMode == 10 &&
-        shouldLogEnvironmentOutlineMesh)
-    {
-        SDL_Log("[SHAR Outline Mode 10] outline-mesh id=%u buffer=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d primType=%d vertexType=0x%X allocated=%u total=%u indices=%u sourceNormals=%d generatedNormals=%d outlineNormals=%d radialComponents=%u radialVertices=%u smoothedGroups=%u smoothedVertices=%u creasePairs=%u",
-                environmentDiagnosticMeshId,
-                static_cast<void*>(this),
-                gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
-                gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-                gSHAREnvironmentDiagnosticOwnerUID,
-                gSHAREnvironmentDiagnosticSourceAssetUID,
-                gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
-                gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
-                (int)primType,
-                vertexType,
-                allocated,
-                total,
-                indexCount,
-                (vertexType & PDDI_V_NORMAL) ? 1 : 0,
-                environmentNormalsAvailable ? 1 : 0,
-                environmentOutlineNormalsAvailable ? 1 : 0,
-                environmentOutlineRadialComponents,
-                environmentOutlineRadialVertices,
-                environmentOutlineSmoothedGroups,
-                environmentOutlineSmoothedVertices,
-                environmentOutlineCreaseSeparatedPairs);
-        environmentOutlineDiagnosticsReported = true;
-    }
 #endif
 
     if(!valid)
@@ -4121,70 +3099,6 @@ void pglPrimBuffer::Display(void)
     }
 #endif
 
-#ifdef RAD_ANDROID
-    // Apply diagnostic overrides only to the environment inverted-hull pass.
-    // Each override is restored immediately so normal scene rendering and the
-    // renderer's cached cull state remain unchanged.
-    int outlineDiagnosticMode = 0;
-    GLboolean depthTestWasEnabled = GL_FALSE;
-    GLboolean cullWasEnabled = GL_FALSE;
-    GLint cullFaceModeWas = GL_BACK;
-    const bool isEnvironmentOutlinePass =
-        gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible &&
-        gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass;
-    if (isEnvironmentOutlinePass)
-    {
-        LoadSHAREnvironmentOutlineDiagnostics();
-        outlineDiagnosticMode = gSHAREnvironmentOutlineDiagnosticMode;
-
-        if (outlineDiagnosticMode == 1 || outlineDiagnosticMode == 3)
-        {
-            depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-            if (depthTestWasEnabled)
-                glDisable(GL_DEPTH_TEST);
-        }
-
-        if (outlineDiagnosticMode == 2 || outlineDiagnosticMode == 3)
-        {
-            cullWasEnabled = glIsEnabled(GL_CULL_FACE);
-            if (cullWasEnabled)
-                glDisable(GL_CULL_FACE);
-        }
-        else if (outlineDiagnosticMode == 4)
-        {
-            cullWasEnabled = glIsEnabled(GL_CULL_FACE);
-            glGetIntegerv(GL_CULL_FACE_MODE, &cullFaceModeWas);
-            // Inverted-hull outlines should expose the reverse-facing shell.
-            // This diagnostic culls front faces instead of the normal back faces.
-            glEnable(GL_CULL_FACE);
-            glCullFace(GL_FRONT);
-        }
-    }
-#endif
-
-    if (environmentOutlineGeometryPass &&
-        gSHAREnvironmentOutlineDiagnosticMode == 10)
-    {
-        static std::unordered_set<const pglPrimBuffer*> reportedOutlineSubmissions;
-        const bool shouldLogOutlineSubmit =
-            gSHAREnvironmentDiagnosticFoliageCandidate ?
-                SHARMode10ShouldLogOutlineBufferForCurrentOwner(this, 2) :
-                reportedOutlineSubmissions.insert(this).second;
-        if (shouldLogOutlineSubmit)
-        {
-            SDL_Log("[SHAR Outline Mode 10] outline-submit buffer=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx foliageCandidate=%d roadCandidate=%d call=%s primType=%d count=%u",
-                    static_cast<const void*>(this),
-                    gSHAREnvironmentDiagnosticOwnerName ? gSHAREnvironmentDiagnosticOwnerName : "<no-owner-context>",
-                    gSHAREnvironmentDiagnosticDrawableName ? gSHAREnvironmentDiagnosticDrawableName : "<no-drawable-context>",
-                    gSHAREnvironmentDiagnosticOwnerUID,
-                    gSHAREnvironmentDiagnosticSourceAssetUID,
-                    gSHAREnvironmentDiagnosticFoliageCandidate ? 1 : 0,
-                    gSHAREnvironmentDiagnosticRoadCandidate ? 1 : 0,
-                    (indexCount && indices) ? "glDrawElements" : "glDrawArrays",
-                    static_cast<int>(primType),
-                    (indexCount && indices) ? indexCount : total);
-        }
-    }
 
     if(indexCount && indices)
     {
@@ -4195,26 +3109,7 @@ void pglPrimBuffer::Display(void)
         glDrawArrays(primTypeTable[primType], 0, total);
     }
 
-#ifdef RAD_ANDROID
-    if ((outlineDiagnosticMode == 1 || outlineDiagnosticMode == 3) &&
-        depthTestWasEnabled)
-        glEnable(GL_DEPTH_TEST);
 
-    if (outlineDiagnosticMode == 2 || outlineDiagnosticMode == 3)
-    {
-        if (cullWasEnabled)
-            glEnable(GL_CULL_FACE);
-    }
-    else if (outlineDiagnosticMode == 4)
-    {
-        glCullFace((GLenum)cullFaceModeWas);
-        if (cullWasEnabled)
-            glEnable(GL_CULL_FACE);
-        else
-            glDisable(GL_CULL_FACE);
-    }
-#endif
-}
 
 /*
 protected:
@@ -4467,17 +3362,13 @@ float pglContext::EndTiming(void)
 
 void pglContext::SetShaderProgram(pglProgram* program)
 {
-#ifdef RAD_ANDROID
-    LoadSHAREnvironmentOutlineDiagnostics();
-#endif
     if(program == currentProgram)
     {
 #ifdef RAD_ANDROID
         if (currentProgram)
             currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
-            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHAREnvironmentOutlineDiagnosticMode);
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
 #endif
         return;
     }
@@ -4493,8 +3384,7 @@ void pglContext::SetShaderProgram(pglProgram* program)
 #ifdef RAD_ANDROID
     currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
-            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHAREnvironmentOutlineDiagnosticMode);
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
 #endif
     currentProgram->SetProjectionMatrix(&projection);
 
@@ -4510,12 +3400,10 @@ void pglContext::SetShaderProgram(pglProgram* program)
 #ifdef RAD_ANDROID
 void pglContext::ApplyCelShadingState()
 {
-    LoadSHAREnvironmentOutlineDiagnostics();
     if (currentProgram)
         currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
-            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHAREnvironmentOutlineDiagnosticMode);
+            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight);
 }
 #endif
 

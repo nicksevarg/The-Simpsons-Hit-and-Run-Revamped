@@ -37,7 +37,6 @@ bool IsSHAREnvironmentBillboardFoliagePassActive();
 void SetSHAREnvironmentFoliageCardOutlineNormalMode(bool enabled);
 bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
 void SetSHAREnvironmentCelMaterialEligible(bool eligible);
-void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHARCharacterMaskModelPass(bool enabled);
 void SetSHARGagCharacterCelPassActive(bool enabled);
@@ -246,14 +245,8 @@ protected:
     unsigned environmentOutlineSmoothedGroups;
     unsigned environmentOutlineSmoothedVertices;
     unsigned environmentOutlineCreaseSeparatedPairs;
-    bool environmentWindingDiagnosticsReported;
-    bool environmentMeshQualityDiagnosticsReported;
-    bool environmentOutlineDiagnosticsReported;
-    unsigned environmentDiagnosticMeshId;
     bool GenerateEnvironmentNormals();
     bool GenerateEnvironmentOutlineNormals();
-    bool DiagnoseEnvironmentWinding();
-    bool DiagnoseEnvironmentMeshQuality();
 #endif
     GLuint vertexBuffer;
     GLuint indexBuffer;

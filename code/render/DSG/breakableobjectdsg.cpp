@@ -20,35 +20,13 @@
 #include <p3d/anim/compositedrawable.hpp>
 
 #ifdef RAD_ANDROID
-#include <SDL.h>
-void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
-                                          const char* className,
-                                          const char* ownerName,
-                                          unsigned long long ownerUID,
-                                          unsigned long long sourceAssetUID);
 bool IsCelShadingEnabled();
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
+bool IsSHAREnvironmentFoliageUID(unsigned long long uid);
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
-bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
-bool IsSHAREnvironmentRoadEntityName(const char* name);
-bool IsSHARMode10FoliageUID(unsigned long long uid);
-void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
-void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
-                                                unsigned long long sourceAssetUID,
-                                                bool foliageCandidate,
-                                                bool roadCandidate);
-void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
-                                        const char* ownerName,
-                                        const char* drawableName,
-                                        bool isGeometry,
-                                        bool translucent,
-                                        bool foliageCandidate,
-                                        bool roadCandidate,
-                                        unsigned long long ownerUID,
-                                        unsigned long long sourceAssetUID);
 #endif
 
 //===========================================================================
@@ -171,35 +149,12 @@ void BreakableObjectDSG::Init( tAnimatedObjectFactory* pFactory, tAnimatedObject
     const char* factoryName = pFactory->GetName();
     const char* drawableName = sourceDrawable ? sourceDrawable->GetName() : NULL;
     const bool foliageTag =
-        IsSHARMode10FoliageUID(
+        IsSHAREnvironmentFoliageUID(
             static_cast<unsigned long long>(pFactory->GetUID())) ||
-        (sourceDrawable && IsSHARMode10FoliageUID(
+        (sourceDrawable && IsSHAREnvironmentFoliageUID(
             static_cast<unsigned long long>(sourceDrawable->GetUID()))) ||
         IsSHAREnvironmentFoliageEntityName(factoryName, drawableName);
-    const bool roadTag =
-        IsSHAREnvironmentRoadEntityName(factoryName) ||
-        IsSHAREnvironmentRoadEntityName(drawableName);
-    tUID sourceAssetUID = sourceDrawable ?
-        sourceDrawable->GetUID() : pFactory->GetUID();
-    if (IsSHAREnvironmentOutlineDiagnosticMode10())
-    {
-        SDL_Log("[SHAR Outline Mode 10] breakable-identity factoryUID=%016llx animatedObjectUID=%016llx baseDrawableUID=%016llx storedSourceAssetUID=%016llx",
-            static_cast<unsigned long long>(pFactory->GetUID()),
-            static_cast<unsigned long long>(mpObject->GetUID()),
-            sourceDrawable ? static_cast<unsigned long long>(sourceDrawable->GetUID()) : 0ULL,
-            static_cast<unsigned long long>(sourceAssetUID));
-    }
     SetSHAREnvironmentFoliageMesh(foliageTag);
-    SetSHAREnvironmentRoadCandidate(roadTag);
-    SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
-    if (IsSHAREnvironmentOutlineDiagnosticMode10() && (foliageTag || roadTag))
-    {
-        SDL_Log("[SHAR Outline Mode 10] asset-tag route=BreakableObject factory=%s drawable=%s sourceAssetUID=%016llx foliage=%d road=%d",
-            factoryName ? factoryName : "<unnamed-factory>",
-            drawableName ? drawableName : "<unnamed-drawable>",
-            static_cast<unsigned long long>(sourceAssetUID),
-            foliageTag ? 1 : 0, roadTag ? 1 : 0);
-    }
 #endif
 }
 //===========================================================================
@@ -228,26 +183,8 @@ void BreakableObjectDSG::Display()
     DSG_BEGIN_PROFILE(profileName)
     p3d::stack->PushMultiply( *mpMatrix );
 #ifdef RAD_ANDROID
-    const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
     const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
-    const bool roadCandidate = IsSHAREnvironmentRoadCandidate();
     tDrawable* sourceDrawable = mpObject ? mpObject->GetBaseObject() : NULL;
-    if (mode10Diagnostics && sourceDrawable != NULL)
-    {
-        const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
-        const unsigned long long sourceAssetUID =
-            static_cast<unsigned long long>(GetSHAREnvironmentSourceAssetUID());
-        const char* ownerName = GetName();
-        const char* drawableName = sourceDrawable->GetName();
-        LogSHAREnvironmentMode10DSGClassOnce(this, "BreakableObjectDSG",
-            ownerName, ownerUID, sourceAssetUID);
-        LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
-            mTranslucent, foliageMesh, roadCandidate, ownerUID, sourceAssetUID);
-        SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
-        SetSHAREnvironmentCelDiagnosticEntityUIDs(
-            ownerUID, sourceAssetUID, foliageMesh, roadCandidate);
-    }
-
     if (IsCelShadingEnabled())
     {
         SetSHAREnvironmentCelPassActive(true);
@@ -273,12 +210,6 @@ void BreakableObjectDSG::Display()
         mpObject->Display();
     }
 
-    if (mode10Diagnostics)
-    {
-        SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
-        SetSHAREnvironmentCelDiagnosticEntityUIDs(0, 0, false, false);
-        SetSHAREnvironmentFoliageMeshPassActive(false);
-    }
 #else
     mpObject->Display();
 #endif

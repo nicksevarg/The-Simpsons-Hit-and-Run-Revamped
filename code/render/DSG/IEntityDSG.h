@@ -82,19 +82,13 @@ public:
     SpatialNode* mpSpatialNode;
 
 #ifdef RAD_ANDROID
-    // Compact source metadata used by the lightweight environment outline pass.
-    // Release builds retain UIDs even when textual entity names are omitted.
+    // Marks foliage assets so alpha-tested leaf materials can use the
+    // environment silhouette pass without broadening eligibility for other assets.
     void SetSHAREnvironmentFoliageMesh(bool enabled) { mSHAREnvironmentFoliageMesh = enabled; }
     bool IsSHAREnvironmentFoliageMesh() const { return mSHAREnvironmentFoliageMesh; }
-    void SetSHAREnvironmentRoadCandidate(bool enabled) { mSHAREnvironmentRoadCandidate = enabled; }
-    bool IsSHAREnvironmentRoadCandidate() const { return mSHAREnvironmentRoadCandidate; }
-    void SetSHAREnvironmentSourceAssetUID(tUID uid) { mSHAREnvironmentSourceAssetUID = uid; }
-    tUID GetSHAREnvironmentSourceAssetUID() const { return mSHAREnvironmentSourceAssetUID; }
 
 protected:
     bool mSHAREnvironmentFoliageMesh;
-    bool mSHAREnvironmentRoadCandidate;
-    tUID mSHAREnvironmentSourceAssetUID;
 public:
 #endif
 

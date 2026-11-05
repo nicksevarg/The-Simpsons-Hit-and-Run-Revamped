@@ -14,21 +14,10 @@
 #include <p3d/utility.hpp>
 #include <constants/chunkids.hpp>
 #ifdef RAD_ANDROID
-#include <SDL.h>
 #include <ctype.h>
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
-void RegisterSHARMode10FoliageUID(unsigned long long uid);
-static bool gSHARMode10BreakableFactoryLoadActive = false;
-void SetSHARMode10BreakableFactoryLoadActive(bool active)
-{
-    gSHARMode10BreakableFactoryLoadActive = active;
-}
-static bool IsSHARMode10BreakableFactoryLoadActive()
-{
-    return gSHARMode10BreakableFactoryLoadActive;
-}
+void RegisterSHAREnvironmentFoliageUID(unsigned long long uid);
 
-static bool SHARMode10NameEqualsNoCase(const char* left, const char* right)
+static bool SHAREnvironmentNameEqualsNoCase(const char* left, const char* right)
 {
     if (left == NULL || right == NULL)
         return false;
@@ -43,7 +32,7 @@ static bool SHARMode10NameEqualsNoCase(const char* left, const char* right)
     return *left == '\0' && *right == '\0';
 }
 
-static bool SHARMode10IsKnownFoliageBreakableFactory(const char* name)
+static bool IsSHAREnvironmentKnownFoliageBreakableFactory(const char* name)
 {
     // These are exact names observed in the breakable factory chunks. Do not
     // broaden this to a "tree" substring test (which would also match streetlamp).
@@ -65,7 +54,7 @@ static bool SHARMode10IsKnownFoliageBreakableFactory(const char* name)
          i < sizeof(foliageFactoryNames) / sizeof(foliageFactoryNames[0]);
          ++i)
     {
-        if (SHARMode10NameEqualsNoCase(name, foliageFactoryNames[i]))
+        if (SHAREnvironmentNameEqualsNoCase(name, foliageFactoryNames[i]))
             return true;
     }
     return false;
@@ -533,35 +522,17 @@ tEntity* tAnimatedObjectFactoryLoader::LoadObject(tChunkFile* f, tEntityStore* s
     factory->baseObject = p3d::find<tCompositeDrawable>(store, baseDrawableName);
     P3DASSERT(factory->baseObject);
 #ifdef RAD_ANDROID
-    if (IsSHARMode10BreakableFactoryLoadActive())
+    const bool knownFoliageFactory =
+        IsSHAREnvironmentKnownFoliageBreakableFactory(factoryName) ||
+        IsSHAREnvironmentKnownFoliageBreakableFactory(baseDrawableName);
+    if (knownFoliageFactory)
     {
-        const bool knownFoliageFactory =
-            SHARMode10IsKnownFoliageBreakableFactory(factoryName) ||
-            SHARMode10IsKnownFoliageBreakableFactory(baseDrawableName);
-        if (knownFoliageFactory)
+        RegisterSHAREnvironmentFoliageUID(
+            static_cast<unsigned long long>(factory->GetUID()));
+        if (factory->baseObject != NULL)
         {
-            RegisterSHARMode10FoliageUID(
-                static_cast<unsigned long long>(factory->GetUID()));
-            if (factory->baseObject != NULL)
-            {
-                RegisterSHARMode10FoliageUID(
-                    static_cast<unsigned long long>(factory->baseObject->GetUID()));
-            }
-        }
-
-        if (IsSHAREnvironmentOutlineDiagnosticMode10())
-        {
-            SDL_Log("[SHAR Outline Mode 10] breakable-factory-load factoryName=%s drawableName=%s factoryUID=%016llx drawableUID=%016llx",
-                factoryName, baseDrawableName,
-                static_cast<unsigned long long>(factory->GetUID()),
-                factory->baseObject ? static_cast<unsigned long long>(factory->baseObject->GetUID()) : 0ULL);
-            if (knownFoliageFactory)
-            {
-                SDL_Log("[SHAR Outline Mode 10] breakable-foliage-uid factoryName=%s drawableName=%s factoryUID=%016llx drawableUID=%016llx registered=1",
-                    factoryName, baseDrawableName,
-                    static_cast<unsigned long long>(factory->GetUID()),
-                    factory->baseObject ? static_cast<unsigned long long>(factory->baseObject->GetUID()) : 0ULL);
-            }
+            RegisterSHAREnvironmentFoliageUID(
+                static_cast<unsigned long long>(factory->baseObject->GetUID()));
         }
     }
 #endif

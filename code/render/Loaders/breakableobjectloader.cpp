@@ -31,7 +31,6 @@
 #ifdef RAD_ANDROID
 // The state lives in Pure3D's animated-object loader so that static library
 // links never require the lower-level Pure3D library to call back into game code.
-void SetSHARMode10BreakableFactoryLoadActive(bool active);
 #endif
 
 //===========================================================================
@@ -214,11 +213,9 @@ MEMTRACK_PUSH_GROUP( "Breakables" );
             {
                 rAssert( pFactory == NULL );
 #ifdef RAD_ANDROID
-                SetSHARMode10BreakableFactoryLoadActive(true);
 #endif
                 tEntity* entity = mpFactoryLoader->LoadObject( file, store );
 #ifdef RAD_ANDROID
-                SetSHARMode10BreakableFactoryLoadActive(false);
 #endif
                 pFactory = static_cast<tAnimatedObjectFactory*> (entity);
                 rAssert( dynamic_cast< tAnimatedObjectFactory* >(entity) != NULL );

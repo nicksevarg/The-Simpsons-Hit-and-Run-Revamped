@@ -39,29 +39,8 @@
 #include <p3d/anim/compositedrawable.hpp>
 
 #ifdef RAD_ANDROID
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
-bool IsSHAREnvironmentRoadEntityName(const char* name);
-bool IsSHARMode10FoliageUID(unsigned long long uid);
-void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
-                                          const char* className,
-                                          const char* ownerName,
-                                          unsigned long long ownerUID,
-                                          unsigned long long sourceAssetUID);
-void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
-                                        const char* ownerName,
-                                        const char* drawableName,
-                                        bool isGeometry,
-                                        bool translucent,
-                                        bool foliageCandidate,
-                                        bool roadCandidate,
-                                        unsigned long long ownerUID,
-                                        unsigned long long sourceAssetUID);
-void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
-void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
-                                                unsigned long long sourceAssetUID,
-                                                bool foliageCandidate,
-                                                bool roadCandidate);
+bool IsSHAREnvironmentFoliageUID(unsigned long long uid);
 bool IsCelShadingEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
@@ -183,28 +162,6 @@ void InstDynaPhysDSG::Display()
     }
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mMatrix);
 #ifdef RAD_ANDROID
-    const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
-    if (mode10Diagnostics && mpGeo != NULL)
-    {
-        const char* ownerName = GetName();
-        const char* drawableName = mpGeo->GetName();
-        const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
-        const unsigned long long sourceAssetUID = static_cast<unsigned long long>(mpGeo->GetUID());
-        const bool foliageCandidate =
-            mSHAREnvironmentFoliageMeshEligible ||
-            IsSHARMode10FoliageUID(sourceAssetUID) ||
-            IsSHAREnvironmentFoliageEntityName(ownerName, drawableName);
-        const bool roadCandidate =
-            IsSHAREnvironmentRoadEntityName(ownerName) ||
-            IsSHAREnvironmentRoadEntityName(drawableName);
-        LogSHAREnvironmentMode10DSGClassOnce(this, "InstDynaPhysDSG",
-            ownerName, ownerUID, sourceAssetUID);
-        LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
-            mTranslucent, foliageCandidate, roadCandidate, ownerUID, sourceAssetUID);
-        SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
-        SetSHAREnvironmentCelDiagnosticEntityUIDs(ownerUID, sourceAssetUID,
-            foliageCandidate, roadCandidate);
-    }
 #endif
     if( mHideOnHitIndex > -1 )
     {
@@ -218,13 +175,6 @@ void InstDynaPhysDSG::Display()
         mpGeo->Display();
 #else
     mpGeo->Display();
-#endif
-#ifdef RAD_ANDROID
-    if (mode10Diagnostics)
-    {
-        SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
-        SetSHAREnvironmentCelDiagnosticEntityUIDs(0, 0, false, false);
-    }
 #endif
     p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
     if(CastsShadow())

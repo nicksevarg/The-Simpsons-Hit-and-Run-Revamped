@@ -36,6 +36,7 @@
 #include <events/eventmanager.h>
 #include <main/game.h>
 #include <memory/srrmemory.h>
+#include <string.h>
 #include <meta/directionallocator.h>
 #include <meta/interiorentrancelocator.h>
 #include <meta/triggervolumetracker.h>
@@ -731,6 +732,8 @@ public:
 
         gagPlayer = new NISPlayer;
         gagPlayer->SetNameData( "GagController", NULL, "GagScene" );
+        gagPlayer->SetSHARCatapultOutlineGag(
+            strstr(binding->gagFileName, "cata") != NULL);
         gagPlayer->SetPlayAfterLoad( false );
         gagPlayer->SetCycleMode( binding->cycleMode );
         gagPlayer->SetShowAlways( true );

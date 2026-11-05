@@ -25,31 +25,11 @@
 #include <p3d/billboardobject.hpp>
 
 #ifdef RAD_ANDROID
-void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
-                                          const char* className,
-                                          const char* ownerName,
-                                          unsigned long long ownerUID,
-                                          unsigned long long sourceAssetUID);
 bool IsCelShadingEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
-void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
-void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
-                                                unsigned long long sourceAssetUID,
-                                                bool foliageCandidate,
-                                                bool roadCandidate);
-void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
-                                        const char* ownerName,
-                                        const char* drawableName,
-                                        bool isGeometry,
-                                        bool translucent,
-                                        bool foliageCandidate,
-                                        bool roadCandidate,
-                                        unsigned long long ownerUID,
-                                        unsigned long long sourceAssetUID);
 
 static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh)
 {
@@ -164,30 +144,7 @@ void InstStatEntityDSG::Display()
     }
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, mpMatrix);
 #ifdef RAD_ANDROID
-        const char* ownerName = GetName();
-        const char* drawableName = mpDrawstuff ? mpDrawstuff->GetName() : NULL;
-        const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
-        const bool roadCandidate = IsSHAREnvironmentRoadCandidate();
-        const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
-        if (mode10Diagnostics)
-        {
-            const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
-            const unsigned long long sourceAssetUID =
-                static_cast<unsigned long long>(GetSHAREnvironmentSourceAssetUID());
-            LogSHAREnvironmentMode10DSGClassOnce(this, "InstStatEntityDSG",
-                ownerName, ownerUID, sourceAssetUID);
-            LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName, true,
-                mTranslucent, foliageMesh, roadCandidate, ownerUID, sourceAssetUID);
-            SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
-            SetSHAREnvironmentCelDiagnosticEntityUIDs(
-                ownerUID, sourceAssetUID, foliageMesh, roadCandidate);
-        }
-        DisplaySHAREnvironmentCelDrawable(mpDrawstuff, foliageMesh);
-        if (mode10Diagnostics)
-        {
-            SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
-            SetSHAREnvironmentCelDiagnosticEntityUIDs(0, 0, false, false);
-        }
+        DisplaySHAREnvironmentCelDrawable(mpDrawstuff, IsSHAREnvironmentFoliageMesh());
 #else
         mpDrawstuff->Display();
 #endif

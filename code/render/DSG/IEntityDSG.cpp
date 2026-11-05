@@ -60,8 +60,6 @@ IEntityDSG::IEntityDSG() :
     mpSpatialNode(NULL)
 #ifdef RAD_ANDROID
     , mSHAREnvironmentFoliageMesh(false)
-    , mSHAREnvironmentRoadCandidate(false)
-    , mSHAREnvironmentSourceAssetUID(0)
 #endif
 {
     CLASSTRACKER_CREATE( IEntityDSG );

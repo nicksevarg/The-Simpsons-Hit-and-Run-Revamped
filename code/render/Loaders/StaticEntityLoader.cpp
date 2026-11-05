@@ -28,9 +28,7 @@
 #include <render/Loaders/AllWrappers.h>
 #include <string.h>
 #ifdef RAD_ANDROID
-#include <SDL.h>
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
-bool IsSHAREnvironmentRoadEntityName(const char* name);
 #endif
 
 //************************************************************************
@@ -109,18 +107,8 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                 rAssert(pGeo!=NULL);
                 pStaticEntityDSG->SetGeometry(pGeo);
 #ifdef RAD_ANDROID
-                const bool foliageTag = IsSHAREnvironmentFoliageEntityName(name, NULL);
-                const bool roadTag = IsSHAREnvironmentRoadEntityName(name);
-                tUID sourceAssetUID = tName::MakeUID(name);
+                const bool foliageTag = IsSHAREnvironmentFoliageEntityName(name, pGeo->GetName());
                 pStaticEntityDSG->SetSHAREnvironmentFoliageMesh(foliageTag);
-                pStaticEntityDSG->SetSHAREnvironmentRoadCandidate(roadTag);
-                pStaticEntityDSG->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
-                if (foliageTag || roadTag)
-                {
-                    SDL_Log("[SHAR Outline Mode 10] asset-tag route=StaticEntity source=%s sourceAssetUID=%016llx foliage=%d road=%d",
-                        name, static_cast<unsigned long long>(sourceAssetUID),
-                        foliageTag ? 1 : 0, roadTag ? 1 : 0);
-                }
 #endif
             }
 

@@ -112,7 +112,8 @@ static void SetSHARInteriorGagDimmingForCurrentLevel()
 //
 //==============================================================================
 NISPlayer::NISPlayer() :
-    mpSceneGraph( NULL )
+    mpSceneGraph( NULL ),
+    mSHARCatapultOutlineGag(false)
 {
     SetExclusive( false );    
 }
@@ -209,17 +210,10 @@ void NISPlayer::DoRender()
             SetSHARInteriorGagDimmingForCurrentLevel();
         }
 
-        // Enable the gag-character pass and, only for the two catapult gag
-        // scenes, the dedicated pass for the ten named static catapult pieces.
-        // Other gag props and effects remain single-pass.
-        const char* gagAnimationName = GetAnimationName();
-        const bool isCatapultGag =
-            gagAnimationName != NULL &&
-            (strstr(gagAnimationName, "gag_cata") != NULL ||
-             strstr(gagAnimationName, "L05_cata") != NULL);
-
+        // Catapult identification comes from the owning gag filename, not the
+        // generic animation controller name ("GagScene").
         SetSHARGagCharacterCelPassActive(true);
-        SetSHARGagCatapultCelPassActive(isCatapultGag);
+        SetSHARGagCatapultCelPassActive(mSHARCatapultOutlineGag);
         mpSceneGraph->Display();
         SetSHARGagCatapultCelPassActive(false);
         SetSHARGagCharacterCelPassActive(false);
