@@ -77,6 +77,7 @@ static bool IsSHARExperimentalFoliageBlendCutoutTarget(const tShader* shader)
         case 0x2049f045f8179e61ULL: // Small oak leaves (OakS.bmp)
         case 0x9dcfdb55f768fa6cULL: // Small evergreen leaves (EverS.bmp)
         case 0x2687e3f726e18356ULL: // Small orange oak leaves (OakSOrnge.BMP)
+        case 0xc00cd29ba59c71edULL: // Simpsons house leaves (int_sh_leaf.bmp)
             return true;
         default:
             return false;
@@ -98,6 +99,7 @@ static bool IsSHARExperimentalFoliageCardOutlineTarget(const tShader* shader)
         case 0x2049f045f8179e61ULL: // OakS.bmp
         case 0x9dcfdb55f768fa6cULL: // EverS.bmp
         case 0x2687e3f726e18356ULL: // OakSOrnge.BMP
+        case 0xc00cd29ba59c71edULL: // int_sh_leaf.bmp house leaf cards
             return true;
         default:
             return false;

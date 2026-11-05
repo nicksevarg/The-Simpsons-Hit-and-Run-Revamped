@@ -70,6 +70,7 @@ static bool gSHARCharacterMaskAlphaWriteRequested = true;
 // Actual skinned meshes use this flag to receive the same two-pass toon
 // silhouette treatment as CharacterRenderable; static gag props are untouched.
 static bool gSHARGagCharacterCelPassActive = false;
+static bool gSHARGagCatapultCelPassActive = false;
 // Enabled while Scrooby displays the main-menu camera set. This is separate
 // from the NIS gag flag because the front-end scene is not rendered by NISPlayer.
 static bool gSHARFrontendMenuCelPassActive = false;
@@ -154,6 +155,16 @@ void SetSHARGagCharacterCelPassActive(bool enabled)
 bool IsSHARGagCharacterCelPassActive()
 {
     return gSHARGagCharacterCelPassActive;
+}
+
+void SetSHARGagCatapultCelPassActive(bool enabled)
+{
+    gSHARGagCatapultCelPassActive = enabled;
+}
+
+bool IsSHARGagCatapultCelPassActive()
+{
+    return gSHARGagCatapultCelPassActive;
 }
 
 void SetSHARFrontendMenuCelPassActive(bool enabled)
@@ -1312,7 +1323,7 @@ bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawa
     static const char* foliagePrefixes[] =
     {
         "tree", "bush", "shrub", "forest", "pumpkin", "cemtree", "gens153",
-        "fern", "palm"
+        "fern", "palm", "plant", "pottedplant"
     };
     for (size_t i = 0; i < sizeof(foliagePrefixes) / sizeof(foliagePrefixes[0]); ++i)
     {
