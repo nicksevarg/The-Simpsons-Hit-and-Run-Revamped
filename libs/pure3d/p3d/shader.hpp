@@ -41,6 +41,8 @@ public:
     // Loaded shader-definition values used by Mode 10 foliage diagnostics.
     bool mEnvironmentCelHasAlphaTest;
     bool mEnvironmentCelHasAlphaBlend;
+    // Preserve the source blend mode for temporary outline-only overrides.
+    int mEnvironmentCelBlendMode;
     bool mEnvironmentCelHasTranslucency;
     float mEnvironmentCelAlphaRef;
     int mEnvironmentCelAlphaCompare;

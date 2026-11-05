@@ -18,6 +18,7 @@ tShader::tShader()
       mEnvironmentCelFoliageCutoutEligible(false),
       mEnvironmentCelHasAlphaTest(false),
       mEnvironmentCelHasAlphaBlend(false),
+      mEnvironmentCelBlendMode(PDDI_BLEND_NONE),
       mEnvironmentCelHasTranslucency(false),
       mEnvironmentCelAlphaRef(0.5f),
       mEnvironmentCelAlphaCompare(PDDI_COMPARE_GREATEREQUAL),
@@ -35,6 +36,7 @@ tShader::tShader(const char* shaderName, char* definition)
       mEnvironmentCelFoliageCutoutEligible(false),
       mEnvironmentCelHasAlphaTest(false),
       mEnvironmentCelHasAlphaBlend(false),
+      mEnvironmentCelBlendMode(PDDI_BLEND_NONE),
       mEnvironmentCelHasTranslucency(false),
       mEnvironmentCelAlphaRef(0.5f),
       mEnvironmentCelAlphaCompare(PDDI_COMPARE_GREATEREQUAL),
@@ -153,6 +155,7 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     tShader* shader = NULL;
     bool hasAlphaTest = false;
     bool hasAlphaBlend = false;
+    int blendMode = PDDI_BLEND_NONE;
     float alphaRef = 0.5f;
     int alphaCompare = PDDI_COMPARE_GREATEREQUAL;
     bool twoSided = false;
@@ -219,7 +222,10 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
                     shader->SetInt(param, val);
                     if (param == PDDI_SP_BLENDMODE)
+                    {
+                        blendMode = static_cast<int>(val);
                         hasAlphaBlend = (val != PDDI_BLEND_NONE);
+                    }
                     if (param == PDDI_SP_ALPHATEST)
                         hasAlphaTest = (val != 0);
                     if (param == PDDI_SP_ALPHACOMPARE)
@@ -326,6 +332,7 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         hasAlphaTest && !hasAlphaBlend;
     shader->mEnvironmentCelHasAlphaTest = hasAlphaTest;
     shader->mEnvironmentCelHasAlphaBlend = hasAlphaBlend;
+    shader->mEnvironmentCelBlendMode = blendMode;
     shader->mEnvironmentCelHasTranslucency = HasTranslucency;
     shader->mEnvironmentCelAlphaRef = alphaRef;
     shader->mEnvironmentCelAlphaCompare = alphaCompare;

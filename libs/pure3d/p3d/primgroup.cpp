@@ -55,6 +55,28 @@ void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
 extern bool IsSHAREnvironmentCelPassActive();
 extern bool IsCelShadingOutlinePass();
 extern void SetSHAREnvironmentCelMaterialEligible(bool eligible);
+
+// Experimental alpha-cutout outline exception, restricted to the four
+// foliage textures identified in the Level 3/6 diagnostics.
+static bool IsSHARExperimentalFoliageBlendCutoutTarget(const tShader* shader)
+{
+    if (shader == NULL ||
+        !shader->mEnvironmentCelHasAlphaTest ||
+        !shader->mEnvironmentCelHasAlphaBlend ||
+        shader->mEnvironmentCelBlendMode == PDDI_BLEND_NONE)
+        return false;
+
+    switch (shader->mEnvironmentCelBaseTextureUID)
+    {
+        case 0x2d6bcef01ba0c272ULL: // Large green/red oak leaves
+        case 0x0c85d79b35f85dbdULL: // Large evergreen leaves
+        case 0x34390eaf4e3bfa98ULL: // Palm fronds
+        case 0xb101faa4375fb8a2ULL: // Willow foliage
+            return true;
+        default:
+            return false;
+    }
+}
 #endif
 
 #define INDEXED_STREAM_COLOUR_WITH_OFFSET(  i, color, offset )  \
@@ -174,10 +196,15 @@ void tPrimGroupOptimised::Display()
         IsSHAREnvironmentFoliageMeshPassActive() &&
         mShader != NULL &&
         mShader->mEnvironmentCelFoliageCutoutEligible;
+    const bool foliageBlendedCutoutEligible =
+        IsCelShadingOutlinePass() &&
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        IsSHARExperimentalFoliageBlendCutoutTarget(mShader);
     const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
         (mShader == NULL ||
          (!mShader->mEnvironmentCelEligible &&
-          !foliageAlphaTestEligible && !foliageCutoutEligible));
+          !foliageAlphaTestEligible && !foliageCutoutEligible &&
+          !foliageBlendedCutoutEligible));
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
         mShader != NULL)
     {
@@ -194,7 +221,8 @@ void tPrimGroupOptimised::Display()
             mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
             !environmentMaterialIneligible);
         if (!mShader->mEnvironmentCelEligible &&
-            !mShader->mEnvironmentCelAlphaTestEligible)
+            !mShader->mEnvironmentCelAlphaTestEligible &&
+            !foliageBlendedCutoutEligible)
         {
             LogSHAREnvironmentFoliageRejectedMaterial(
                 mShader, mShader->GetName(),
@@ -214,6 +242,11 @@ void tPrimGroupOptimised::Display()
         return;
     if (environmentMaterialIneligible)
         SetSHAREnvironmentCelMaterialEligible(false);
+    const bool useFoliageBlendCutoutOverride = foliageBlendedCutoutEligible;
+    const int originalFoliageBlendMode =
+        mShader != NULL ? mShader->mEnvironmentCelBlendMode : PDDI_BLEND_NONE;
+    if (useFoliageBlendCutoutOverride)
+        mShader->SetInt(PDDI_SP_BLENDMODE, PDDI_BLEND_NONE);
 #endif
 
 #ifdef RAD_PS2
@@ -238,6 +271,8 @@ void tPrimGroupOptimised::Display()
     p3d::pddi->DrawPrimBuffer( shader, mBuffer );
 #endif
 #ifdef RAD_ANDROID
+    if (useFoliageBlendCutoutOverride)
+        mShader->SetInt(PDDI_SP_BLENDMODE, originalFoliageBlendMode);
     if (environmentMaterialIneligible)
         SetSHAREnvironmentCelMaterialEligible(true);
 #endif
@@ -350,10 +385,15 @@ void tPrimGroupStreamed::Display()
         IsSHAREnvironmentFoliageMeshPassActive() &&
         mShader != NULL &&
         mShader->mEnvironmentCelFoliageCutoutEligible;
+    const bool foliageBlendedCutoutEligible =
+        IsCelShadingOutlinePass() &&
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        IsSHARExperimentalFoliageBlendCutoutTarget(mShader);
     const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
         (mShader == NULL ||
          (!mShader->mEnvironmentCelEligible &&
-          !foliageAlphaTestEligible && !foliageCutoutEligible));
+          !foliageAlphaTestEligible && !foliageCutoutEligible &&
+          !foliageBlendedCutoutEligible));
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
         mShader != NULL)
     {
@@ -370,7 +410,8 @@ void tPrimGroupStreamed::Display()
             mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
             !environmentMaterialIneligible);
         if (!mShader->mEnvironmentCelEligible &&
-            !mShader->mEnvironmentCelAlphaTestEligible)
+            !mShader->mEnvironmentCelAlphaTestEligible &&
+            !foliageBlendedCutoutEligible)
         {
             LogSHAREnvironmentFoliageRejectedMaterial(
                 mShader, mShader->GetName(),
@@ -413,6 +454,14 @@ void tPrimGroupStreamed::Display()
     }
 #endif
 
+#ifdef RAD_ANDROID
+    const bool useFoliageBlendCutoutOverride = foliageBlendedCutoutEligible;
+    const int originalFoliageBlendMode =
+        mShader != NULL ? mShader->mEnvironmentCelBlendMode : PDDI_BLEND_NONE;
+    if (useFoliageBlendCutoutOverride)
+        mShader->SetInt(PDDI_SP_BLENDMODE, PDDI_BLEND_NONE);
+#endif
+
     pddiBaseShader* pShader = (pddiBaseShader *) mShader->GetShader( );
 
 #ifdef RAD_PS2
@@ -430,6 +479,10 @@ void tPrimGroupStreamed::Display()
 
     }
 
+#ifdef RAD_ANDROID
+    if (useFoliageBlendCutoutOverride)
+        mShader->SetInt(PDDI_SP_BLENDMODE, originalFoliageBlendMode);
+#endif
 
 #ifdef RAD_XBOX
     if(vertexProgram)
