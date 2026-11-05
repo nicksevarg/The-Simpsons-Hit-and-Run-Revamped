@@ -25,6 +25,8 @@
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
+bool IsSHAREnvironmentCelPassActive();
+bool IsCelShadingOutlinePass();
 bool IsSHARGagCatapultCelPassActive();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
