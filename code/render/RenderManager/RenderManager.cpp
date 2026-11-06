@@ -33,6 +33,10 @@
 #include <render/RenderManager/RenderLayer.h>
 #include <render/Culling/WorldScene.h>
 #include <render/RenderManager/RenderManager.h>
+
+#ifdef RAD_ANDROID
+void SetSHARMoodTint(float red, float green, float blue);
+#endif
 #include <render/RenderManager/WorldRenderLayer.h>
 #include <render/RenderManager/FrontEndRenderLayer.h>
 #include <render/IntersectManager/IntersectManager.h>
@@ -2031,6 +2035,9 @@ void RenderManager::SetLevelLayerLights( tLightGroup* SunGroup )
         mMood.mOriginals = 0;
     }
     mMood.mSunGroup = SunGroup;
+#ifdef RAD_ANDROID
+    SetSHARMoodTint(1.0f, 1.0f, 1.0f);
+#endif
     if ( SunGroup != NULL )
     {
         // Mood lighting is enabled, set the new parameters
@@ -2064,6 +2071,9 @@ void RenderManager::ClearLevelLayerLights()
     delete [] mMood.mOriginals;
     mMood.mOriginals = 0;
     mMood.mSunGroup = 0;
+#ifdef RAD_ANDROID
+    SetSHARMoodTint(1.0f, 1.0f, 1.0f);
+#endif
 }
 
 
@@ -2190,6 +2200,12 @@ void RenderManager::TransitionMoodLighting( unsigned int ElapsedTime )
     }
 
     tColour curMod = mMood.CalculateModulus();
+#ifdef RAD_ANDROID
+    SetSHARMoodTint(
+        static_cast<float>(curMod.Red()) / 255.0f,
+        static_cast<float>(curMod.Green()) / 255.0f,
+        static_cast<float>(curMod.Blue()) / 255.0f);
+#endif
 
     for( int i = 0; i < mMood.mSunGroup->GetNumLights(); ++i )
     {
@@ -2231,6 +2247,9 @@ void RenderManager::ResetMoodLighting( bool Immediate )
             tLight* l = mMood.mSunGroup->GetLight( i );
             l->SetColour( mMood.mOriginals[ i ] );
         }
+#ifdef RAD_ANDROID
+        SetSHARMoodTint(1.0f, 1.0f, 1.0f);
+#endif
     }
     else
     {

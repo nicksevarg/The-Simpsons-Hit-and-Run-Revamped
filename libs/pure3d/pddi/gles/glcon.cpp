@@ -89,6 +89,9 @@ static bool gSHARTrackedColorWriteMaskKnown = false;
 #ifdef RAD_ANDROID
 static float gSHARObjectBrightness = 1.0f;
 static float gSHARObjectSaturation = 1.0f;
+static float gSHARMoodTintRed = 1.0f;
+static float gSHARMoodTintGreen = 1.0f;
+static float gSHARMoodTintBlue = 1.0f;
 #endif
 
 void SetSHARTrackedColorWriteMask(
@@ -189,6 +192,22 @@ void SetSHARObjectDimming(float brightness, float saturation)
 
     gSHARObjectBrightness = brightness;
     gSHARObjectSaturation = saturation;
+    if (gCelShadingContext)
+        gCelShadingContext->ApplyCelShadingState();
+}
+
+void SetSHARMoodTint(float red, float green, float blue)
+{
+    if (red < 0.0f) red = 0.0f;
+    if (red > 1.0f) red = 1.0f;
+    if (green < 0.0f) green = 0.0f;
+    if (green > 1.0f) green = 1.0f;
+    if (blue < 0.0f) blue = 0.0f;
+    if (blue > 1.0f) blue = 1.0f;
+
+    gSHARMoodTintRed = red;
+    gSHARMoodTintGreen = green;
+    gSHARMoodTintBlue = blue;
     if (gCelShadingContext)
         gCelShadingContext->ApplyCelShadingState();
 }
@@ -1842,6 +1861,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform float toonOutlineWidth;\n"
         "uniform float nightObjectBrightness;\n"
         "uniform float nightObjectSaturation;\n"
+        "uniform vec3 toonMoodTint;\n"
         "varying float toonOutlineProjectionState;\n"
 #endif
 
@@ -1906,6 +1926,12 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    float luma = dot(colour, vec3(0.299, 0.587, 0.114));\n"
         "    return mix(vec3(luma), colour, clamp(nightObjectSaturation, 0.0, 1.0)) * clamp(nightObjectBrightness, 0.0, 1.0);\n"
         "}\n"
+        "vec3 applySHARMoodTint(vec3 colour) {\n"
+        "    if (toonEnabled != 0 && toonObjectEnabled != 0 && lit != 0 && toonOutlinePass == 0 && toonEnvironmentPass == 0) {\n"
+        "        return colour * clamp(toonMoodTint, vec3(0.0), vec3(1.0));\n"
+        "    }\n"
+        "    return colour;\n"
+        "}\n"
 #endif
         ;
 
@@ -1918,6 +1944,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    }\n"
 #ifdef RAD_ANDROID
         "    vec4 finalColour = cpri * vec4(toonLightingColor(), dcm.a);\n"
+        "    finalColour.rgb = applySHARMoodTint(finalColour.rgb);\n"
         "    finalColour.rgb = applySHARObjectDimming(finalColour.rgb);\n"
         "    gl_FragColor = finalColour;\n"
 #else
@@ -1937,6 +1964,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    }\n"
 #ifdef RAD_ANDROID
         "    vec4 finalColour = base * vec4(toonLightingColor(), dcm.a);\n"
+        "    finalColour.rgb = applySHARMoodTint(finalColour.rgb);\n"
         "    finalColour.rgb = applySHARObjectDimming(finalColour.rgb);\n"
         "    gl_FragColor = finalColour;\n"
 #else
@@ -1959,6 +1987,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec4 c = base * vec4(toonLightingColor(), dcm.a);\n"
         "    if (c.a < alpharef) discard;\n"
 #ifdef RAD_ANDROID
+        "    c.rgb = applySHARMoodTint(c.rgb);\n"
         "    c.rgb = applySHARObjectDimming(c.rgb);\n"
 #endif
         "    gl_FragColor = c;\n"
@@ -4486,7 +4515,8 @@ void pglContext::SetShaderProgram(pglProgram* program)
             currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
             gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHAREnvironmentOutlineDiagnosticMode);
+            gSHAREnvironmentOutlineDiagnosticMode,
+            gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
 #endif
         return;
     }
@@ -4503,7 +4533,8 @@ void pglContext::SetShaderProgram(pglProgram* program)
     currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
             gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHAREnvironmentOutlineDiagnosticMode);
+            gSHAREnvironmentOutlineDiagnosticMode,
+            gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
 #endif
     currentProgram->SetProjectionMatrix(&projection);
 
@@ -4524,7 +4555,8 @@ void pglContext::ApplyCelShadingState()
         currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
             gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHAREnvironmentOutlineDiagnosticMode);
+            gSHAREnvironmentOutlineDiagnosticMode,
+            gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
 }
 #endif
 

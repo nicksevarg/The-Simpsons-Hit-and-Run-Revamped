@@ -47,6 +47,8 @@
 void ApplySHARPostProcessingBeforeTouchHud();
 void ApplySHARFrontendMenuFineDetail();
 bool IsSHARFrontendMenuCelPassActive();
+bool IsSHARFrontendMenuHalloweenThemeSelected();
+void SetSHARObjectDimming(float brightness, float saturation);
 
 enum SHARFrontendPerfStage
 {
@@ -538,7 +540,12 @@ void FrontEndRenderLayer::Render()
                 const float frameDelta = static_cast<float>( g_scroobySimulationTime );
                 unsigned long long stageStartUs =
                     (unsigned long long)radTimeGetMicroseconds64();
+                const bool halloweenMenuTheme = IsSHARFrontendMenuHalloweenThemeSelected();
+                if (halloweenMenuTheme)
+                    SetSHARObjectDimming(0.67f, 0.58f);
                 mpScroobyApp->DrawBackground( frameDelta );
+                if (halloweenMenuTheme)
+                    SetSHARObjectDimming(1.0f, 1.0f);
                 SHARRecordFrontendStage(SHAR_FE_BACKGROUND, stageStartUs);
 
                 stageStartUs = (unsigned long long)radTimeGetMicroseconds64();
