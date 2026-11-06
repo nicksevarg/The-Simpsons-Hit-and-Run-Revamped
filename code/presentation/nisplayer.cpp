@@ -32,9 +32,9 @@ void SetSHARObjectDimming(float brightness, float saturation);
 #include <mission/gameplaymanager.h>
 #include <render/Enums/RenderEnums.h>
 
-// Match CharacterRenderable's established Level 3-7 brightness/saturation,
-// but only apply it to interior gag scene graphs in normal gameplay.
-static bool ShouldApplySHARInteriorGagDimming()
+// Match the character and vehicle profiles for gag scene graphs in normal gameplay.
+// The InteriorManager selects the indoor profile; outdoor gags use the open-world values.
+static bool ShouldApplySHARGagDimming()
 {
     GameFlow* gameFlow = GetGameFlow();
     GameplayManager* gameplay = GetGameplayManager();
@@ -42,7 +42,7 @@ static bool ShouldApplySHARInteriorGagDimming()
     if (gameFlow == NULL ||
         (gameFlow->GetCurrentContext() != CONTEXT_GAMEPLAY &&
          gameFlow->GetCurrentContext() != CONTEXT_PAUSE) ||
-        gameplay == NULL || interior == NULL || !interior->IsInside() ||
+        gameplay == NULL || interior == NULL ||
         gameplay->GetGameType() != GameplayManager::GT_NORMAL)
     {
         return false;
@@ -52,28 +52,31 @@ static bool ShouldApplySHARInteriorGagDimming()
     return level >= RenderEnums::L3 && level <= RenderEnums::L7;
 }
 
-static void SetSHARInteriorGagDimmingForCurrentLevel()
+static void SetSHARGagDimmingForCurrentLevel()
 {
     float brightness = 1.0f;
     float saturation = 1.0f;
     GameplayManager* gameplay = GetGameplayManager();
+    InteriorManager* interior = GetInteriorManager();
+    const bool inside = interior != NULL && interior->IsInside();
+
     if (gameplay != NULL)
     {
-        switch (gameplay->GetCurrentLevelIndex())
+        switch (gameplay->GetCurrentRawLevelIndex())
         {
             case RenderEnums::L3:
-                brightness = 0.90f;
+                brightness = 0.80f;
                 saturation = 0.85f;
                 break;
             case RenderEnums::L4:
             case RenderEnums::L5:
             case RenderEnums::L6:
-                brightness = 0.82f;
+                brightness = inside ? 0.70f : 0.60f;
                 saturation = 0.75f;
                 break;
             case RenderEnums::L7:
-                brightness = 0.78f;
-                saturation = 0.58f;
+                brightness = inside ? 0.70f : 0.50f;
+                saturation = inside ? 0.75f : 0.65f;
                 break;
             default:
                 break;
@@ -203,10 +206,10 @@ void NISPlayer::DoRender()
         // Interior gag scenes should use the same level-specific night tone as
         // regular characters and vehicles. The shared shader dimming also
         // covers static props/assets in this scene graph.
-        const bool applyInteriorGagDimming = ShouldApplySHARInteriorGagDimming();
+        const bool applyInteriorGagDimming = ShouldApplySHARGagDimming();
         if (applyInteriorGagDimming)
         {
-            SetSHARInteriorGagDimmingForCurrentLevel();
+            SetSHARGagDimmingForCurrentLevel();
         }
 
         // Skinned gag characters use their existing pass; only named static

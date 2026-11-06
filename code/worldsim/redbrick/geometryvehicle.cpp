@@ -33,6 +33,10 @@
 #include <p3d/effects/particlesystem.hpp>
 #include <pddi/pddi.hpp>
 #ifdef RAD_ANDROID
+#include <contexts/contextenum.h>
+#include <gameflow/gameflow.h>
+#include <interiors/interiormanager.h>
+#include <render/Enums/RenderEnums.h>
 void RegisterSHARMotionBlurSubjectBounds(int subjectType, float x, float y, float z, float halfWidth, float halfHeight, float speedKmh);
 bool IsCelShadingEnabled();
 bool IsCelShadingObjectEnabled();
@@ -67,9 +71,16 @@ static void SetSHARVehicleNightDimming()
     float brightness = 1.0f;
     float saturation = 1.0f;
     GameplayManager* gameplay = GetGameplayManager();
-    if (gameplay != NULL)
+    GameFlow* gameFlow = GetGameFlow();
+    InteriorManager* interior = GetInteriorManager();
+
+    if (gameplay != NULL && gameFlow != NULL && interior != NULL &&
+        (gameFlow->GetCurrentContext() == CONTEXT_GAMEPLAY ||
+         gameFlow->GetCurrentContext() == CONTEXT_PAUSE) &&
+        gameplay->GetGameType() == GameplayManager::GT_NORMAL)
     {
-        switch (gameplay->GetCurrentLevelIndex())
+        const bool inside = interior->IsInside();
+        switch (gameplay->GetCurrentRawLevelIndex())
         {
             case RenderEnums::L3:
                 brightness = 0.80f;
@@ -78,12 +89,12 @@ static void SetSHARVehicleNightDimming()
             case RenderEnums::L4:
             case RenderEnums::L5:
             case RenderEnums::L6:
-                brightness = 0.70f;
+                brightness = inside ? 0.70f : 0.60f;
                 saturation = 0.75f;
                 break;
             case RenderEnums::L7:
-                brightness = 0.67f;
-                saturation = 0.58f;
+                brightness = inside ? 0.70f : 0.50f;
+                saturation = inside ? 0.75f : 0.65f;
                 break;
             default:
                 break;
