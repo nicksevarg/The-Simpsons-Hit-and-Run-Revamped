@@ -38,6 +38,8 @@ static bool gSHAREnvironmentBillboardFoliagePassActive = false;
 static bool gSHAREnvironmentFoliageMeshPassActive = false;
 // Enabled only around draws using one of the verified flat leaf-card materials.
 static bool gSHAREnvironmentFoliageCardOutlineNormalModeActive = false;
+// Tracks the slope-scaled depth offset used only by the environment silhouette shell.
+static bool gSHAREnvironmentPolygonOffsetActive = false;
 // The viewport is supplied to the environment silhouette shader so its extrusion
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
@@ -1001,6 +1003,27 @@ void SetCelShadingObjectEnabled(bool enabled)
 void SetCelShadingOutlinePass(bool enabled)
 {
     gCelShadingOutlinePass = enabled;
+
+    // Screen-space extrusion moves environment shell vertices sideways while
+    // retaining their original depth. Use slope-scaled polygon offset so the
+    // shell stays behind the source surface on steep depth gradients.
+    // Keep this scoped to the environment outline draw, not its base-material
+    // redraw or character/vehicle silhouette passes.
+    const bool useEnvironmentPolygonOffset =
+        enabled &&
+        gSHAREnvironmentCelPassActive &&
+        gSHAREnvironmentCelMaterialEligible;
+    if (useEnvironmentPolygonOffset)
+    {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(3.0f, 1.0f);
+        gSHAREnvironmentPolygonOffsetActive = true;
+    }
+    else if (gSHAREnvironmentPolygonOffsetActive)
+    {
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        gSHAREnvironmentPolygonOffsetActive = false;
+    }
 
     if (enabled && gCelShadingEnabled && gCelShadingObjectEnabled)
     {
