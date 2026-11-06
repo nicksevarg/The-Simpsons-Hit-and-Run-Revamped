@@ -2640,6 +2640,7 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
         ptr += 4;
     }
 
+    indexCapacity = nIndex;
     indexCount = nIndex;
     if(indexCount) 
         indices = new unsigned short[indexCount];
@@ -2723,8 +2724,10 @@ void pglPrimBuffer::UnlockIndexBuffer(int count)
 
 void pglPrimBuffer::SetIndices(unsigned short* i, int count)
 {
-    PDDIASSERT(count <= (int)indexCount);
-    memcpy(indices, i, count * sizeof(unsigned short));
+    PDDIASSERT(count >= 0 && (unsigned)count <= indexCapacity);
+    if (count > 0)
+        memcpy(indices, i, count * sizeof(unsigned short));
+    indexCount = (unsigned)count;
 #ifdef RAD_ANDROID
     environmentNormalsAttempted = false;
     environmentNormalsAvailable = false;

@@ -210,7 +210,7 @@ public:
     tPrimGroupLoader(void);
     virtual ~tPrimGroupLoader();
 
-    virtual tPrimGroup*          Load(tChunkFile *file, tEntityStore *store, rmt::Matrix* bones, bool optimise, bool deform);
+    virtual tPrimGroup*          Load(tChunkFile *file, tEntityStore *store, rmt::Matrix* bones, bool optimise, bool deform, bool fixHomerRightArm = false);
 
     void SetVertexFormatMask(unsigned int m) { mVertexFormatMask = m; }
 
@@ -218,7 +218,7 @@ private:
     virtual tPrimGroup*          LoadStreamed(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones);
 
     #ifndef RAD_PS2
-	    virtual tPrimGroup*          LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones);
+	    virtual tPrimGroup*          LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones, bool fixHomerRightArm, int sourceIndexCount);
     #endif
 
     bool Load(tChunkFile *f, tEntityStore *store);

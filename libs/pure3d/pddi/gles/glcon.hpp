@@ -230,6 +230,7 @@ protected:
 
     unsigned short* indices;
     unsigned indexCount;
+    unsigned indexCapacity;
 
     bool valid;
 #ifdef RAD_ANDROID

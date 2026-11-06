@@ -20,6 +20,7 @@
 #endif
 
 #include <string.h>
+#include <vector>
 
 #ifdef RAD_ANDROID
 bool IsSHAREnvironmentFoliageMeshPassActive();
@@ -1338,7 +1339,7 @@ bool tPrimGroupLoader::ParseHeader(tChunkFile *f, tEntityStore *store)
 
 
 #ifndef RAD_PS2
-tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones)
+tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones, bool fixHomerRightArm, int sourceIndexCount)
 {
 	//don't create a primBuffer whose vertex contains weights and matrices indices 
 	//for PC, since PC skin is software blended, the weights and matrices indices
@@ -1371,7 +1372,8 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
 	bool primBufferInitialized = false;
     
     int nUVChannel = mVertexFormat & 0xf;
-    int count;    
+    int count;
+    std::vector<unsigned short> homerSourceIndices;    
 
     while (f->ChunksRemaining())
     {
@@ -1514,16 +1516,27 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
 
             case Pure3D::Mesh::INDEXLIST:
             {
-                P3DASSERT(primBufferInitialized);
+                PDDIASSERT(primBufferInitialized);
                 int count = f->GetLong();
-                P3DASSERT(count == mIndexCount);
-                unsigned short* tempIndexList = (unsigned short *)p3d::MallocTemp(sizeof(unsigned short) * count);
-                for (int a = 0; a < count; a++) 
+                PDDIASSERT(count == (fixHomerRightArm ? sourceIndexCount : mIndexCount));
+                if (fixHomerRightArm)
                 {
-                    tempIndexList[a] = (unsigned short)f->GetLong();
+                    homerSourceIndices.resize(count);
+                    for (int a = 0; a < count; a++)
+                    {
+                        homerSourceIndices[a] = (unsigned short)f->GetLong();
+                    }
                 }
-                primBuffer->SetIndices(tempIndexList, count);
-                p3d::FreeTemp(tempIndexList);
+                else
+                {
+                    unsigned short* tempIndexList = (unsigned short *)p3d::MallocTemp(sizeof(unsigned short) * count);
+                    for (int a = 0; a < count; a++)
+                    {
+                        tempIndexList[a] = (unsigned short)f->GetLong();
+                    }
+                    primBuffer->SetIndices(tempIndexList, count);
+                    p3d::FreeTemp(tempIndexList);
+                }
             }
             break;
 
@@ -1593,6 +1606,139 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
         }
 
         f->EndChunk();
+    }
+
+    if (fixHomerRightArm && primBuffer != NULL && skinPrimGroup != NULL &&
+        bones != NULL && skinPrimGroup->matrixPalette != NULL &&
+        static_cast<int>(homerSourceIndices.size()) == sourceIndexCount &&
+        sourceIndexCount >= 3)
+    {
+        // Expand the strip into a triangle list, allowing only Homer's affected
+        // right-arm faces to be reversed without changing adjacent strip faces.
+        std::vector<unsigned char> rightArmVertices(mVertexCount, 0);
+        for (int vertexIndex = 0; vertexIndex < mVertexCount; ++vertexIndex)
+        {
+            const tPrimGroupSkinnedPC::SkinVertex& vertex =
+                skinPrimGroup->mVertices[vertexIndex];
+            const float weights[4] =
+            {
+                vertex.weights[0],
+                vertex.weights[1],
+                vertex.weights[2],
+                1.0f - (vertex.weights[0] + vertex.weights[1] + vertex.weights[2])
+            };
+
+            bool hasActiveInfluence = false;
+            bool allInfluencesOnRightArm = true;
+            for (int influence = 0; influence < 4; ++influence)
+            {
+                if (weights[influence] <= 0.0001f)
+                    continue;
+
+                hasActiveInfluence = true;
+                const unsigned paletteIndex = vertex.indices[influence];
+                if (paletteIndex >= skinPrimGroup->nMatrices)
+                {
+                    allInfluencesOnRightArm = false;
+                    break;
+                }
+
+                Matrix* influenceMatrix = skinPrimGroup->matrixPalette[paletteIndex];
+                bool isRightArmBone = false;
+                if (influenceMatrix != NULL)
+                {
+                    // Match the verified shoulder-to-hand joints, rather than
+                    // palette-local indices stored in the vertex stream.
+                    for (int jointIndex = 26; jointIndex <= 32; ++jointIndex)
+                    {
+                        if (influenceMatrix == &bones[jointIndex])
+                        {
+                            isRightArmBone = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!isRightArmBone)
+                {
+                    allInfluencesOnRightArm = false;
+                    break;
+                }
+            }
+
+            rightArmVertices[vertexIndex] =
+                (hasActiveInfluence && allInfluencesOnRightArm) ? 1 : 0;
+        }
+
+        std::vector<unsigned short> correctedIndices;
+        correctedIndices.reserve(static_cast<size_t>(sourceIndexCount - 2) * 3);
+        for (int stripIndex = 2; stripIndex < sourceIndexCount; ++stripIndex)
+        {
+            unsigned short index0;
+            unsigned short index1;
+            unsigned short index2 = homerSourceIndices[stripIndex];
+
+            // Triangle-strip winding alternates with every source index.
+            if ((stripIndex & 1) == 0)
+            {
+                index0 = homerSourceIndices[stripIndex - 2];
+                index1 = homerSourceIndices[stripIndex - 1];
+            }
+            else
+            {
+                index0 = homerSourceIndices[stripIndex - 1];
+                index1 = homerSourceIndices[stripIndex - 2];
+            }
+
+            // Omit degenerate connector triangles, preserving the strip parity.
+            if (index0 == index1 || index1 == index2 || index2 == index0)
+                continue;
+            if (index0 >= mVertexCount || index1 >= mVertexCount || index2 >= mVertexCount)
+                continue;
+
+            if (rightArmVertices[index0] &&
+                rightArmVertices[index1] &&
+                rightArmVertices[index2])
+            {
+                const tPrimGroupSkinnedPC::SkinVertex& v0 = skinPrimGroup->mVertices[index0];
+                const tPrimGroupSkinnedPC::SkinVertex& v1 = skinPrimGroup->mVertices[index1];
+                const tPrimGroupSkinnedPC::SkinVertex& v2 = skinPrimGroup->mVertices[index2];
+
+                const float edge1X = v1.position.x - v0.position.x;
+                const float edge1Y = v1.position.y - v0.position.y;
+                const float edge1Z = v1.position.z - v0.position.z;
+                const float edge2X = v2.position.x - v0.position.x;
+                const float edge2Y = v2.position.y - v0.position.y;
+                const float edge2Z = v2.position.z - v0.position.z;
+
+                const float faceNormalX = edge1Y * edge2Z - edge1Z * edge2Y;
+                const float faceNormalY = edge1Z * edge2X - edge1X * edge2Z;
+                const float faceNormalZ = edge1X * edge2Y - edge1Y * edge2X;
+                const float averagedNormalX = v0.normal.x + v1.normal.x + v2.normal.x;
+                const float averagedNormalY = v0.normal.y + v1.normal.y + v2.normal.y;
+                const float averagedNormalZ = v0.normal.z + v1.normal.z + v2.normal.z;
+                const float normalAlignment =
+                    faceNormalX * averagedNormalX +
+                    faceNormalY * averagedNormalY +
+                    faceNormalZ * averagedNormalZ;
+
+                if (normalAlignment < 0.0f)
+                {
+                    const unsigned short swapIndex = index1;
+                    index1 = index2;
+                    index2 = swapIndex;
+                }
+            }
+
+            correctedIndices.push_back(index0);
+            correctedIndices.push_back(index1);
+            correctedIndices.push_back(index2);
+        }
+
+        PDDIASSERT(correctedIndices.size() <= static_cast<size_t>(mIndexCount));
+        primBuffer->SetIndices(
+            correctedIndices.empty() ? NULL : &correctedIndices[0],
+            static_cast<int>(correctedIndices.size()));
     }
 
     return primGroup;
@@ -1807,7 +1953,7 @@ tPrimGroup* tPrimGroupLoader::LoadStreamed(tChunkFile* f, tEntityStore* store, r
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Matrix* bones, bool optimise, bool deform)
+tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Matrix* bones, bool optimise, bool deform, bool fixHomerRightArm)
 {
     pddiExtHardwareSkinning* hwSkin = p3d::context->GetHardwareSkinning();
 
@@ -1815,19 +1961,33 @@ tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Mat
     {
         return NULL;
     }
+
+    const int sourceIndexCount = mIndexCount;
+    bool expandHomerRightArmStrip = false;
+#ifdef RAD_ANDROID
+    expandHomerRightArmStrip =
+        fixHomerRightArm && (mPrimType == PDDI_PRIM_TRISTRIP) && (sourceIndexCount >= 3);
+    if (expandHomerRightArmStrip)
+    {
+        // Allocate maximum triangle-list index storage; the GLES buffer records
+        // the smaller final draw count once SetIndices receives the expansion.
+        mPrimType = PDDI_PRIM_TRIANGLES;
+        mIndexCount = (sourceIndexCount - 2) * 3;
+    }
+#endif
 /*    
     if((bones && !hwSkin) || !optimise)
     {
         return LoadStreamed(f, store, bones);
     }
 */
-    if( bones && !hwSkin )
+    if( bones && (!hwSkin || expandHomerRightArmStrip) )
     {
         #ifdef RAD_PS2
             rAssert( false );
             return NULL;
         #else
-            return LoadPCSkin(f, store, bones);
+            return LoadPCSkin(f, store, bones, expandHomerRightArmStrip, sourceIndexCount);
         #endif
     }
 	else if( !optimise )

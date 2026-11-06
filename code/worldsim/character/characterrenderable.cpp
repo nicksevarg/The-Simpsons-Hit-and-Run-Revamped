@@ -31,17 +31,17 @@ static void SetSHARCharacterNightDimming()
         switch (gameplay->GetCurrentLevelIndex())
         {
             case RenderEnums::L3:
-                brightness = 0.90f;
+                brightness = 0.80f;
                 saturation = 0.85f;
                 break;
             case RenderEnums::L4:
             case RenderEnums::L5:
             case RenderEnums::L6:
-                brightness = 0.82f;
+                brightness = 0.70f;
                 saturation = 0.75f;
                 break;
             case RenderEnums::L7:
-                brightness = 0.78f;
+                brightness = 0.67f;
                 saturation = 0.58f;
                 break;
             default:

@@ -223,8 +223,18 @@ tEntity* tPolySkinLoader::LoadObject(tChunkFile* f, tEntityStore* store)
             case Pure3D::Mesh::PRIMGROUP:
             {
                 P3DASSERT(index < nPrimGroup);
-                tPrimGroupLoader pgLoader;                
-                skin->primGroup[index] = pgLoader.Load(f, store, skin->boneMatrix, optimise, true);
+                tPrimGroupLoader pgLoader;
+#ifdef RAD_ANDROID
+                // The default Homer's merged body skin has reversed winding on
+                // right-arm triangles in its first two body primitive groups.
+                // Correct those indices in memory; the source art files stay untouched.
+                const bool fixHomerRightArm =
+                    (strcmp(name, "homer_h_merged") == 0) && (index < 2);
+#else
+                const bool fixHomerRightArm = false;
+#endif
+                skin->primGroup[index] = pgLoader.Load(
+                    f, store, skin->boneMatrix, optimise, true, fixHomerRightArm);
                 skin->primGroup[index]->AddRef();
                 index++;
             }
