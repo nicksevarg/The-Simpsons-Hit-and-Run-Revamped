@@ -1043,13 +1043,15 @@ void SetCelShadingOutlinePass(bool enabled)
                 gCelShadingContext->SetGLCullEnabled(true);
                 gCelShadingContext->SetGLCullFace(GL_BACK);
             }
-            // Eligible environment shells write depth independently of the
-            // diagnostic mode so later opaque objects occlude their outlines.
-            // Character/vehicle outlines retain their original no-depth-write behaviour.
-            const bool writeEnvironmentOutlineDepth =
-                gSHAREnvironmentCelPassActive &&
-                gSHAREnvironmentCelMaterialEligible;
-            gCelShadingContext->SetGLDepthMask(writeEnvironmentOutlineDepth ? GL_TRUE : GL_FALSE);
+            // Eligible environment shells and CharacterRenderable silhouette
+            // shells write depth so later-rendered objects behind them cannot
+            // overwrite their outlines. The character flag is active only around
+            // CharacterRenderable's model draw; vehicle outlines remain unchanged.
+            const bool writeCelOutlineDepth =
+                (gSHAREnvironmentCelPassActive &&
+                 gSHAREnvironmentCelMaterialEligible) ||
+                gSHARCharacterMaskModelPass;
+            gCelShadingContext->SetGLDepthMask(writeCelOutlineDepth ? GL_TRUE : GL_FALSE);
         }
         else
         {
@@ -1064,10 +1066,13 @@ void SetCelShadingOutlinePass(bool enabled)
                 glEnable(GL_CULL_FACE);
                 glCullFace(GL_BACK);
             }
-            const bool writeEnvironmentOutlineDepth =
-                gSHAREnvironmentCelPassActive &&
-                gSHAREnvironmentCelMaterialEligible;
-            glDepthMask(writeEnvironmentOutlineDepth ? GL_TRUE : GL_FALSE);
+            // Match the context-backed path: environment and character
+            // silhouette shells write depth, but vehicle shells do not.
+            const bool writeCelOutlineDepth =
+                (gSHAREnvironmentCelPassActive &&
+                 gSHAREnvironmentCelMaterialEligible) ||
+                gSHARCharacterMaskModelPass;
+            glDepthMask(writeCelOutlineDepth ? GL_TRUE : GL_FALSE);
         }
     }
     else
