@@ -1516,9 +1516,9 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
 
             case Pure3D::Mesh::INDEXLIST:
             {
-                PDDIASSERT(primBufferInitialized);
+                P3DASSERT(primBufferInitialized);
                 int count = f->GetLong();
-                PDDIASSERT(count == (fixHomerRightArm ? sourceIndexCount : mIndexCount));
+                P3DASSERT(count == (fixHomerRightArm ? sourceIndexCount : mIndexCount));
                 if (fixHomerRightArm)
                 {
                     homerSourceIndices.resize(count);
@@ -1735,7 +1735,7 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
             correctedIndices.push_back(index2);
         }
 
-        PDDIASSERT(correctedIndices.size() <= static_cast<size_t>(mIndexCount));
+        P3DASSERT(correctedIndices.size() <= static_cast<size_t>(mIndexCount));
         primBuffer->SetIndices(
             correctedIndices.empty() ? NULL : &correctedIndices[0],
             static_cast<int>(correctedIndices.size()));
