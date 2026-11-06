@@ -16,7 +16,6 @@
 #include <p3d/utility.hpp>
 #include <string.h>
 #ifdef RAD_ANDROID
-#include <SDL.h>
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 bool IsSHAREnvironmentRoadEntityName(const char* name);
 #endif
@@ -112,12 +111,6 @@ tEntity* InstStatPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     const bool sourceFoliageTag = IsSHAREnvironmentFoliageEntityName(objName, NULL);
     const bool sourceRoadTag = IsSHAREnvironmentRoadEntityName(objName);
     tUID sourceAssetUID = tName::MakeUID(objName);
-    if (sourceFoliageTag || sourceRoadTag)
-    {
-        SDL_Log("[SHAR Outline Mode 10] asset-tag route=InstStatPhys source=%s sourceAssetUID=%016llx foliage=%d road=%d",
-            objName, static_cast<unsigned long long>(sourceAssetUID),
-            sourceFoliageTag ? 1 : 0, sourceRoadTag ? 1 : 0);
-    }
 #endif
 
     int version = f->GetLong();

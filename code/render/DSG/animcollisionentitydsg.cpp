@@ -330,8 +330,6 @@ void AnimCollisionEntityDSG::Display()
 #else
     mpDrawable->Display();
 #endif
-#ifdef RAD_ANDROID
-    #endif
     DSG_END_PROFILE(profileName)
 }
 /*

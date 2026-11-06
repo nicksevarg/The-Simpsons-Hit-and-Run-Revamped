@@ -184,8 +184,6 @@ void AnimEntityDSG::Display()
 #else
         mpDrawable->Display();
 #endif
-#ifdef RAD_ANDROID
-        #endif
         p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
 	}
 

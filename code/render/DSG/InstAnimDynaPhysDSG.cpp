@@ -171,15 +171,13 @@ void InstAnimDynaPhysDSG::Display()
 
 	p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mMatrix);
 #ifdef RAD_ANDROID
-        if (!mTranslucent)
+    if (!mTranslucent)
         DisplaySHAREnvironmentCelDrawable(mpCompDraw);
     else
         mpCompDraw->Display();
 #else
 	mpCompDraw->Display();
 #endif
-#ifdef RAD_ANDROID
-    #endif
 	p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
 
     if(CastsShadow())

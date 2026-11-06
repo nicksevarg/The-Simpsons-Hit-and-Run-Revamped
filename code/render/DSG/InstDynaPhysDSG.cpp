@@ -159,8 +159,6 @@ void InstDynaPhysDSG::Display()
         BillboardQuadManager::Enable();
     }
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mMatrix);
-#ifdef RAD_ANDROID
-    #endif
     if( mHideOnHitIndex > -1 )
     {
         tCompositeDrawable* compDraw = static_cast<tCompositeDrawable*>( mpGeo );
@@ -174,8 +172,6 @@ void InstDynaPhysDSG::Display()
 #else
     mpGeo->Display();
 #endif
-#ifdef RAD_ANDROID
-    #endif
     p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
     if(CastsShadow())
     {
