@@ -2927,7 +2927,6 @@ bool pglPrimBuffer::GenerateEnvironmentOutlineNormals()
             outlineData[i * 3] = radialNormals[i * 3];
             outlineData[i * 3 + 1] = radialNormals[i * 3 + 1];
             outlineData[i * 3 + 2] = radialNormals[i * 3 + 2];
-            contributedComponents.insert(vertexComponents[i]);
             hasRadialOutlineVertices = true;
         }
         if (hasRadialOutlineVertices)
