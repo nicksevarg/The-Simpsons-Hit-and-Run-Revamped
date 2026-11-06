@@ -1596,7 +1596,6 @@ tBillboardQuadGroup::Display()
         const bool foliageOutlineBatch =
             mSHAREnvironmentFoliageBillboard &&
             IsCelShadingEnabled();
-        static std::unordered_set<const tBillboardQuadGroup*> reportedOutlineBatches;
                 if (foliageOutlineBatch)
         {
             SetSHAREnvironmentCelPassActive(true);
