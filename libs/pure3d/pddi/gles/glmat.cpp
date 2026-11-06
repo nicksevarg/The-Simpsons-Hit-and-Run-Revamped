@@ -10,14 +10,9 @@
 
 #include <vector>
 #include <microprofile.h>
-#include <SDL.h>
 #ifdef RAD_ANDROID
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsSHAREnvironmentFoliageMeshPassActive();
 bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
-void LogSHAREnvironmentMode10RuntimeMaterial(bool alphaTest, float alphaRef,
-                                              int alphaCompare, int blendMode,
-                                              bool twoSided, bool hasTexture);
 #endif
 
 pddiShadeColourTable pglMat::colourTable[] = 
@@ -278,18 +273,7 @@ void pglMat::SetDevPass(unsigned pass)
 #ifdef RAD_ANDROID
     // Record one runtime alpha/blend signature per source asset instead of
     // retaining thousands of transient material pointers.
-    if (IsSHAREnvironmentOutlineDiagnosticMode10() &&
-        IsCelShadingEnabled() && IsCelShadingObjectEnabled() && IsCelShadingOutlinePass() &&
-        (IsSHAREnvironmentFoliageMeshPassActive() ||
-         IsSHAREnvironmentBillboardFoliagePassActive()))
-    {
-        LogSHAREnvironmentMode10RuntimeMaterial(
-            texEnv[i].alphaTest, texEnv[i].alphaRef,
-            static_cast<int>(texEnv[i].alphaCompareMode),
-            static_cast<int>(texEnv[i].alphaBlendMode),
-            texEnv[i].twoSided, texEnv[i].texture != NULL);
-    }
-#endif
+    #endif
 
     context->SetTextureEnvironment(&texEnv[i]);
 

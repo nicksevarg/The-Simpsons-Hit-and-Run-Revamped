@@ -67,12 +67,6 @@
 #endif
 
 #ifdef RAD_ANDROID
-static bool gSHARFrontendMenuHalloweenThemeSelected = false;
-
-bool IsSHARFrontendMenuHalloweenThemeSelected()
-{
-    return gSHARFrontendMenuHalloweenThemeSelected;
-}
 #endif
 
 //===========================================================================
@@ -215,9 +209,6 @@ int FeResourceManager::AddResource( const char* filename, FeEntity* parent, Reso
                     const bool isHalloween =
                         ( today.m_Month == 10 && today.m_Day >= 24 ) ||
                         ( today.m_Month == 11 && today.m_Day == 1 );
-#ifdef RAD_ANDROID
-                    gSHARFrontendMenuHalloweenThemeSelected = isHalloween;
-#endif
                     const bool isThanksgiving =
                         ( today.m_Month == 11 && thanksgivingDay != 0 &&
                           today.m_Day >= thanksgivingDay - 2 &&

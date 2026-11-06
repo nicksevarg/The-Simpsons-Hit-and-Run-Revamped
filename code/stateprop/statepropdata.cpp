@@ -4,8 +4,6 @@
 #include <constants/chunkids.hpp>
 #include <p3d/chunkfile.hpp>
 #ifdef RAD_ANDROID
-#include <SDL.h>
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
 #endif
 
 #include "stateprop/statepropdata.hpp"
@@ -142,15 +140,7 @@ tEntity* CStatePropDataLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         statePropData->m_ObjectFactory->AddRef();
     }
 #ifdef RAD_ANDROID
-    if (IsSHAREnvironmentOutlineDiagnosticMode10())
-    {
-        SDL_Log("[SHAR Outline Mode 10] stateprop-source statePropName=%s factoryName=%s dataUID=%016llx factoryUID=%016llx factoryResolved=%d",
-            statePropName, factoryName,
-            static_cast<unsigned long long>(statePropData->GetUID()),
-            statePropData->m_ObjectFactory ? static_cast<unsigned long long>(statePropData->m_ObjectFactory->GetUID()) : 0ULL,
-            statePropData->m_ObjectFactory ? 1 : 0);
-    }
-#endif
+    #endif
     
     //get the num states
     statePropData->m_NumStates = f->GetLong();

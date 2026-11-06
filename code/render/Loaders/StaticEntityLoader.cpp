@@ -30,7 +30,6 @@
 #include <render/Loaders/AllWrappers.h>
 #include <string.h>
 #ifdef RAD_ANDROID
-#include <SDL.h>
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
 bool IsSHAREnvironmentRoadEntityName(const char* name);
 
@@ -138,30 +137,8 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                 pStaticEntityDSG->SetSHAREnvironmentRoadCandidate(roadTag);
                 pStaticEntityDSG->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
 
-                if (houseLeafMaterialTag)
-                {
-                    const char* sourceFile = f->GetFilename();
-                    char levelLabel[3] = "??";
-                    if (sourceFile != NULL &&
-                        (sourceFile[0] == 'l' || sourceFile[0] == 'L') &&
-                        sourceFile[1] >= '0' && sourceFile[1] <= '9')
-                    {
-                        levelLabel[0] = 'L';
-                        levelLabel[1] = sourceFile[1];
-                    }
-
-                    SDL_Log("[SHAR House Plant Tag] level=%s sourceFile=%s entity=%s shaderUID=%016llx",
-                        levelLabel, sourceFile != NULL ? sourceFile : "<unknown>",
-                        name, matchedHouseLeafShaderUID);
-                }
-
-                if (foliageTag || roadTag)
-                {
-                    SDL_Log("[SHAR Outline Mode 10] asset-tag route=StaticEntity source=%s sourceAssetUID=%016llx foliage=%d road=%d",
-                        name, static_cast<unsigned long long>(sourceAssetUID),
-                        foliageTag ? 1 : 0, roadTag ? 1 : 0);
-                }
-#endif
+                
+                #endif
             }
 
             default:

@@ -21,65 +21,15 @@
 #include <p3d/texture.hpp>
 
 #ifdef RAD_ANDROID
-#include <SDL.h>
-#include <ctype.h>
-#include <string>
-#include <unordered_set>
 
 bool IsCelShadingEnabled();
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
-void SetSHAREnvironmentCelDiagnosticEntityNames(const char* ownerName, const char* drawableName);
-void SetSHAREnvironmentCelDiagnosticEntityUIDs(unsigned long long ownerUID,
-                                                unsigned long long sourceAssetUID,
-                                                bool foliageCandidate,
-                                                bool roadCandidate);
 
-void LogSHAREnvironmentMode10EntityOnce(const void* entityIdentity,
-                                        const char* ownerName,
-                                        const char* drawableName,
-                                        bool isGeometry,
-                                        bool translucent,
-                                        bool foliageCandidate,
-                                        bool roadCandidate,
-                                        unsigned long long ownerUID,
-                                        unsigned long long sourceAssetUID)
-{
-    static std::unordered_set<const void*> reportedEntities;
-    if (entityIdentity == NULL || reportedEntities.size() >= 20000)
-        return;
-    if (!reportedEntities.insert(entityIdentity).second)
-        return;
 
-    SDL_Log("[SHAR Outline Mode 10] entity=%p owner=%s drawable=%s ownerUID=%016llx sourceAssetUID=%016llx type=%s translucent=%d foliageCandidate=%d roadCandidate=%d",
-            entityIdentity,
-            ownerName ? ownerName : "<unnamed>",
-            drawableName ? drawableName : "<unnamed-drawable>",
-            ownerUID, sourceAssetUID,
-            isGeometry ? "geometry" : "billboard",
-            translucent ? 1 : 0,
-            foliageCandidate ? 1 : 0,
-            roadCandidate ? 1 : 0);
-}
-
-void LogSHAREnvironmentMode10DSGClassOnce(const void* entityIdentity,
-                                          const char* className,
-                                          const char* ownerName,
-                                          unsigned long long ownerUID,
-                                          unsigned long long sourceAssetUID)
-{
-    static std::unordered_set<const void*> reportedClasses;
-    if (entityIdentity == NULL || reportedClasses.size() >= 20000 ||
-        !reportedClasses.insert(entityIdentity).second)
-        return;
-    SDL_Log("[SHAR Outline Mode 10] dsg-display entity=%p class=%s owner=%s ownerUID=%016llx sourceAssetUID=%016llx",
-            entityIdentity, className ? className : "<unknown>",
-            ownerName ? ownerName : "<unnamed>", ownerUID, sourceAssetUID);
-}
 
 static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable,
                                                 bool foliageBillboard = false,
@@ -335,32 +285,11 @@ void StaticEntityDSG::Display()
         if (mpDrawstuff != NULL)
         {
             const bool isGeometry = (mIsGeo & GEO) != 0;
-            const char* ownerName = GetName();
-            const char* drawableName = mpDrawstuff->GetName();
             const bool foliageName = mSHAREnvironmentFoliageBillboard;
             const bool foliageBillboard =
                 !isGeometry && !mTranslucent && foliageName;
             const bool foliageMesh =
                 isGeometry && IsSHAREnvironmentFoliageMesh();
-            const bool roadCandidate =
-                isGeometry && IsSHAREnvironmentRoadCandidate();
-
-            const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
-            if (mode10Diagnostics)
-            {
-                const unsigned long long ownerUID = static_cast<unsigned long long>(GetUID());
-                const unsigned long long sourceAssetUID =
-                    static_cast<unsigned long long>(GetSHAREnvironmentSourceAssetUID());
-                LogSHAREnvironmentMode10EntityOnce(this, ownerName, drawableName,
-                    isGeometry, mTranslucent, foliageMesh || foliageName, roadCandidate,
-                    ownerUID, sourceAssetUID);
-                LogSHAREnvironmentMode10DSGClassOnce(this, "StaticEntityDSG",
-                    ownerName, ownerUID, sourceAssetUID);
-                SetSHAREnvironmentCelDiagnosticEntityNames(ownerName, drawableName);
-                SetSHAREnvironmentCelDiagnosticEntityUIDs(
-                    ownerUID, sourceAssetUID, foliageMesh || foliageName, roadCandidate);
-            }
-
             if (isGeometry)
                 DisplaySHAREnvironmentCelDrawable(mpDrawstuff, false, foliageMesh);
             else if (foliageBillboard)
@@ -368,12 +297,7 @@ void StaticEntityDSG::Display()
             else
                 mpDrawstuff->Display();
 
-            if (mode10Diagnostics)
-            {
-                SetSHAREnvironmentCelDiagnosticEntityNames(NULL, NULL);
-                SetSHAREnvironmentCelDiagnosticEntityUIDs(0, 0, false, false);
-            }
-        }
+                    }
 #else
         mpDrawstuff->Display();
 #endif

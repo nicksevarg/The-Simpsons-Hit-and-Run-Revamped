@@ -97,7 +97,7 @@ public class StorageActivity extends Activity {
         televisionLayout = isTelevisionDevice();
         setRequestedOrientation(televisionLayout
                 ? ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                : ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                : ActivityInfo.SCREEN_ORIENTATION_SENSOR);
 
         String saved = SimpsonsActivity.getSavedGameDataPath(this);
         if (saved != null) {

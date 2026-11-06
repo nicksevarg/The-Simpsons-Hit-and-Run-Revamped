@@ -30,10 +30,8 @@
 #include <memory/srrmemory.h>
 
 #ifdef RAD_ANDROID
-#include <SDL.h>
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
-void RegisterSHARMode10FoliageUID(unsigned long long uid);
+void RegisterSHAREnvironmentFoliageUID(unsigned long long uid);
 #endif
 
 #include <atc/atcmanager.h>
@@ -164,19 +162,7 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
     InstDynaPhysDSG* pCurDynaPhysDSG = static_cast<InstDynaPhysDSG*>(GetAllWrappers()->GetGlobalEntity(tName::MakeUID(objName)));
 #ifdef RAD_ANDROID
-    const bool mode10Diagnostics = IsSHAREnvironmentOutlineDiagnosticMode10();
-    const unsigned long long sourceAssetUID =
-        static_cast<unsigned long long>(tName::MakeUID(objName));
-    bool mode10DynaResultLogged = false;
-    if (mode10Diagnostics)
-    {
-        SDL_Log("[SHAR Outline Mode 10] dyna-source-load asset=%s sourceAssetUID=%016llx HasAlpha=%d existingShared=%d existingCelEligible=%d existingFoliageMeshEligible=%d",
-            objName, sourceAssetUID, HasAlpha,
-            pCurDynaPhysDSG != NULL ? 1 : 0,
-            pCurDynaPhysDSG != NULL ? (pCurDynaPhysDSG->IsSHAREnvironmentCelEligible() ? 1 : 0) : -1,
-            pCurDynaPhysDSG != NULL ? (pCurDynaPhysDSG->IsSHAREnvironmentFoliageMeshEligible() ? 1 : 0) : -1);
-    }
-#endif
+    #endif
 
     //new InstDynaPhysDSG;
 
@@ -213,11 +199,6 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                     rmt::Matrix matrix;
                     f->GetData(&matrix,16,tFile::DWORD);
 #ifdef RAD_ANDROID
-                    const bool hadSharedTemplate = pCurDynaPhysDSG != NULL;
-                    const int sharedCelEligibleBefore = hadSharedTemplate ?
-                        (pCurDynaPhysDSG->IsSHAREnvironmentCelEligible() ? 1 : 0) : -1;
-                    const int sharedFoliageEligibleBefore = hadSharedTemplate ?
-                        (pCurDynaPhysDSG->IsSHAREnvironmentFoliageMeshEligible() ? 1 : 0) : -1;
                     tDrawable* foliageSourceDrawable = pCurDynaPhysDSG ?
                         pCurDynaPhysDSG->pGeo() : pDrawable;
                     const char* foliageDrawableName = foliageSourceDrawable ?
@@ -228,20 +209,9 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         IsSHAREnvironmentFoliageEntityName(objName, foliageDrawableName);
                     if (pCurDynaPhysDSG != NULL)
                         pCurDynaPhysDSG->SetSHAREnvironmentFoliageMeshEligible(foliageSourceAsset);
-                    if (mode10Diagnostics && !mode10DynaResultLogged)
+                                        if (foliageSourceAsset && foliageSourceDrawable != NULL)
                     {
-                        SDL_Log("[SHAR Outline Mode 10] dyna-source-match asset=%s sourceAssetUID=%016llx instance=%s instanceUID=%016llx drawable=%s drawableUID=%016llx path=%s HasAlpha=%d foliageNameMatch=%d sharedCelEligibleBefore=%d sharedFoliageMeshEligibleBefore=%d",
-                            objName, sourceAssetUID, name,
-                            static_cast<unsigned long long>(tName::MakeUID(name)),
-                            foliageDrawableName ? foliageDrawableName : "<null>",
-                            foliageDrawableUID,
-                            hadSharedTemplate ? "reuse-global-template" : "create-template",
-                            HasAlpha, foliageSourceAsset ? 1 : 0,
-                            sharedCelEligibleBefore, sharedFoliageEligibleBefore);
-                    }
-                    if (foliageSourceAsset && foliageSourceDrawable != NULL)
-                    {
-                        RegisterSHARMode10FoliageUID(foliageDrawableUID);
+                        RegisterSHAREnvironmentFoliageUID(foliageDrawableUID);
                     }
 #endif
 
@@ -257,15 +227,7 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         const bool celEligible = (HasAlpha == 0) || foliageSourceAsset;
                         pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(celEligible);
                         pCurDynaPhysDSG->SetSHAREnvironmentFoliageMeshEligible(foliageSourceAsset);
-                        if (mode10Diagnostics && !mode10DynaResultLogged)
-                        {
-                            SDL_Log("[SHAR Outline Mode 10] dyna-loader-result path=new-template asset=%s sourceAssetUID=%016llx instance=%s celEligible=%d foliageMeshEligible=%d",
-                                objName, sourceAssetUID, name,
-                                pCurDynaPhysDSG->IsSHAREnvironmentCelEligible() ? 1 : 0,
-                                pCurDynaPhysDSG->IsSHAREnvironmentFoliageMeshEligible() ? 1 : 0);
-                            mode10DynaResultLogged = true;
-                        }
-#else
+                        #else
                         pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(HasAlpha == 0);
 #endif
                         pSimState = sim::SimState::CreateSimState(pCollObj,pPhysObj);
@@ -282,20 +244,7 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                     else
                     {
                         InstDynaPhysDSG* clone = pCurDynaPhysDSG->Clone(name, matrix);
-                        if (mode10Diagnostics && !mode10DynaResultLogged)
-                        {
-                            SDL_Log("[SHAR Outline Mode 10] dyna-loader-result path=reused-global-template asset=%s sourceAssetUID=%016llx instance=%s sharedCelEligibleBefore=%d sharedCelEligibleAfter=%d sharedFoliageMeshEligibleBefore=%d sharedFoliageMeshEligibleAfter=%d cloneCelEligible=%d cloneFoliageMeshEligible=%d foliageNameMatch=%d",
-                                objName, sourceAssetUID, name,
-                                sharedCelEligibleBefore,
-                                pCurDynaPhysDSG->IsSHAREnvironmentCelEligible() ? 1 : 0,
-                                sharedFoliageEligibleBefore,
-                                pCurDynaPhysDSG->IsSHAREnvironmentFoliageMeshEligible() ? 1 : 0,
-                                clone->IsSHAREnvironmentCelEligible() ? 1 : 0,
-                                clone->IsSHAREnvironmentFoliageMeshEligible() ? 1 : 0,
-                                foliageSourceAsset ? 1 : 0);
-                            mode10DynaResultLogged = true;
-                        }
-                        mpListenerCB->OnChunkLoaded(clone, mUserData, _id);
+                                                mpListenerCB->OnChunkLoaded(clone, mUserData, _id);
                     }
                     f->EndChunk();
                 }
@@ -428,19 +377,9 @@ tEntity* DynaPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         const bool celEligible = (HasAlpha == 0) || foliageSourceAsset;
         pCurDynaPhysDSG->SetSHAREnvironmentCelEligible(celEligible);
         pCurDynaPhysDSG->SetSHAREnvironmentFoliageMeshEligible(foliageSourceAsset);
-        if (mode10Diagnostics)
+                if (foliageSourceAsset && pDrawable != NULL)
         {
-            SDL_Log("[SHAR Outline Mode 10] dyna-global-result asset=%s sourceAssetUID=%016llx drawable=%s drawableUID=%016llx HasAlpha=%d foliageNameMatch=%d celEligible=%d foliageMeshEligible=%d",
-                objName, sourceAssetUID,
-                foliageDrawableName ? foliageDrawableName : "<null>",
-                pDrawable ? static_cast<unsigned long long>(pDrawable->GetUID()) : 0,
-                HasAlpha, foliageSourceAsset ? 1 : 0,
-                pCurDynaPhysDSG->IsSHAREnvironmentCelEligible() ? 1 : 0,
-                pCurDynaPhysDSG->IsSHAREnvironmentFoliageMeshEligible() ? 1 : 0);
-        }
-        if (foliageSourceAsset && pDrawable != NULL)
-        {
-            RegisterSHARMode10FoliageUID(
+            RegisterSHAREnvironmentFoliageUID(
                 static_cast<unsigned long long>(pDrawable->GetUID()));
         }
 #else

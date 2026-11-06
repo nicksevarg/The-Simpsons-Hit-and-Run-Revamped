@@ -24,32 +24,7 @@
 
 #ifdef RAD_ANDROID
 bool IsSHAREnvironmentFoliageMeshPassActive();
-bool IsSHAREnvironmentOutlineDiagnosticMode10();
 bool IsCelShadingOutlinePass();
-void LogSHAREnvironmentFoliageMaterialDiagnostic(const void* materialIdentity,
-                                                 const char* shaderName,
-                                                 bool environmentEligible,
-                                                 bool alphaTestOnlyEligible,
-                                                 bool translucent,
-                                                 bool outlineWillDraw);
-void LogSHAREnvironmentFoliageRejectedMaterial(const void* materialIdentity,
-                                                const char* shaderName,
-                                                unsigned long long materialUID,
-                                                bool hasAlphaTest,
-                                                bool hasAlphaBlend,
-                                                bool hasTranslucency,
-                                                float alphaRef,
-                                                int alphaCompare,
-                                                bool twoSided,
-                                                unsigned long long textureUID,
-                                                bool foliageCutoutEligible,
-                                                bool outlineWillDraw);
-void LogSHAREnvironmentMode10MaterialState(const void* materialIdentity,
-                                           const char* shaderName,
-                                           bool environmentEligible,
-                                           bool alphaTestOnlyEligible,
-                                           bool translucent,
-                                           bool outlineWillDraw);
 #endif
 
 #ifdef RAD_ANDROID
@@ -242,36 +217,13 @@ void tPrimGroupOptimised::Display()
           !foliageBlendedCutoutEligible));
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
         mShader != NULL)
-    {
-        LogSHAREnvironmentMode10MaterialState(
-            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
-            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
-            !environmentMaterialIneligible);
-    }
+    {    }
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
         mShader != NULL)
-    {
-        LogSHAREnvironmentFoliageMaterialDiagnostic(
-            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
-            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
-            !environmentMaterialIneligible);
-        if (!mShader->mEnvironmentCelEligible &&
+    {        if (!mShader->mEnvironmentCelEligible &&
             !mShader->mEnvironmentCelAlphaTestEligible &&
             !foliageBlendedCutoutEligible)
-        {
-            LogSHAREnvironmentFoliageRejectedMaterial(
-                mShader, mShader->GetName(),
-                static_cast<unsigned long long>(mShader->GetUID()),
-                mShader->mEnvironmentCelHasAlphaTest,
-                mShader->mEnvironmentCelHasAlphaBlend,
-                mShader->mEnvironmentCelHasTranslucency,
-                mShader->mEnvironmentCelAlphaRef,
-                mShader->mEnvironmentCelAlphaCompare,
-                mShader->mEnvironmentCelTwoSided,
-                mShader->mEnvironmentCelBaseTextureUID,
-                mShader->mEnvironmentCelFoliageCutoutEligible,
-                !environmentMaterialIneligible);
-        }
+        {        }
     }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
@@ -442,36 +394,13 @@ void tPrimGroupStreamed::Display()
           !foliageBlendedCutoutEligible));
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
         mShader != NULL)
-    {
-        LogSHAREnvironmentMode10MaterialState(
-            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
-            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
-            !environmentMaterialIneligible);
-    }
+    {    }
     if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
         mShader != NULL)
-    {
-        LogSHAREnvironmentFoliageMaterialDiagnostic(
-            mShader, mShader->GetName(), mShader->mEnvironmentCelEligible,
-            mShader->mEnvironmentCelAlphaTestEligible, mShader->mTranslucent,
-            !environmentMaterialIneligible);
-        if (!mShader->mEnvironmentCelEligible &&
+    {        if (!mShader->mEnvironmentCelEligible &&
             !mShader->mEnvironmentCelAlphaTestEligible &&
             !foliageBlendedCutoutEligible)
-        {
-            LogSHAREnvironmentFoliageRejectedMaterial(
-                mShader, mShader->GetName(),
-                static_cast<unsigned long long>(mShader->GetUID()),
-                mShader->mEnvironmentCelHasAlphaTest,
-                mShader->mEnvironmentCelHasAlphaBlend,
-                mShader->mEnvironmentCelHasTranslucency,
-                mShader->mEnvironmentCelAlphaRef,
-                mShader->mEnvironmentCelAlphaCompare,
-                mShader->mEnvironmentCelTwoSided,
-                mShader->mEnvironmentCelBaseTextureUID,
-                mShader->mEnvironmentCelFoliageCutoutEligible,
-                !environmentMaterialIneligible);
-        }
+        {        }
     }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
