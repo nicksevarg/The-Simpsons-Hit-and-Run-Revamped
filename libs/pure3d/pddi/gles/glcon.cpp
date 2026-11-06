@@ -1849,9 +1849,10 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "float product(vec3 x, vec3 y) { return max(dot(x,y), 0.0); }\n"
         "float power(float x, float y) { return y != 0.0 ? pow(x,y) : 1.0; }\n"
 
-        // One flat toon tone for enabled characters and vehicles. This removes
-        // the two-band light/shadow jump and keeps the source texture colours intact.
-        "const float toonFlatLight = 0.78;\n"
+        // Keep cel shading's base intensity neutral so enabling it does not
+        // dim the world. Intentional per-level character/gag night dimming remains
+        // separate in nightObjectBrightness and nightObjectSaturation.
+        "const float toonFlatLight = 1.0;\n"
 #ifdef RAD_ANDROID
         "const float toonRimStrength = 0.20;\n"
 #endif
