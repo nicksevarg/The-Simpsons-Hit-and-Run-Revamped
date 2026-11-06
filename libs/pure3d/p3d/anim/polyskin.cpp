@@ -23,6 +23,7 @@
 bool IsCelShadingEnabled();
 bool IsSHARGagCharacterCelPassActive();
 bool IsSHARFrontendMenuCelPassActive();
+bool IsSHAREnvironmentCelPassActive();
 void SetSHARCharacterMaskModelPass(bool enabled);
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
@@ -73,8 +74,11 @@ void tPolySkin::Display(tPose* p)
     // NIS/gag characters and skinned models in the main-menu camera set bypass
     // CharacterRenderable::DisplayModel(), so explicitly give those meshes the
     // same silhouette + normal pass. Ordinary gameplay remains unchanged.
+    const bool frontendCelPassAlreadyActive =
+        IsSHARFrontendMenuCelPassActive() && IsSHAREnvironmentCelPassActive();
     if ((IsSHARGagCharacterCelPassActive() ||
-         IsSHARFrontendMenuCelPassActive()) && IsCelShadingEnabled())
+         (IsSHARFrontendMenuCelPassActive() && !frontendCelPassAlreadyActive)) &&
+        IsCelShadingEnabled())
     {
         SetSHARCharacterMaskModelPass(true);
         SetCelShadingObjectEnabled(true);
@@ -225,11 +229,12 @@ tEntity* tPolySkinLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                 P3DASSERT(index < nPrimGroup);
                 tPrimGroupLoader pgLoader;
 #ifdef RAD_ANDROID
-                // The default Homer's merged body skin has reversed winding on
-                // right-arm triangles in its first two body primitive groups.
-                // Correct those indices in memory; the source art files stay untouched.
+                // Correct the known right-arm winding issues in memory only.
+                // The frontend arm is separately gated by its exact mesh signature
+                // in tPrimGroupLoader, leaving gag Homer and unrelated skins untouched.
                 const bool fixHomerRightArm =
-                    (strcmp(name, "homer_h_merged") == 0) && (index < 2);
+                    ((strcmp(name, "homer_h_merged") == 0) && (index < 2)) ||
+                    (strcmp(name, "hom_high_arm_RShape") == 0);
 #else
                 const bool fixHomerRightArm = false;
 #endif

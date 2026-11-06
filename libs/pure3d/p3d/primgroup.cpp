@@ -1609,9 +1609,33 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
     }
 
     if (fixHomerRightArm && primBuffer != NULL && skinPrimGroup != NULL &&
+        static_cast<int>(homerSourceIndices.size()) == sourceIndexCount &&
+        mPrimType == PDDI_PRIM_TRIANGLES && mVertexCount == 99 &&
+        sourceIndexCount == 522 && mIndexCount == sourceIndexCount)
+    {
+        // The default, Halloween, and Thanksgiving frontend Homers share this
+        // verified 99-vertex / 174-triangle right-arm mesh. Its triangle winding
+        // opposes every stored normal, so reverse the three indices per face.
+        std::vector<unsigned short> correctedIndices;
+        correctedIndices.reserve(static_cast<size_t>(sourceIndexCount));
+        for (int triangle = 0; triangle + 2 < sourceIndexCount; triangle += 3)
+        {
+            correctedIndices.push_back(homerSourceIndices[triangle]);
+            correctedIndices.push_back(homerSourceIndices[triangle + 2]);
+            correctedIndices.push_back(homerSourceIndices[triangle + 1]);
+        }
+
+        P3DASSERT(correctedIndices.size() == static_cast<size_t>(mIndexCount));
+        primBuffer->SetIndices(&correctedIndices[0],
+                               static_cast<int>(correctedIndices.size()));
+    }
+
+    if (fixHomerRightArm && primBuffer != NULL && skinPrimGroup != NULL &&
         bones != NULL && skinPrimGroup->matrixPalette != NULL &&
         static_cast<int>(homerSourceIndices.size()) == sourceIndexCount &&
-        sourceIndexCount >= 3)
+        sourceIndexCount >= 3 &&
+        !(mPrimType == PDDI_PRIM_TRIANGLES && mVertexCount == 99 &&
+          sourceIndexCount == 522 && mIndexCount == sourceIndexCount))
     {
         // Expand the strip into a triangle list, allowing only Homer's affected
         // right-arm faces to be reversed without changing adjacent strip faces.
@@ -1964,9 +1988,13 @@ tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Mat
 
     const int sourceIndexCount = mIndexCount;
     bool expandHomerRightArmStrip = false;
+    bool fixHomerRightArmTriangleList = false;
 #ifdef RAD_ANDROID
     expandHomerRightArmStrip =
         fixHomerRightArm && (mPrimType == PDDI_PRIM_TRISTRIP) && (sourceIndexCount >= 3);
+    fixHomerRightArmTriangleList =
+        fixHomerRightArm && (mPrimType == PDDI_PRIM_TRIANGLES) &&
+        (mVertexCount == 99) && (sourceIndexCount == 522);
     if (expandHomerRightArmStrip)
     {
         // Allocate maximum triangle-list index storage; the GLES buffer records
@@ -1981,13 +2009,16 @@ tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Mat
         return LoadStreamed(f, store, bones);
     }
 */
-    if( bones && (!hwSkin || expandHomerRightArmStrip) )
+    if( bones && (!hwSkin || expandHomerRightArmStrip || fixHomerRightArmTriangleList) )
     {
         #ifdef RAD_PS2
             rAssert( false );
             return NULL;
         #else
-            return LoadPCSkin(f, store, bones, expandHomerRightArmStrip, sourceIndexCount);
+            return LoadPCSkin(
+                f, store, bones,
+                expandHomerRightArmStrip || fixHomerRightArmTriangleList,
+                sourceIndexCount);
         #endif
     }
 	else if( !optimise )

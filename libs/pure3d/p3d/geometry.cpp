@@ -18,6 +18,7 @@
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
 bool IsSHARFrontendMenuCelPassActive();
+bool IsSHAREnvironmentCelPassActive();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 #endif
@@ -101,6 +102,18 @@ void tGeometry::Display()
     // on the existing single-pass path.
     if (IsSHARFrontendMenuCelPassActive() && IsCelShadingEnabled())
     {
+        // A drawable/display-list wrapper may already be managing the menu's
+        // outline and colour passes. Draw once in that wrapper's current pass.
+        if (IsSHAREnvironmentCelPassActive())
+        {
+            for (unsigned i = 0; i < primGroup.Size(); i++)
+            {
+                if (primGroup[i])
+                    primGroup[i]->Display();
+            }
+            return;
+        }
+
         SetCelShadingObjectEnabled(true);
         SetCelShadingOutlinePass(true);
         for (unsigned i = 0; i < primGroup.Size(); i++)

@@ -34,34 +34,40 @@ static rmt::Matrix identity(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
 static rmt::Matrix tmp;
 
 #ifdef RAD_ANDROID
-static bool IsSHARFrontendLivingRoomPlantDrawable(tDrawable* drawable)
+static bool IsSHARFrontendMenuDrawable(tDrawable* drawable)
 {
     if (drawable == NULL || !IsSHARFrontendMenuCelPassActive())
         return false;
 
     const char* name = drawable->GetName();
-    static const char plantPrefix[] = "FE_plantShape";
-    const unsigned int prefixLength = sizeof(plantPrefix) - 1;
-
-    if (name == NULL || strncmp(name, plantPrefix, prefixLength) != 0)
+    if (name == NULL)
         return false;
 
-    const char* suffix = name + prefixLength;
-    if (*suffix == '\0')
-        return false;
-
-    // Only match the numbered living-room plant meshes (FE_plantShape1...N).
-    while (*suffix != '\0')
-    {
-        if (*suffix < '0' || *suffix > '9')
-            return false;
-        ++suffix;
-    }
-
-    return true;
+    // All seasonal camsets share the FE_ namespace; the Christmas version
+    // additionally uses three unprefixed tree drawables.
+    return strncmp(name, "FE_", 3) == 0 ||
+           strcmp(name, "tree1Shape") == 0 ||
+           strcmp(name, "tree2Shape") == 0 ||
+           strcmp(name, "tree3Shape") == 0;
 }
 
-static void DisplaySHARFrontendLivingRoomPlant(tDrawable* drawable)
+static bool IsSHARFrontendMenuFoliageDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return false;
+
+    const char* name = drawable->GetName();
+    if (name == NULL)
+        return false;
+
+    static const char plantPrefix[] = "FE_plantShape";
+    return strncmp(name, plantPrefix, sizeof(plantPrefix) - 1) == 0 ||
+           strcmp(name, "tree1Shape") == 0 ||
+           strcmp(name, "tree2Shape") == 0 ||
+           strcmp(name, "tree3Shape") == 0;
+}
+
+static void DisplaySHARFrontendMenuDrawable(tDrawable* drawable)
 {
     if (drawable == NULL)
         return;
@@ -72,8 +78,9 @@ static void DisplaySHARFrontendLivingRoomPlant(tDrawable* drawable)
         return;
     }
 
+    const bool foliageDrawable = IsSHARFrontendMenuFoliageDrawable(drawable);
     SetSHAREnvironmentCelPassActive(true);
-    SetSHAREnvironmentFoliageMeshPassActive(true);
+    SetSHAREnvironmentFoliageMeshPassActive(foliageDrawable);
     SetCelShadingObjectEnabled(true);
 
     SetCelShadingOutlinePass(true);
@@ -684,8 +691,8 @@ void Drawable::Display(const rmt::Matrix&, DisplayList& list)
         else
         {
 #ifdef RAD_ANDROID
-            if (IsSHARFrontendLivingRoomPlantDrawable(draw))
-                DisplaySHARFrontendLivingRoomPlant(draw);
+            if (IsSHARFrontendMenuDrawable(draw))
+                DisplaySHARFrontendMenuDrawable(draw);
             else
 #endif
                 draw->Display();
