@@ -1508,7 +1508,8 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform int toonObjectEnabled;\n"
         "uniform int toonRimEnabled;\n"
         "uniform int toonOutlinePass;\n"
-        "uniform int toonEnvironmentPass;\n"        "uniform int toonFrontendMenuLighting;\n"
+        "uniform int toonEnvironmentPass;\n"
+        "uniform int toonFrontendMenuLighting;\n"
 
         "uniform float toonOutlineWidth;\n"
         "uniform float nightObjectBrightness;\n"
