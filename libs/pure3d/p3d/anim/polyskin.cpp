@@ -27,6 +27,9 @@ bool IsSHAREnvironmentCelPassActive();
 void SetSHARCharacterMaskModelPass(bool enabled);
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
+void BeginSHARSkinnedPair();
+void SetSHARSkinnedReusePass(bool enabled);
+void EndSHARSkinnedPair();
 #endif
 
 #include <string.h>
@@ -80,15 +83,18 @@ void tPolySkin::Display(tPose* p)
          (IsSHARFrontendMenuCelPassActive() && !frontendCelPassAlreadyActive)) &&
         IsCelShadingEnabled())
     {
+        BeginSHARSkinnedPair();
         SetSHARCharacterMaskModelPass(true);
         SetCelShadingObjectEnabled(true);
 
         SetCelShadingOutlinePass(true);
         DisplaySkinGeometry(p);
 
+        SetSHARSkinnedReusePass(true);
         SetCelShadingOutlinePass(false);
         DisplaySkinGeometry(p);
 
+        EndSHARSkinnedPair();
         SetCelShadingObjectEnabled(false);
         SetSHARCharacterMaskModelPass(false);
         return;
@@ -118,7 +124,6 @@ void tPolySkin::DisplaySkinGeometry(tPose* p)
 #else
         boneMatrix[i].MultAligned(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
 #endif
-        boneMatrix[i].Mult(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
     }
 
     boneMatrix[skeleton->GetNumJoint()].Identity();

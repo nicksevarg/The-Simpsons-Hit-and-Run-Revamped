@@ -199,6 +199,9 @@ protected:
 	
     friend class tPrimGroupLoader;	
     SkinVertex* mVertices;
+#ifdef RAD_ANDROID
+    bool mSHARSkinnedResultReady;
+#endif
 };
 #endif
 //-------------------------------------------------------------------

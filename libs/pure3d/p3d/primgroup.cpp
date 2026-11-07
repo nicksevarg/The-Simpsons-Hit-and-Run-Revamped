@@ -108,6 +108,13 @@ static bool IsSHARExperimentalFoliageCardOutlineTarget(const tShader* shader)
                     stream->UV( uv[ indices[ i ] ].u + offset[ indices[ i ] ].u, uv[ indices[ i ] ].v + offset[ indices[ i ] ].v, uvIdx );
 
 using namespace RadicalMathLibrary;
+#ifdef RAD_ANDROID
+static bool gSHARSkinnedPairActive = false;
+static bool gSHARSkinnedReusePass = false;
+void BeginSHARSkinnedPair() { gSHARSkinnedPairActive = true; gSHARSkinnedReusePass = false; }
+void SetSHARSkinnedReusePass(bool enabled) { gSHARSkinnedReusePass = enabled; }
+void EndSHARSkinnedPair() { gSHARSkinnedPairActive = false; gSHARSkinnedReusePass = false; }
+#endif
 
 #ifdef RAD_XBOX
 bool IsVertexShader( tShader *shader )
@@ -654,6 +661,9 @@ bool tPrimGroupSkinnedStreamed::SetVertices(unsigned start, unsigned count, rmt:
 tPrimGroupSkinnedPC::tPrimGroupSkinnedPC(int nVertex, unsigned format, int nIndex, bool allocate)  :
     tPrimGroupSkinnedOptimised(nVertex), mVertices( NULL )
 {
+#ifdef RAD_ANDROID
+    mSHARSkinnedResultReady = false;
+#endif
     if (mVertexCount > 0)
     {
         mVertices = new SkinVertex[mVertexCount];
@@ -686,6 +696,14 @@ bool tPrimGroupSkinnedPC::SetVertices(unsigned start, unsigned count, rmt::Vecto
 
 void tPrimGroupSkinnedPC::Display(void)
 {
+#ifdef RAD_ANDROID
+    if (gSHARSkinnedPairActive && gSHARSkinnedReusePass && mSHARSkinnedResultReady)
+    {
+        mSHARSkinnedResultReady = false;
+        p3d::pddi->DrawPrimBuffer(mShader->GetShader(), mBuffer);
+        return;
+    }
+#endif
 	pddiPrimBufferStream *stream;
 	
     int count = mVertexCount;
@@ -790,6 +808,9 @@ void tPrimGroupSkinnedPC::Display(void)
 		}
 
 	}
+	#ifdef RAD_ANDROID
+    if (gSHARSkinnedPairActive && !gSHARSkinnedReusePass) mSHARSkinnedResultReady = true;
+#endif
 	//buffer rendering
 	p3d::pddi->DrawPrimBuffer(mShader->GetShader(), mBuffer);
 
