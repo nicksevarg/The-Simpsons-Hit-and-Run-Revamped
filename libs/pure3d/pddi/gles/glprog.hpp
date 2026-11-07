@@ -39,6 +39,7 @@ public:
     void SetCelShadingEnabled(bool enabled);
 #ifdef RAD_ANDROID
     void SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, float viewportWidth, float viewportHeight, bool frontendMenuLighting, float moodTintRed, float moodTintGreen, float moodTintBlue);
+    void InvalidateSHARProgramCaches() { mSHARModelViewValid = false; mSHARCelStateValid = false; mSHAROutlineWidthValid = false; }
 #endif
 
     inline bool SupportsLighting() { return acs >= 0; }
@@ -91,7 +92,6 @@ protected:
     bool mSHARCelStateValid;
     float mSHARCelState[13];
     bool mSHAROutlineWidthValid;
-    void InvalidateSHARProgramCaches() { mSHARModelViewValid = false; mSHARCelStateValid = false; mSHAROutlineWidthValid = false; }
     #endif
 #endif
 };
