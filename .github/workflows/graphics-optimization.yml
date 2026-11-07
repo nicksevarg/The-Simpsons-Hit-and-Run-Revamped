@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - graphics-performance-optimization
   workflow_dispatch:
 
 permissions:
@@ -11,6 +12,7 @@ permissions:
 
 jobs:
   build:
+    if: github.ref_name == 'graphics-performance-optimization'
     name: Graphics Optimization APK
     runs-on: ubuntu-latest
     timeout-minutes: 35
