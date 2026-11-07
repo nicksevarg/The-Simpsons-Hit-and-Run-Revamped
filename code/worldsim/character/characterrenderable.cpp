@@ -20,6 +20,9 @@ bool IsCelShadingObjectEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
 bool IsCelShadingOutlinePass();
 void SetCelShadingOutlinePass(bool enabled);
+void BeginSHARSkinnedPair();
+void SetSHARSkinnedReusePass(bool enabled);
+void EndSHARSkinnedPair();
 #endif
 #include <camera/supercammanager.h>
 #include <contexts/bootupcontext.h>
@@ -632,10 +635,13 @@ void CharacterRenderable::DisplayModel( tPose* pose )
         {
             // Render the expanded-mesh black silhouette first, then the normal character.
             SetCelShadingObjectEnabled(true);
+            BeginSHARSkinnedPair();
             SetCelShadingOutlinePass(true);
             draw->Display( pose );
+            SetSHARSkinnedReusePass(true);
             SetCelShadingOutlinePass(false);
             draw->Display( pose );
+            EndSHARSkinnedPair();
             SetCelShadingObjectEnabled(false);
         }
         else
