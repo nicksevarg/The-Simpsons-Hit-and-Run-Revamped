@@ -1813,8 +1813,6 @@ static bool EnsureCelPostProcessResources(int width, int height)
 
         glGenTextures(1, &gCelPostTexture);
 
-        glGenTextures(1, &gCelPostTexture);
-
         static const GLfloat quad[] =
         {
             -1.0f, -1.0f,
@@ -2298,7 +2296,7 @@ static void ApplyCelPostProcess(int width, int height)
         height = gSHARFrameHeight;
     }
 
-    const bool motionBlurRequested = IsMotionBlurEnabled();    const bool motionBlurRequested = IsMotionBlurEnabled();
+    const bool motionBlurRequested = IsMotionBlurEnabled();
     const bool bloomRequested = IsSHARBloomEnabled();
     const bool cloudShadowsUserEnabled = IsSHARCloudShadowsEnabled();
     // Limit cloud shadows to the supported exterior gameplay levels.
@@ -2485,7 +2483,7 @@ static void ApplyCelPostProcess(int width, int height)
     if (postTexelLocation >= 0)
         glUniform2f(postTexelLocation, 1.0f / (float)width, 1.0f / (float)height);
 
-    glActiveTexture(GL_TEXTURE1);    glActiveTexture(GL_TEXTURE1);
+    glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, bloomReady ? gCelBloomTexture : 0);
     if (postBloomLocation >= 0)
         glUniform1i(postBloomLocation, 1);
