@@ -1,4 +1,5 @@
 name: Graphics Optimization
+# Builds the isolated cel-shading performance branch.
 
 on:
   push:
