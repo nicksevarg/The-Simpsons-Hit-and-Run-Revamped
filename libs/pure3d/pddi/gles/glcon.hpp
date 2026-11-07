@@ -22,6 +22,9 @@ class pglExtGamma;
 #ifdef RAD_ANDROID
 void InvalidateSHARRenderStateCache();
 bool IsCelShadingEnabled();
+bool IsSHARCelShadingMin();
+int GetSHARCelShadingMode();
+void SetSHARCelShadingMode(int mode);
 void SetCelShadingEnabled(bool enabled);
 bool IsCRTFilterEnabled();
 void SetCRTFilterEnabled(bool enabled);

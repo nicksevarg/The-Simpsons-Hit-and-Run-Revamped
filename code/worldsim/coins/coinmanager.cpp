@@ -40,6 +40,32 @@
 #include <mission/gameplaymanager.h>
 #include <mission/charactersheet/charactersheetmanager.h>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+#endif
+
+static void DisplayCoinDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL) return;
+#ifdef RAD_ANDROID
+    if (IsCelShadingEnabled())
+    {
+        // This affects only the 3D coin mesh. The GUI coin-counter artwork
+        // is a separate Scrooby element and does not pass through this helper.
+        SetCelShadingObjectEnabled(true);
+        SetCelShadingOutlinePass(true);
+        drawable->Display();
+        SetCelShadingOutlinePass(false);
+        drawable->Display();
+        SetCelShadingObjectEnabled(false);
+        return;
+    }
+#endif
+    drawable->Display();
+}
+
 /* Watcher stuff */
 #ifndef RAD_RELEASE
 #include <raddebug.hpp>
@@ -990,7 +1016,7 @@ void CoinManager::Render( void )
                                     c.Position.x, c.Position.y, c.Position.z, 1.0f );
 
                 p3d::pddi->PushMultMatrix( PDDI_MATRIX_MODELVIEW, &transform );
-                m_pCoinDrawable->Display();
+                DisplayCoinDrawable(m_pCoinDrawable);
                 p3d::pddi->PopMatrix( PDDI_MATRIX_MODELVIEW );
             }
         }
@@ -1084,7 +1110,7 @@ void CoinManager::HUDRender( void )
             }
             --mHUDSparkle;
             p3d::pddi->PushMultMatrix( PDDI_MATRIX_MODELVIEW, &transform );
-            m_pCoinDrawable->Display();
+            DisplayCoinDrawable(m_pCoinDrawable);
             p3d::pddi->PopMatrix( PDDI_MATRIX_MODELVIEW );
         }
 	    p3d::stack->LoadIdentity();
@@ -1113,7 +1139,7 @@ void CoinManager::HUDRender( void )
                 ++dbg_CoinsDrawn;
     #endif
                 p3d::pddi->PushMultMatrix( PDDI_MATRIX_MODELVIEW, &transform );
-                m_pCoinDrawable->Display();
+                DisplayCoinDrawable(m_pCoinDrawable);
                 p3d::pddi->PopMatrix( PDDI_MATRIX_MODELVIEW );
             }
         }

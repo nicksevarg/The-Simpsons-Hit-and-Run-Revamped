@@ -210,6 +210,8 @@ static bool gCelShadingConfigurationLoaded = false;
 // FULL preserves the existing screen-space contours; LITE keeps object toon
 // lighting and expanded-mesh silhouettes but skips the additional contour passes.
 static bool gSHARCelShadingFull = false;
+// MIN limits expanded-mesh silhouettes to characters, vehicles and gag assets.
+static bool gSHARCelShadingMin = false;
 static bool gSHARCelShadingQualityConfigurationLoaded = false;
 // Fresh installs default to OFF. Existing explicit sharpening preferences are preserved.
 // Legacy files containing only a non-zero sharpen= value are treated as enabled.
@@ -397,12 +399,13 @@ static void WriteSHARCelShadingQualityConfiguration()
         return;
 
     fprintf(file, "# Simpsons Hit & Run - Revamped! [Cel Shading Quality]\n");
-    fprintf(file, "# LITE keeps object toon shading and silhouette outlines.\n");
-    fprintf(file, "# FULL enables the additional screen-space and living-room detail passes.\n");
-    fprintf(file, "# Change with lite/full values.\n");
+    fprintf(file, "# MIN outlines characters, vehicles and gag-scene assets only.\n");
+    fprintf(file, "# MID keeps the previous LITE object toon shading and silhouette coverage.\n");
+    fprintf(file, "# MAX keeps the previous FULL screen-space and living-room detail passes.\n");
+    fprintf(file, "# Change with min/mid/max values.\n");
     fprintf(file, "# You can also use the in-game Graphics menu.\n");
     fprintf(file, "\n");
-    fprintf(file, "cel_shading_quality=%s\n", gSHARCelShadingFull ? "full" : "lite");
+    fprintf(file, "cel_shading_quality=%s\n", gSHARCelShadingMin ? "min" : (gSHARCelShadingFull ? "max" : "mid"));
     fclose(file);
 }
 
@@ -436,14 +439,26 @@ static void LoadSHARCelShadingQualityConfiguration()
         while (*value == ' ' || *value == '\t')
             ++value;
 
-        if (strncmp(value, "lite", 4) == 0 ||
-            strncmp(value, "LITE", 4) == 0 || *value == '0')
+        // Legacy LITE maps to MID and legacy FULL maps to MAX.
+        if (strncmp(value, "min", 3) == 0 || strncmp(value, "MIN", 3) == 0)
         {
+            gSHARCelShadingMin = true;
             gSHARCelShadingFull = false;
         }
-        else if (strncmp(value, "full", 4) == 0 ||
+        else if (strncmp(value, "mid", 3) == 0 ||
+                 strncmp(value, "MID", 3) == 0 ||
+                 strncmp(value, "lite", 4) == 0 ||
+                 strncmp(value, "LITE", 4) == 0 || *value == '0')
+        {
+            gSHARCelShadingMin = false;
+            gSHARCelShadingFull = false;
+        }
+        else if (strncmp(value, "max", 3) == 0 ||
+                 strncmp(value, "MAX", 3) == 0 ||
+                 strncmp(value, "full", 4) == 0 ||
                  strncmp(value, "FULL", 4) == 0 || *value == '1')
         {
+            gSHARCelShadingMin = false;
             gSHARCelShadingFull = true;
         }
         break;
@@ -951,25 +966,59 @@ bool IsSHARCelShadingFull()
     return gSHARCelShadingFull;
 }
 
-void SetSHARCelShadingFull(bool full)
+bool IsSHARCelShadingMin()
+{
+    LoadSHARCelShadingQualityConfiguration();
+    return gSHARCelShadingMin;
+}
+
+int GetSHARCelShadingMode()
 {
     LoadSHARCelShadingQualityConfiguration();
     LoadCelShadingConfiguration();
+    if (!gCelShadingEnabled) return 0;
+    if (gSHARCelShadingMin) return 1;
+    return gSHARCelShadingFull ? 3 : 2;
+}
 
-    if (gSHARCelShadingFull != full)
+void SetSHARCelShadingMode(int mode)
+{
+    LoadSHARCelShadingQualityConfiguration();
+    LoadCelShadingConfiguration();
+    if (mode < 0 || mode > 3) mode = 2;
+
+    // OFF preserves the last MIN/MID/MAX preference in the quality file.
+    if (mode == 0)
     {
-        gSHARCelShadingFull = full;
-        WriteSHARCelShadingQualityConfiguration();
+        if (gCelShadingEnabled)
+        {
+            gCelShadingEnabled = false;
+            WriteCelShadingConfiguration();
+        }
+        ApplyCelShadingState();
+        return;
     }
 
-    // Choosing LITE or FULL enables the base object-level toon lighting and
-    // silhouette-outline rendering. OFF is handled by SetCelShadingEnabled().
+    const bool min = (mode == 1);
+    const bool full = (mode == 3);
+    const bool qualityChanged =
+        gSHARCelShadingMin != min || gSHARCelShadingFull != full;
+    gSHARCelShadingMin = min;
+    gSHARCelShadingFull = full;
+    if (qualityChanged) WriteSHARCelShadingQualityConfiguration();
+
     if (!gCelShadingEnabled)
     {
         gCelShadingEnabled = true;
         WriteCelShadingConfiguration();
-        ApplyCelShadingState();
     }
+    ApplyCelShadingState();
+}
+
+// Compatibility wrapper: false selects MID, true selects MAX.
+void SetSHARCelShadingFull(bool full)
+{
+    SetSHARCelShadingMode(full ? 3 : 2);
 }
 
 bool IsSHARRimLightingEnabled()

@@ -21,6 +21,8 @@
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
+bool IsSHARCelShadingMin();
+bool IsSHARGagCharacterCelPassActive();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
@@ -194,7 +196,8 @@ void BreakableObjectDSG::Display()
     const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
     tDrawable* sourceDrawable = mpObject ? mpObject->GetBaseObject() : NULL;
     
-    if (IsCelShadingEnabled())
+    if (IsCelShadingEnabled() &&
+        (!IsSHARCelShadingMin() || IsSHARGagCharacterCelPassActive()))
     {
         SetSHAREnvironmentCelPassActive(true);
         SetCelShadingObjectEnabled(true);

@@ -25,6 +25,8 @@
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
+bool IsSHARCelShadingMin();
+bool IsSHARGagCharacterCelPassActive();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
@@ -34,7 +36,8 @@ static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageM
 {
     if (drawable == NULL)
         return;
-    if (!IsCelShadingEnabled())
+    if (!IsCelShadingEnabled() ||
+        (IsSHARCelShadingMin() && !IsSHARGagCharacterCelPassActive()))
     {
         drawable->Display();
         return;
