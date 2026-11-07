@@ -85,6 +85,13 @@ protected:
     GLint nightObjectSaturation;
     GLint toonFrontendMenuLighting;
     GLint toonMoodTint;
+    bool mSHARModelViewValid;
+    pddiMatrix mSHARModelView;
+    pddiMatrix mSHARNormalMatrix;
+    bool mSHARCelStateValid;
+    float mSHARCelState[13];
+    bool mSHAROutlineWidthValid;
+    void InvalidateSHARProgramCaches() { mSHARModelViewValid = false; mSHARCelStateValid = false; mSHAROutlineWidthValid = false; }
     #endif
 #endif
 };

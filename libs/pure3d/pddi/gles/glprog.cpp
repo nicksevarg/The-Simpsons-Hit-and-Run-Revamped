@@ -8,6 +8,7 @@
 
 #include <string>
 #include <vector>
+#include <string.h>
 #include <SDL.h>
 
 #ifdef RAD_CG
@@ -137,6 +138,10 @@ pglProgram::pglProgram()
     nightObjectSaturation = -1;
     toonFrontendMenuLighting = -1;
     toonMoodTint = -1;
+    mSHARModelViewValid = false;
+    mSHARCelStateValid = false;
+    mSHAROutlineWidthValid = false;
+    for (int i = 0; i < 13; ++i) mSHARCelState[i] = 0.0f;
     #endif
 
 #endif
@@ -184,6 +189,15 @@ void pglProgram::SetModelViewMatrix(const pddiMatrix* matrix)
     }
     checkForCgError();
 #else
+#ifdef RAD_ANDROID
+    if (mSHARModelViewValid && memcmp(mSHARModelView.m, matrix->m, sizeof(matrix->m)) == 0) return;
+    mSHARModelView = *matrix;
+    mSHARNormalMatrix.Invert(*matrix);
+    mSHARNormalMatrix.Transpose();
+    mSHARModelViewValid = true;
+    if (modelview >= 0) SHARUniformMatrix4fv(this, modelview, 1, GL_FALSE, mSHARModelView.m[0]);
+    if (normalmatrix >= 0) SHARUniformMatrix4fv(this, normalmatrix, 1, GL_FALSE, mSHARNormalMatrix.m[0]);
+#else
     if (modelview >= 0)
         SHARUniformMatrix4fv(this, modelview, 1, GL_FALSE, matrix->m[0]);
     if (normalmatrix >= 0)
@@ -193,6 +207,7 @@ void pglProgram::SetModelViewMatrix(const pddiMatrix* matrix)
         inverse.Transpose();
         SHARUniformMatrix4fv(this, normalmatrix, 1, GL_FALSE, inverse.m[0]);
     }
+#endif
 #endif
 }
 
@@ -317,33 +332,21 @@ void pglProgram::SetCelShadingEnabled(bool enabled)
 #ifdef RAD_ANDROID
 void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, float viewportWidth, float viewportHeight, bool frontendMenuLighting, float moodTintRed, float moodTintGreen, float moodTintBlue)
 {
-    if (toonEnabled >= 0)
-        SHARUniform1i(this, toonEnabled, enabled ? 1 : 0);
-    if (toonObjectEnabled >= 0)
-        SHARUniform1i(this, toonObjectEnabled, objectEnabled ? 1 : 0);
-    if (toonRimEnabled >= 0)
-        SHARUniform1i(this, toonRimEnabled, rimLightingEnabled ? 1 : 0);
-    if (toonOutlinePass >= 0)
-        SHARUniform1i(this, toonOutlinePass, outlinePass ? 1 : 0);
-    if (toonEnvironmentPass >= 0)
-        SHARUniform1i(this, toonEnvironmentPass, environmentPass ? 1 : 0);
-    // Environment outlines use a constant pixel width in clip space. This
-    // uniform is only consumed by the environment outline pass; character and
-    // vehicle outlines retain their existing world-space expansion.
-    if (toonOutlineWidth >= 0)
-        SHARUniform1f(this, toonOutlineWidth, 2.0f);
-    if (toonViewportSize >= 0)
-        SHARUniform2f(this, toonViewportSize,
-            viewportWidth > 1.0f ? viewportWidth : 1.0f,
-            viewportHeight > 1.0f ? viewportHeight : 1.0f);
-    if (nightObjectBrightness >= 0)
-        SHARUniform1f(this, nightObjectBrightness, objectBrightness);
-    if (nightObjectSaturation >= 0)
-        SHARUniform1f(this, nightObjectSaturation, objectSaturation);
-    if (toonFrontendMenuLighting >= 0)
-        SHARUniform1i(this, toonFrontendMenuLighting, frontendMenuLighting ? 1 : 0);
-    if (toonMoodTint >= 0)
-        SHARUniform3f(this, toonMoodTint, moodTintRed, moodTintGreen, moodTintBlue);
+    const float v[13] = { enabled?1.0f:0.0f, objectEnabled?1.0f:0.0f, rimLightingEnabled?1.0f:0.0f, outlinePass?1.0f:0.0f, environmentPass?1.0f:0.0f, viewportWidth>1.0f?viewportWidth:1.0f, viewportHeight>1.0f?viewportHeight:1.0f, objectBrightness, objectSaturation, frontendMenuLighting?1.0f:0.0f, moodTintRed, moodTintGreen, moodTintBlue };
+    if (mSHARCelStateValid && memcmp(v, mSHARCelState, sizeof(v)) == 0) return;
+    if (toonEnabled >= 0) SHARUniform1i(this, toonEnabled, enabled ? 1 : 0);
+    if (toonObjectEnabled >= 0) SHARUniform1i(this, toonObjectEnabled, objectEnabled ? 1 : 0);
+    if (toonRimEnabled >= 0) SHARUniform1i(this, toonRimEnabled, rimLightingEnabled ? 1 : 0);
+    if (toonOutlinePass >= 0) SHARUniform1i(this, toonOutlinePass, outlinePass ? 1 : 0);
+    if (toonEnvironmentPass >= 0) SHARUniform1i(this, toonEnvironmentPass, environmentPass ? 1 : 0);
+    if (toonOutlineWidth >= 0 && !mSHAROutlineWidthValid) { SHARUniform1f(this, toonOutlineWidth, 2.0f); mSHAROutlineWidthValid = true; }
+    if (toonViewportSize >= 0) SHARUniform2f(this, toonViewportSize, v[5], v[6]);
+    if (nightObjectBrightness >= 0) SHARUniform1f(this, nightObjectBrightness, objectBrightness);
+    if (nightObjectSaturation >= 0) SHARUniform1f(this, nightObjectSaturation, objectSaturation);
+    if (toonFrontendMenuLighting >= 0) SHARUniform1i(this, toonFrontendMenuLighting, frontendMenuLighting ? 1 : 0);
+    if (toonMoodTint >= 0) SHARUniform3f(this, toonMoodTint, moodTintRed, moodTintGreen, moodTintBlue);
+    memcpy(mSHARCelState, v, sizeof(v));
+    mSHARCelStateValid = true;
 }
 #endif
 

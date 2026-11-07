@@ -237,6 +237,7 @@ protected:
     unsigned indexCapacity;
 
     bool valid;
+    bool indexValid;
 #ifdef RAD_ANDROID
     bool environmentNormalsAttempted;
     bool environmentNormalsAvailable;

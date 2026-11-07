@@ -275,9 +275,29 @@ void pglMat::SetDevPass(unsigned pass)
     // retaining thousands of transient material pointers.
     #endif
 
-    context->SetTextureEnvironment(&texEnv[i]);
+#ifdef RAD_ANDROID
+    const bool opaqueEnvironmentSilhouette =
+        IsSHAREnvironmentCelPassActive() && IsCelShadingOutlinePass() &&
+        texEnv[i].texture != NULL &&
+        texEnv[i].alphaBlendMode == PDDI_BLEND_NONE &&
+        !texEnv[i].alphaTest;
+    if (opaqueEnvironmentSilhouette)
+    {
+        pglTextureEnv outlineEnv = texEnv[i];
+        outlineEnv.texture = NULL;
+        context->SetTextureEnvironment(&outlineEnv);
+    }
+    else
+#endif
+    {
+        context->SetTextureEnvironment(&texEnv[i]);
+    }
 
-    if(texEnv[i].texture)
+    if(texEnv[i].texture
+#ifdef RAD_ANDROID
+       && !opaqueEnvironmentSilhouette
+#endif
+      )
     {
         texEnv[i].texture->SetGLState();
 

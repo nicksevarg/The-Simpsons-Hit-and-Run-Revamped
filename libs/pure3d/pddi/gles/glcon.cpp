@@ -46,6 +46,7 @@ static float gSHARCelOutlineViewportWidth = 1.0f;
 static float gSHARCelOutlineViewportHeight = 1.0f;
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
+static bool gSHARCelStateDirty = true;
 
 // The scene texture alpha channel is a per-frame character-coverage mask during
 // Android world rendering. Keep the game's requested alpha-write state and gate
@@ -950,8 +951,7 @@ bool IsSHARExteriorTransparencyDepthWriteFixActive()
 
 static void ApplyCelShadingState()
 {
-    if (gCelShadingContext)
-        gCelShadingContext->ApplyCelShadingState();
+    gSHARCelStateDirty = true;
 }
 
 bool IsSHARCelShadingFull()
@@ -1056,7 +1056,7 @@ void SetCelShadingOutlinePass(bool enabled)
         enabled &&
         gSHAREnvironmentCelPassActive &&
         gSHAREnvironmentCelMaterialEligible;
-    if (useEnvironmentPolygonOffset)
+    if (useEnvironmentPolygonOffset && !gSHAREnvironmentPolygonOffsetActive)
     {
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(3.0f, 1.0f);
@@ -1844,6 +1844,10 @@ void pglContext::BeginFrame()
         InvalidateGLStateCache();
 #ifdef RAD_ANDROID
         InvalidateSHARUniformCaches();
+        if (colorProgram) colorProgram->InvalidateSHARProgramCaches();
+        if (textureProgram) textureProgram->InvalidateSHARProgramCaches();
+        if (alphaTestProgram) alphaTestProgram->InvalidateSHARProgramCaches();
+        gSHARCelStateDirty = true;
 #endif
         contextID++;
 
@@ -2321,6 +2325,7 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     indices = NULL;
 
     valid = false;
+    indexValid = false;
 #ifdef RAD_ANDROID
     environmentNormalsAttempted = false;
     environmentNormalsAvailable = false;
@@ -2454,6 +2459,7 @@ void pglPrimBuffer::SetIndices(unsigned short* i, int count)
     if (count > 0)
         memcpy(indices, i, count * sizeof(unsigned short));
     indexCount = (unsigned)count;
+    indexValid = false;
 #ifdef RAD_ANDROID
     environmentNormalsAttempted = false;
     environmentNormalsAvailable = false;
@@ -3123,7 +3129,11 @@ void pglPrimBuffer::Display(void)
             if(!indexBuffer)
                 glGenBuffers(1, &indexBuffer);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,indexBuffer);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER,indexCount*sizeof(unsigned short),indices,GL_STATIC_DRAW);
+            if (!indexValid)
+            {
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER,indexCount*sizeof(unsigned short),indices,GL_STATIC_DRAW);
+                indexValid = true;
+            }
         }
         else
         {
@@ -3492,12 +3502,15 @@ void pglContext::SetShaderProgram(pglProgram* program)
     if(program == currentProgram)
     {
 #ifdef RAD_ANDROID
-        if (currentProgram)
+        if (currentProgram && gSHARCelStateDirty)
+        {
             currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
-            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
-            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHARFrontendMenuLightingActive,
-            gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
+                gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
+                gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
+                gSHARFrontendMenuLightingActive,
+                gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
+            gSHARCelStateDirty = false;
+        }
 #endif
         return;
     }
@@ -3516,6 +3529,7 @@ void pglContext::SetShaderProgram(pglProgram* program)
             gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
             gSHARFrontendMenuLightingActive,
             gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
+    gSHARCelStateDirty = false;
 #endif
     currentProgram->SetProjectionMatrix(&projection);
 
@@ -3531,12 +3545,7 @@ void pglContext::SetShaderProgram(pglProgram* program)
 #ifdef RAD_ANDROID
 void pglContext::ApplyCelShadingState()
 {
-    if (currentProgram)
-        currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
-            gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
-            gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHARFrontendMenuLightingActive,
-            gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
+    gSHARCelStateDirty = true;
 }
 #endif
 
