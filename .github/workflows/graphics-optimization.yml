@@ -6,6 +6,7 @@ on:
       - master
       - env-cel-shading-first-build
       - outline-catapult-test
+      - graphics-performance-optimization
   workflow_dispatch:
 
 permissions:
