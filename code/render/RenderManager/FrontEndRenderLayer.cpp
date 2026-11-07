@@ -40,7 +40,6 @@
 #include <presentation/fmvplayer/fmvplayer.h>
 #include <input/touch/touchhudrenderer.h>
 void ApplySHARPostProcessingBeforeTouchHud();
-void ApplySHARFrontendMenuFineDetail();
 bool IsSHARFrontendMenuCelPassActive();
 void SetSHARFrontendMenuLightingActive(bool enabled);
 
@@ -342,10 +341,8 @@ void FrontEndRenderLayer::Render()
         if( mpScroobyApp != NULL )
         {
 #ifdef RAD_ANDROID
-            // The front-end fine-contour pass must only see the 3D living-room
-            // scene. Scrooby's FeDivide split lets us process the background
-            // before the 2D foreground menu, so text, sprites and loading UI
-            // are never sampled by the contour shader.
+            // Apply the living-room lighting adjustment only to the 3D camera-set
+            // background; Scrooby foreground text and sprites remain untouched.
             Scrooby::Project* project = mpScroobyApp->GetProject();
             Scrooby::Screen* screen = project != NULL ? project->GetCurrentScreen() : NULL;
             const bool celPassActive = IsSHARFrontendMenuCelPassActive();
@@ -362,7 +359,6 @@ void FrontEndRenderLayer::Render()
                 SetSHARFrontendMenuLightingActive(true);
                 mpScroobyApp->DrawBackground( frameDelta );
                 SetSHARFrontendMenuLightingActive(false);
-                ApplySHARFrontendMenuFineDetail();
                 mpScroobyApp->DrawForeground( frameDelta );
             }
             else

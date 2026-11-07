@@ -42,8 +42,14 @@
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
+bool IsCelShadingObjectEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
+bool IsCelShadingOutlinePass();
 void SetCelShadingOutlinePass(bool enabled);
+bool IsSHAREnvironmentCelPassActive();
+void SetSHAREnvironmentCelPassActive(bool enabled);
+bool IsSHAREnvironmentCelMaterialEligible();
+void SetSHAREnvironmentCelMaterialEligible(bool eligible);
 #endif
 
 static void DisplayCoinDrawable(tDrawable* drawable)
@@ -52,14 +58,28 @@ static void DisplayCoinDrawable(tDrawable* drawable)
 #ifdef RAD_ANDROID
     if (IsCelShadingEnabled())
     {
-        // This affects only the 3D coin mesh. The GUI coin-counter artwork
-        // is a separate Scrooby element and does not pass through this helper.
+        // Coin drawables bypass normal DSG outline wrappers. Mark only the shell
+        // draw as eligible environment geometry so meshes without stored normals
+        // receive generated normals and pixel-width silhouette expansion.
+        // The 3D HUD coin uses this helper; GUI counter artwork is a separate element.
+        const bool oldObjectEnabled = IsCelShadingObjectEnabled();
+        const bool oldOutlinePass = IsCelShadingOutlinePass();
+        const bool oldEnvironmentPass = IsSHAREnvironmentCelPassActive();
+        const bool oldMaterialEligible = IsSHAREnvironmentCelMaterialEligible();
+
+        SetSHAREnvironmentCelPassActive(true);
+        SetSHAREnvironmentCelMaterialEligible(true);
         SetCelShadingObjectEnabled(true);
         SetCelShadingOutlinePass(true);
         drawable->Display();
+
         SetCelShadingOutlinePass(false);
+        SetSHAREnvironmentCelPassActive(oldEnvironmentPass);
+        SetSHAREnvironmentCelMaterialEligible(oldMaterialEligible);
         drawable->Display();
-        SetCelShadingObjectEnabled(false);
+
+        SetCelShadingOutlinePass(oldOutlinePass);
+        SetCelShadingObjectEnabled(oldObjectEnabled);
         return;
     }
 #endif

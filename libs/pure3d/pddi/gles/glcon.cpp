@@ -207,11 +207,9 @@ void SetSHARMoodTint(float red, float green, float blue)
 }
 #endif
 static bool gCelShadingConfigurationLoaded = false;
-// FULL preserves the existing screen-space contours; LITE keeps object toon
-// lighting and expanded-mesh silhouettes but skips the additional contour passes.
-static bool gSHARCelShadingFull = false;
-// MIN limits expanded-mesh silhouettes to characters, vehicles and gag assets.
-static bool gSHARCelShadingMin = false;
+// LITE limits expanded-mesh silhouettes to characters, vehicles and gag assets.
+// FULL retains broad object-toon and environment-outline coverage.
+static bool gSHARCelShadingLite = false;
 static bool gSHARCelShadingQualityConfigurationLoaded = false;
 // Fresh installs default to OFF. Existing explicit sharpening preferences are preserved.
 // Legacy files containing only a non-zero sharpen= value are treated as enabled.
@@ -223,7 +221,7 @@ static bool gCRTConfigurationLoaded = false;
 static bool gMotionBlurConfigurationLoaded = false;
 static bool gMotionBlurEnabled = false;
 static bool gCRTEnabled = false;
-static bool gSHARRimLightingEnabled = true;
+static bool gSHARRimLightingEnabled = false;
 static bool gSHARRimLightingConfigurationLoaded = false;
 static float gCRTScanlineStrength = 0.5f;
 static float gCRTCurvature = 0.06f;
@@ -390,22 +388,18 @@ static void LoadCelShadingConfiguration()
 static void WriteSHARCelShadingQualityConfiguration()
 {
     char filePath[512];
-    if (!BuildGraphicsConfigurationPath(
-            filePath, sizeof(filePath), CEL_SHADING_QUALITY_CONFIGURATION_FILE_NAME))
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), CEL_SHADING_QUALITY_CONFIGURATION_FILE_NAME))
         return;
-
     FILE* file = fopen(filePath, "w");
     if (file == nullptr)
         return;
-
     fprintf(file, "# Simpsons Hit & Run - Revamped! [Cel Shading Quality]\n");
-    fprintf(file, "# MIN outlines characters, vehicles and gag-scene assets only.\n");
-    fprintf(file, "# MID keeps the previous LITE object toon shading and silhouette coverage.\n");
-    fprintf(file, "# MAX keeps the previous FULL screen-space and living-room detail passes.\n");
-    fprintf(file, "# Change with min/mid/max values.\n");
-    fprintf(file, "# You can also use the in-game Graphics menu.\n");
-    fprintf(file, "\n");
-    fprintf(file, "cel_shading_quality=%s\n", gSHARCelShadingMin ? "min" : (gSHARCelShadingFull ? "max" : "mid"));
+    fprintf(file, "# LITE outlines characters, vehicles, gags and coins.\n");
+    fprintf(file, "# FULL restores broad object-based environment outline coverage.\n");
+    fprintf(file, "# MAX screen-space cel shading has been retired.\n");
+    fprintf(file, "# Change with lite/full values.\n");
+    fprintf(file, "cel_shading_quality_version=2\n");
+    fprintf(file, "cel_shading_quality=%s\n", gSHARCelShadingLite ? "lite" : "full");
     fclose(file);
 }
 
@@ -413,58 +407,58 @@ static void LoadSHARCelShadingQualityConfiguration()
 {
     if (gSHARCelShadingQualityConfigurationLoaded)
         return;
-
     gSHARCelShadingQualityConfigurationLoaded = true;
 
     char filePath[512];
-    if (!BuildGraphicsConfigurationPath(
-            filePath, sizeof(filePath), CEL_SHADING_QUALITY_CONFIGURATION_FILE_NAME))
+    if (!BuildGraphicsConfigurationPath(filePath, sizeof(filePath), CEL_SHADING_QUALITY_CONFIGURATION_FILE_NAME))
         return;
 
     FILE* file = fopen(filePath, "r");
     if (file == nullptr)
     {
+        gSHARCelShadingLite = false;
         WriteSHARCelShadingQualityConfiguration();
         return;
     }
 
+    int configurationVersion = 0;
+    char qualityValue[32] = { 0 };
     char line[256];
     while (fgets(line, sizeof(line), file) != nullptr)
     {
+        char* version = strstr(line, "cel_shading_quality_version=");
+        if (version != nullptr)
+        {
+            version += strlen("cel_shading_quality_version=");
+            configurationVersion = atoi(version);
+            continue;
+        }
         char* value = strstr(line, "cel_shading_quality=");
         if (value == nullptr)
             continue;
-
         value += strlen("cel_shading_quality=");
         while (*value == ' ' || *value == '\t')
             ++value;
-
-        // Legacy LITE maps to MID and legacy FULL maps to MAX.
-        if (strncmp(value, "min", 3) == 0 || strncmp(value, "MIN", 3) == 0)
-        {
-            gSHARCelShadingMin = true;
-            gSHARCelShadingFull = false;
-        }
-        else if (strncmp(value, "mid", 3) == 0 ||
-                 strncmp(value, "MID", 3) == 0 ||
-                 strncmp(value, "lite", 4) == 0 ||
-                 strncmp(value, "LITE", 4) == 0 || *value == '0')
-        {
-            gSHARCelShadingMin = false;
-            gSHARCelShadingFull = false;
-        }
-        else if (strncmp(value, "max", 3) == 0 ||
-                 strncmp(value, "MAX", 3) == 0 ||
-                 strncmp(value, "full", 4) == 0 ||
-                 strncmp(value, "FULL", 4) == 0 || *value == '1')
-        {
-            gSHARCelShadingMin = false;
-            gSHARCelShadingFull = true;
-        }
-        break;
+        char* end = value + strlen(value);
+        while (end > value && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t'))
+            --end;
+        size_t length = static_cast<size_t>(end - value);
+        if (length >= sizeof(qualityValue))
+            length = sizeof(qualityValue) - 1;
+        memcpy(qualityValue, value, length);
+        qualityValue[length] = '\0';
     }
-
     fclose(file);
+
+    // Previous MIN remains LITE; previous MID/MAX migrate to FULL.
+    // Older two-choice LITE was broad coverage too, so it migrates to FULL.
+    if (configurationVersion >= 2)
+        gSHARCelShadingLite = strcmp(qualityValue, "lite") == 0 || strcmp(qualityValue, "LITE") == 0;
+    else
+    {
+        gSHARCelShadingLite = strcmp(qualityValue, "min") == 0 || strcmp(qualityValue, "MIN") == 0;
+        WriteSHARCelShadingQualityConfiguration();
+    }
 }
 
 static void WriteSharpeningConfiguration()
@@ -963,31 +957,30 @@ static void ApplyCelShadingState()
 bool IsSHARCelShadingFull()
 {
     LoadSHARCelShadingQualityConfiguration();
-    return gSHARCelShadingFull;
+    return !gSHARCelShadingLite;
 }
 
-bool IsSHARCelShadingMin()
+bool IsSHARCelShadingLite()
 {
     LoadSHARCelShadingQualityConfiguration();
-    return gSHARCelShadingMin;
+    return gSHARCelShadingLite;
 }
 
 int GetSHARCelShadingMode()
 {
     LoadSHARCelShadingQualityConfiguration();
     LoadCelShadingConfiguration();
-    if (!gCelShadingEnabled) return 0;
-    if (gSHARCelShadingMin) return 1;
-    return gSHARCelShadingFull ? 3 : 2;
+    if (!gCelShadingEnabled)
+        return 0;
+    return gSHARCelShadingLite ? 1 : 2;
 }
 
 void SetSHARCelShadingMode(int mode)
 {
     LoadSHARCelShadingQualityConfiguration();
     LoadCelShadingConfiguration();
-    if (mode < 0 || mode > 3) mode = 2;
-
-    // OFF preserves the last MIN/MID/MAX preference in the quality file.
+    if (mode < 0 || mode > 2)
+        mode = 2;
     if (mode == 0)
     {
         if (gCelShadingEnabled)
@@ -998,15 +991,12 @@ void SetSHARCelShadingMode(int mode)
         ApplyCelShadingState();
         return;
     }
-
-    const bool min = (mode == 1);
-    const bool full = (mode == 3);
-    const bool qualityChanged =
-        gSHARCelShadingMin != min || gSHARCelShadingFull != full;
-    gSHARCelShadingMin = min;
-    gSHARCelShadingFull = full;
-    if (qualityChanged) WriteSHARCelShadingQualityConfiguration();
-
+    const bool lite = (mode == 1);
+    if (gSHARCelShadingLite != lite)
+    {
+        gSHARCelShadingLite = lite;
+        WriteSHARCelShadingQualityConfiguration();
+    }
     if (!gCelShadingEnabled)
     {
         gCelShadingEnabled = true;
@@ -1015,10 +1005,10 @@ void SetSHARCelShadingMode(int mode)
     ApplyCelShadingState();
 }
 
-// Compatibility wrapper: false selects MID, true selects MAX.
+// Compatibility entry point: false selects LITE, true selects FULL.
 void SetSHARCelShadingFull(bool full)
 {
-    SetSHARCelShadingMode(full ? 3 : 2);
+    SetSHARCelShadingMode(full ? 2 : 1);
 }
 
 bool IsSHARRimLightingEnabled()
@@ -1170,6 +1160,11 @@ void SetSHAREnvironmentCelPassActive(bool enabled)
 bool IsSHAREnvironmentCelPassActive()
 {
     return gSHAREnvironmentCelPassActive;
+}
+
+bool IsSHAREnvironmentCelMaterialEligible()
+{
+    return gSHAREnvironmentCelMaterialEligible;
 }
 
 void SetSHAREnvironmentCelMaterialEligible(bool eligible)

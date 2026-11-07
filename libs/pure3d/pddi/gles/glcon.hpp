@@ -22,7 +22,7 @@ class pglExtGamma;
 #ifdef RAD_ANDROID
 void InvalidateSHARRenderStateCache();
 bool IsCelShadingEnabled();
-bool IsSHARCelShadingMin();
+bool IsSHARCelShadingLite();
 int GetSHARCelShadingMode();
 void SetSHARCelShadingMode(int mode);
 void SetCelShadingEnabled(bool enabled);
@@ -40,6 +40,7 @@ bool IsSHAREnvironmentBillboardFoliagePassActive();
 void SetSHAREnvironmentFoliageCardOutlineNormalMode(bool enabled);
 bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
 void SetSHAREnvironmentCelMaterialEligible(bool eligible);
+bool IsSHAREnvironmentCelMaterialEligible();
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHARCharacterMaskModelPass(bool enabled);
 void SetSHARGagCharacterCelPassActive(bool enabled);

@@ -21,7 +21,7 @@
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
-bool IsSHARCelShadingMin();
+bool IsSHARCelShadingLite();
 bool IsSHARGagCharacterCelPassActive();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
@@ -197,7 +197,7 @@ void BreakableObjectDSG::Display()
     tDrawable* sourceDrawable = mpObject ? mpObject->GetBaseObject() : NULL;
     
     if (IsCelShadingEnabled() &&
-        (!IsSHARCelShadingMin() || IsSHARGagCharacterCelPassActive()))
+        (!IsSHARCelShadingLite() || IsSHARGagCharacterCelPassActive()))
     {
         SetSHAREnvironmentCelPassActive(true);
         SetCelShadingObjectEnabled(true);

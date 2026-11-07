@@ -30,7 +30,6 @@ int gSHARRequestedOpenGLESVersionMajor = 3;
 int gSHARActiveOpenGLESVersionMajor = 3;
 
 bool IsCelShadingEnabled();
-bool IsSHARCelShadingFull();
 bool IsSHARFrontendMenuCelPassActive();
 bool IsMotionBlurEnabled();
 void SetSHARCharacterMaskWorldEnabled(bool enabled);
@@ -50,7 +49,7 @@ static int gSHARAndroidTargetFPS = 60;
 // between the closing and opening halves.
 static bool gSHARIrisTransitionActive = false;
 
-static bool gSHARBloomEnabled = false;
+static bool gSHARBloomEnabled = true;
 static bool gSHARCloudShadowsEnabled = false;
 static bool gSHARGraphicsEffectTogglesLoaded = false;
 
@@ -203,7 +202,7 @@ static void EnsureSHARGraphicsEffectTogglesLoaded()
     gSHARGraphicsEffectTogglesLoaded = true;
 
     gSHARBloomEnabled =
-        ReadSHARGraphicsToggleFile( "Simpsons_bloom.txt", false );
+        ReadSHARGraphicsToggleFile( "Simpsons_bloom.txt", true );
     gSHARCloudShadowsEnabled =
         ReadSHARGraphicsToggleFile( "Simpsons_cloud_shadows.txt", false );
 }
@@ -403,7 +402,6 @@ static float GetSHARMotionBlurTimeScale()
 }
 
 GLuint gCelPostProgram = 0;
-GLuint gCelLitePostProgram = 0;
 GLuint gCelPostTexture = 0;
 GLuint gCelPostVbo = 0;
 GLuint gCelFallbackProgram = 0;
@@ -449,19 +447,14 @@ bool gCelDepthTextureExtensionAvailable = false;
 bool gCelRenderFboReady = false;
 GLint gCelPostSceneLocation = -1;
 GLint gCelPostTexelLocation = -1;
-GLint gCelPostOutlineTexelSizeLocation = -1;
-GLint gCelPostFineDetailEnabledLocation = -1;
-GLint gCelPostScreenSpaceOutlineEnabledLocation = -1;
 GLint gCelPostBloomLocation = -1;
 GLint gCelPostBloomStrengthLocation = -1;
 GLint gCelPostDepthLocation = -1;
 GLint gCelPostDepthAvailableLocation = -1;
-GLint gCelPostDepthEdgeDetectionAvailableLocation = -1;
 // Depth-aware, world-anchored moving cloud shadows.
 GLint gCelPostCloudShadowEnabledLocation = -1;
 GLint gCelPostCloudShadowTimeLocation = -1;
 GLint gCelPostCloudShadowStrengthLocation = -1;
-GLint gCelPostCelEffectsLocation = -1;
 GLint gCelPostMotionBlurEnabledLocation = -1;
 GLint gCelPostMotionBlurValidLocation = -1;
 GLint gCelPostMotionBlurScaleLocation = -1;
@@ -487,46 +480,6 @@ GLint gCelPostVehicleMaskEnabledLocation = -1;
 GLint gCelPostVehicleMaskPositionLocation = -1;
 GLint gCelPostVehicleMaskSizeLocation = -1;
 GLint gCelPostVehicleMotionIntensityLocation = -1;
-GLint gCelLitePostSceneLocation = -1;
-GLint gCelLitePostTexelLocation = -1;
-GLint gCelLitePostOutlineTexelSizeLocation = -1;
-GLint gCelLitePostFineDetailEnabledLocation = -1;
-GLint gCelLitePostScreenSpaceOutlineEnabledLocation = -1;
-GLint gCelLitePostBloomLocation = -1;
-GLint gCelLitePostBloomStrengthLocation = -1;
-GLint gCelLitePostDepthLocation = -1;
-GLint gCelLitePostDepthAvailableLocation = -1;
-GLint gCelLitePostDepthEdgeDetectionAvailableLocation = -1;
-GLint gCelLitePostCloudShadowEnabledLocation = -1;
-GLint gCelLitePostCloudShadowTimeLocation = -1;
-GLint gCelLitePostCloudShadowStrengthLocation = -1;
-GLint gCelLitePostCelEffectsLocation = -1;
-GLint gCelLitePostMotionBlurEnabledLocation = -1;
-GLint gCelLitePostMotionBlurValidLocation = -1;
-GLint gCelLitePostMotionBlurScaleLocation = -1;
-GLint gCelLitePostCurrentCameraPositionLocation = -1;
-GLint gCelLitePostCurrentCameraRightLocation = -1;
-GLint gCelLitePostCurrentCameraUpLocation = -1;
-GLint gCelLitePostCurrentCameraForwardLocation = -1;
-GLint gCelLitePostPreviousCameraPositionLocation = -1;
-GLint gCelLitePostPreviousCameraRightLocation = -1;
-GLint gCelLitePostPreviousCameraUpLocation = -1;
-GLint gCelLitePostPreviousCameraForwardLocation = -1;
-GLint gCelLitePostCurrentTanHalfFovXLocation = -1;
-GLint gCelLitePostCurrentTanHalfFovYLocation = -1;
-GLint gCelLitePostPreviousTanHalfFovXLocation = -1;
-GLint gCelLitePostPreviousTanHalfFovYLocation = -1;
-GLint gCelLitePostCurrentNearPlaneLocation = -1;
-GLint gCelLitePostCurrentFarPlaneLocation = -1;
-GLint gCelLitePostPreviousNearPlaneLocation = -1;
-GLint gCelLitePostCharacterMaskEnabledLocation = -1;
-GLint gCelLitePostCharacterMaskPositionLocation = -1;
-GLint gCelLitePostCharacterMaskSizeLocation = -1;
-GLint gCelLitePostVehicleMaskEnabledLocation = -1;
-GLint gCelLitePostVehicleMaskPositionLocation = -1;
-GLint gCelLitePostVehicleMaskSizeLocation = -1;
-GLint gCelLitePostVehicleMotionIntensityLocation = -1;
-
 GLuint gCelBloomExtractProgram = 0;
 GLuint gCelBloomBlurProgram = 0;
 
@@ -1556,15 +1509,10 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "uniform float bloomStrength;\n"
             "uniform sampler2D depthTex;\n"
             "uniform float depthTextureAvailable;\n"
-            "uniform float depthEdgeDetectionAvailable;\n"
             "uniform float cloudShadowEnabled;\n"
             "uniform float cloudShadowTime;\n"
             "uniform float cloudShadowStrengthMultiplier;\n"
             "uniform vec2 texelSize;\n"
-            "uniform vec2 outlineTexelSize;\n"
-            "uniform float fineDetailEnabled;\n"
-            "uniform float screenSpaceOutlinesEnabled;\n"
-            "uniform float celEffectsEnabled;\n"
             "uniform float motionBlurEnabled;\n"
             "uniform float motionBlurCameraValid;\n"
             "uniform float motionBlurTimeScale;\n"
@@ -1591,19 +1539,6 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "uniform vec2 vehicleMaskSize;\n"
             "uniform float vehicleMotionIntensity;\n"
             "varying vec2 texcoord;\n"
-            "\n"
-            "float sceneLuma(vec3 colour) {\n"
-            "    return dot(colour, vec3(0.299, 0.587, 0.114));\n"
-            "}\n"
-            "\n"
-            "// Convert the nonlinear OpenGL depth-buffer value to positive view-space distance.\n"
-            "float linearViewDepth(float depth) {\n"
-            "    float nearPlane = currentNearPlane;\n"
-            "    float farPlane = currentFarPlane;\n"
-            "    float denominator = farPlane - depth * (farPlane - nearPlane);\n"
-            "    if (nearPlane <= 0.0 || farPlane <= nearPlane || denominator <= 0.00001) return 0.0;\n"
-            "    return (nearPlane * farPlane) / denominator;\n"
-            "}\n"
             "\n"
             "// Cheap interpolated value noise; coordinates are reconstructed in world space,\n"
             "// so the shadows move over the level instead of sliding with the camera.\n"
@@ -1641,10 +1576,6 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    float shadowCoverage = smoothstep(0.62, 0.78, cloudDensity);\n"
             "    // Occasional cloud shadows remain clearly noticeable without making the level overcast.\n"
             "    return baseColour * (1.0 - shadowCoverage * 0.28 * cloudShadowStrengthMultiplier);\n"
-            "}\n"
-            "\n"
-            "float randomNoise(vec2 p) {\n"
-            "    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;\n"
             "}\n"
             "\n"
             "float protectMotionBlurSubject(vec2 uv, float sceneViewZ, vec3 subjectPosition, vec2 halfSize, float enabled) {\n"
@@ -1728,7 +1659,7 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    vec2 towardVehiclePixels = (vehicleUv - uv) / texelSize;\n"
             "    float towardVehicleLength = max(length(towardVehiclePixels), 1.0);\n"
             "    vec2 trailStep = (towardVehiclePixels / towardVehicleLength) * texelSize * mix(10.0, 34.0, vehicleMotionIntensity);\n"
-            "    float celAwareTrailStrength = celEffectsEnabled > 0.5 ? 0.90 : 0.60;\n"
+            "    float celAwareTrailStrength = 0.90;\n"
             "    float roadTrailWeight = vehicleRoadTrailMask(uv) * vehicleMotionIntensity * celAwareTrailStrength;\n"
             "    if (roadTrailWeight <= 0.001) return baseColour;\n"
             "    // Sample back toward the car along the fan, creating a visible directional road streak.\n"
@@ -1781,8 +1712,8 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    float subjectProtection = max(characterProtection, vehicleProtection);\n"
             "    // Fade camera-panning blur out before the screen midpoint; the road-trail fan is separate.\n"
             "    float lowerScreenMotionBlur = 1.0 - smoothstep(0.36, 0.50, uv.y);\n"
-            "    float celOffCompensation = celEffectsEnabled < 0.5 ? 0.78 : 1.0;\n"
-            "    vec3 baseColour = mix(centreColour, blurred, clamp(motionAmount * celOffCompensation * edgeBlurBoost * lowerScreenMotionBlur, 0.0, 1.0) * (1.0 - subjectProtection));\n"
+
+            "    vec3 baseColour = mix(centreColour, blurred, clamp(motionAmount * edgeBlurBoost * lowerScreenMotionBlur, 0.0, 1.0) * (1.0 - subjectProtection));\n"
             "    return applyVehicleRoadTrail(uv, baseColour);\n"
             "}\n"
             "\n"
@@ -1791,154 +1722,11 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    float bloomCharacterProtection = smoothstep(0.0, 0.5, scene.a);\n"
             "    scene.rgb = applyCameraMotionBlur(texcoord, scene.rgb);\n"
             "    vec3 finalColour = scene.rgb;\n"
-            "#ifndef SHAR_LITE_COMPOSITE\n"
-            "    if (celEffectsEnabled > 0.5) {\n"
-            "\n"
-            "    // The object-level toon and expanded-mesh silhouette passes are already in scene.rgb.\n"
-            "    // LITE skips only this additional screen-space contour stack.\n"
-            "    vec3 toonColour = scene.rgb;\n"
-            "    float centreLuma = sceneLuma(scene.rgb);\n"
-            "    float leftLuma = centreLuma;\n"
-            "    float rightLuma = centreLuma;\n"
-            "    float upLuma = centreLuma;\n"
-            "    float downLuma = centreLuma;\n"
-            "    if (screenSpaceOutlinesEnabled > 0.5) {\n"
-            "    // Existing screen-space cel outline detection.\n"
-            "    leftLuma  = sceneLuma(texture2D(sceneTex, texcoord - vec2(outlineTexelSize.x, 0.0)).rgb);\n"
-            "    rightLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(outlineTexelSize.x, 0.0)).rgb);\n"
-            "    upLuma    = sceneLuma(texture2D(sceneTex, texcoord + vec2(0.0, outlineTexelSize.y)).rgb);\n"
-            "    downLuma  = sceneLuma(texture2D(sceneTex, texcoord - vec2(0.0, outlineTexelSize.y)).rgb);\n"
-            "    float edgeStrength = max(max(abs(centreLuma - leftLuma), abs(centreLuma - rightLuma)),\n"
-            "                             max(abs(centreLuma - upLuma), abs(centreLuma - downLuma)));\n"
-            "    float edge = smoothstep(0.10, 0.22, edgeStrength);\n"
-            "    float characterMask = smoothstep(0.0, 0.5, scene.a);\n"
-            "    float faceColourDetailEdge = 0.0;\n"
-            "    float depthOutlineEdge = 0.0;\n"
-            "    float fineDetailEdge = 0.0;\n"
-            "    // Reuse the per-pixel character alpha mask for the recovered low-threshold facial-detail signal.\n"
-            "    // This avoids the older CPU-side face-bound recognition and adds no texture samples.\n"
-            "    if (characterMask > 0.001 && edgeStrength > 0.024) {\n"
-            "        faceColourDetailEdge = smoothstep(0.024, 0.082, edgeStrength) * characterMask * 0.60;\n"
-            "    }\n"
-            "    // Recover tiny colour edges only above 1080p, independently of the broad outline sampling scale.\n"
-            "    if (fineDetailEnabled > 0.5) {\n"
-            "        float fineCentreLuma = sceneLuma(texture2D(sceneTex, texcoord).rgb);\n"
-            "        float fineLeftLuma = sceneLuma(texture2D(sceneTex, texcoord - vec2(texelSize.x, 0.0)).rgb);\n"
-            "        float fineRightLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(texelSize.x, 0.0)).rgb);\n"
-            "        float fineUpLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(0.0, texelSize.y)).rgb);\n"
-            "        float fineDownLuma = sceneLuma(texture2D(sceneTex, texcoord - vec2(0.0, texelSize.y)).rgb);\n"
-            "        float fineUpLeftLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(-texelSize.x, texelSize.y)).rgb);\n"
-            "        float fineUpRightLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(texelSize.x, texelSize.y)).rgb);\n"
-            "        float fineDownLeftLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(-texelSize.x, -texelSize.y)).rgb);\n"
-            "        float fineDownRightLuma = sceneLuma(texture2D(sceneTex, texcoord + vec2(texelSize.x, -texelSize.y)).rgb);\n"
-            "        float fineEdgeStrength = max(max(abs(fineCentreLuma - fineLeftLuma), abs(fineCentreLuma - fineRightLuma)),\n"
-            "            max(max(abs(fineCentreLuma - fineUpLuma), abs(fineCentreLuma - fineDownLuma)),\n"
-            "            max(max(abs(fineCentreLuma - fineUpLeftLuma), abs(fineCentreLuma - fineUpRightLuma)),\n"
-            "                max(abs(fineCentreLuma - fineDownLeftLuma), abs(fineCentreLuma - fineDownRightLuma)))));\n"
-            "        fineDetailEdge = smoothstep(0.12, 0.26, fineEdgeStrength);\n"
-            "    }\n"
-            "    // Fade screen-space outlines by actual view-space distance, not nonlinear depth-buffer values.\n"
-            "    float distanceFade = 0.0;\n"
-
-            "    if (depthTextureAvailable > 0.5) {\n"
-            "        float sceneDepthValue = texture2D(depthTex, texcoord).r;\n"
-            "        float sceneViewDepth = linearViewDepth(sceneDepthValue);\n"
-            "        distanceFade = smoothstep(25.0, 80.0, sceneViewDepth);\n"
-
-            "    }\n"
-            "    // Use depth discontinuities to recover geometric creases that flat toon colours hide.\n"
-            "    // Only mark the nearer side of an edge to reduce double-thick outlines.\n"
-            "    if (depthEdgeDetectionAvailable > 0.5 && depthTextureAvailable > 0.5) {\n"
-            "        float centreDepth = linearViewDepth(texture2D(depthTex, texcoord).r);\n"
-            "        // Match depth sampling to the same output-scaled footprint as colour edges.\n"
-            "        // The depth texture remains nearest-filtered, so offset spacing is explicit.\n"
-            "        vec2 depthTexelOffset = outlineTexelSize;\n"
-            "        float leftDepth = linearViewDepth(texture2D(depthTex, texcoord - vec2(depthTexelOffset.x, 0.0)).r);\n"
-            "        float rightDepth = linearViewDepth(texture2D(depthTex, texcoord + vec2(depthTexelOffset.x, 0.0)).r);\n"
-            "        float upDepth = linearViewDepth(texture2D(depthTex, texcoord + vec2(0.0, depthTexelOffset.y)).r);\n"
-            "        float downDepth = linearViewDepth(texture2D(depthTex, texcoord - vec2(0.0, depthTexelOffset.y)).r);\n"
-            "        // A symmetric second difference detects depth steps/creases while rejecting\n"
-            "        // the ordinary first-order depth slope across continuous ground and wall surfaces.\n"
-            "        float depthCurvatureX = abs(leftDepth + rightDepth - 2.0 * centreDepth);\n"
-            "        float depthCurvatureY = abs(upDepth + downDepth - 2.0 * centreDepth);\n"
-            "        float relativeDepthCurvature = max(depthCurvatureX, depthCurvatureY) / max(centreDepth, 1.0);\n"
-            "        // At lower resolutions, make distant depth edges harder to trigger; keep near thresholds unchanged.\n"
-            "        float resolutionRatio = clamp(outlineTexelSize.y / max(texelSize.y, 0.000001), 0.25, 1.0);\n"
-            "        float distanceThresholdScale = mix(1.0, 2.0 - resolutionRatio, distanceFade);\n"
-                        "        float characterDepthEdge = smoothstep(0.0025 * distanceThresholdScale, 0.018 * distanceThresholdScale, relativeDepthCurvature);\n"
-            "        float sceneryDepthEdge = smoothstep(0.012 * distanceThresholdScale, 0.060 * distanceThresholdScale, relativeDepthCurvature);\n"
-            "        float depthEdge = mix(sceneryDepthEdge, characterDepthEdge, characterMask);\n"
-            "        depthOutlineEdge = depthEdge * mix(0.55, 0.62, characterMask);\n"
-            "    }\n"
-            "    // Fade the broad colour mask and geometric-depth mask independently.\n"
-            "    // Leave the fine-detail mask at its existing distance tuning to protect character contours.\n"
-            "    if (depthTextureAvailable > 0.5) {\n"
-            "        edge *= mix(1.0, 0.08, distanceFade);\n"
-            "        fineDetailEdge *= mix(1.0, 0.30, distanceFade);\n"
-            "        faceColourDetailEdge *= mix(1.0, 0.30, distanceFade);\n"
-            "        // Almost fully remove distant depth-only terrain artifacts without changing nearby geometry.\n"
-            "        depthOutlineEdge *= mix(1.0, 0.02, distanceFade);\n"
-            "    }\n"
-            "    edge = max(edge, depthOutlineEdge);\n"
-            "    edge = max(edge, faceColourDetailEdge);\n"
-            "    // Combine independent masks instead of maxing the fine signal into a broad edge.\n"
-            "    // This lets narrow eye contours contribute even if the wider sample detects only a weak edge.\n"
-            "    edge = 1.0 - (1.0 - edge) * (1.0 - fineDetailEdge * 0.80);\n"
-            "\n"
-            "    // Lightweight edge smoothing: soften high-contrast edges only,\n"
-            "    // avoiding the heavier full-screen FXAA experiment.\n"
-            "    vec3 neighbourAverage = (scene.rgb +\n"
-            "        texture2D(sceneTex, texcoord - vec2(outlineTexelSize.x, 0.0)).rgb +\n"
-            "        texture2D(sceneTex, texcoord + vec2(outlineTexelSize.x, 0.0)).rgb +\n"
-            "        texture2D(sceneTex, texcoord - vec2(0.0, outlineTexelSize.y)).rgb +\n"
-            "        texture2D(sceneTex, texcoord + vec2(0.0, outlineTexelSize.y)).rgb) * 0.2;\n"
-            "    float smoothAmount = 0.12 * smoothstep(0.025, 0.14, edgeStrength);\n"
-            "    toonColour = mix(scene.rgb, neighbourAverage, smoothAmount);\n"
-            "\n"
-            "    // Retain the existing full-scene toon edge darkening.\n"
-            "    toonColour = mix(toonColour, toonColour * 0.35, edge);\n"
-            "    }\n"
-            "\n"
-            "    // Add the blurred bright-pass texture produced by the multi-pass bloom pipeline.\n"
-            "    vec3 bloomGlow = texture2D(bloomTex, texcoord).rgb;\n"
-            "    bloomGlow *= (1.0 - bloomCharacterProtection);\n"
-            "    toonColour += bloomGlow * bloomStrength;\n"
-            "\n"
-            "    // Retain the existing screen-space sunlight/glare on top of the bloom.\n"
-            "    float bright = max(centreLuma - 0.78, 0.0);\n"
-            "    if (screenSpaceOutlinesEnabled > 0.5) {\n"
-            "        bright = max(bright, max(max(leftLuma, rightLuma), max(upLuma, downLuma)) - 0.78);\n"
-            "    }\n"
-            "    bright = max(bright, 0.0);\n"
-            "    float sunRegion = 1.0 - smoothstep(0.18, 0.70, distance(texcoord, vec2(0.5, 0.82)));\n"
-            "    float glare = bright * sunRegion * 0.10 * step(0.001, bloomStrength);\n"
-            "    toonColour += vec3(glare, glare * 0.95, glare * 0.82);\n"
-            "\n"
-            "    // Global saturation adds +20%% later; 1.125 * 1.20 keeps Cel Shading at +35%% overall.\n"
-            "    float gradedLuma = sceneLuma(toonColour);\n"
-            "    toonColour = mix(vec3(gradedLuma), toonColour, 1.125);\n"
-            "    toonColour = (toonColour - vec3(0.5)) * 1.02 + vec3(0.5);\n"
-            "\n"
-            "    // Very small dither to reduce visible gradient/band stepping.\n"
-            "    toonColour += vec3(randomNoise(texcoord) / 255.0);\n"
-            "\n"
-            "\n"
-            "    finalColour = toonColour;\n"
-            "    }\n"
-            "    // Bloom stays available even when the cel outline/colour treatment is disabled.\n"
-            "    if (celEffectsEnabled < 0.5 && bloomStrength > 0.0) {\n"
-            "        finalColour += texture2D(bloomTex, texcoord).rgb * bloomStrength * (1.0 - bloomCharacterProtection);\n"
-            "    }\n"
-            "    // This world pass runs before GUI/touch rendering; skip the effect during iris transitions.\n"
-            "    if (cloudShadowEnabled > 0.5) finalColour = applyWorldCloudShadow(texcoord, finalColour);\n"
-            "#else\n"
-            "    // LITE uses a separate shader variant: no screen-space cel contours,\n"
-            "    // facial detection, fine-detail sampling, cel grading or dithering.\n"
+                        "    // Optional effects are independent of object-based cel shading.\n"
             "    if (bloomStrength > 0.0)\n"
             "        finalColour += texture2D(bloomTex, texcoord).rgb * bloomStrength * (1.0 - bloomCharacterProtection);\n"
             "    if (cloudShadowEnabled > 0.5)\n"
             "        finalColour = applyWorldCloudShadow(texcoord, finalColour);\n"
-            "#endif\n"
             "    gl_FragColor = vec4(clamp(finalColour, 0.0, 1.0), 1.0);\n"
             "}\n";
 
@@ -1989,19 +1777,13 @@ static bool EnsureCelPostProcessResources(int width, int height)
 
         gCelPostSceneLocation = glGetUniformLocation(gCelPostProgram, "sceneTex");
         gCelPostTexelLocation = glGetUniformLocation(gCelPostProgram, "texelSize");
-        gCelPostOutlineTexelSizeLocation = glGetUniformLocation(gCelPostProgram, "outlineTexelSize");
-        gCelPostFineDetailEnabledLocation = glGetUniformLocation(gCelPostProgram, "fineDetailEnabled");
-        gCelPostScreenSpaceOutlineEnabledLocation =
-            glGetUniformLocation(gCelPostProgram, "screenSpaceOutlinesEnabled");
         gCelPostBloomLocation = glGetUniformLocation(gCelPostProgram, "bloomTex");
         gCelPostBloomStrengthLocation = glGetUniformLocation(gCelPostProgram, "bloomStrength");
         gCelPostDepthLocation = glGetUniformLocation(gCelPostProgram, "depthTex");
         gCelPostDepthAvailableLocation = glGetUniformLocation(gCelPostProgram, "depthTextureAvailable");
-        gCelPostDepthEdgeDetectionAvailableLocation = glGetUniformLocation(gCelPostProgram, "depthEdgeDetectionAvailable");
         gCelPostCloudShadowEnabledLocation = glGetUniformLocation(gCelPostProgram, "cloudShadowEnabled");
         gCelPostCloudShadowTimeLocation = glGetUniformLocation(gCelPostProgram, "cloudShadowTime");
         gCelPostCloudShadowStrengthLocation = glGetUniformLocation(gCelPostProgram, "cloudShadowStrengthMultiplier");
-        gCelPostCelEffectsLocation = glGetUniformLocation(gCelPostProgram, "celEffectsEnabled");
         gCelPostMotionBlurEnabledLocation = glGetUniformLocation(gCelPostProgram, "motionBlurEnabled");
         gCelPostMotionBlurValidLocation = glGetUniformLocation(gCelPostProgram, "motionBlurCameraValid");
         gCelPostMotionBlurScaleLocation = glGetUniformLocation(gCelPostProgram, "motionBlurTimeScale");
@@ -2029,60 +1811,7 @@ static bool EnsureCelPostProcessResources(int width, int height)
         gCelPostVehicleMotionIntensityLocation = glGetUniformLocation(gCelPostProgram, "vehicleMotionIntensity");
 
 
-        if (gCelLitePostProgram == 0)
-        {
-            const std::string liteFragmentSource =
-                std::string("#define SHAR_LITE_COMPOSITE 1\n") + fragmentSource;
-            gCelLitePostProgram = CreateCelPostProgram(
-                vertexSource, liteFragmentSource.c_str(), "LITE effects composite");
-            if (gCelLitePostProgram != 0)
-            {
-                gCelLitePostSceneLocation = glGetUniformLocation(gCelLitePostProgram, "sceneTex");
-                gCelLitePostTexelLocation = glGetUniformLocation(gCelLitePostProgram, "texelSize");
-                gCelLitePostOutlineTexelSizeLocation = glGetUniformLocation(gCelLitePostProgram, "outlineTexelSize");
-                gCelLitePostFineDetailEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "fineDetailEnabled");
-                gCelLitePostScreenSpaceOutlineEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "screenSpaceOutlinesEnabled");
-                gCelLitePostBloomLocation = glGetUniformLocation(gCelLitePostProgram, "bloomTex");
-                gCelLitePostBloomStrengthLocation = glGetUniformLocation(gCelLitePostProgram, "bloomStrength");
-                gCelLitePostDepthLocation = glGetUniformLocation(gCelLitePostProgram, "depthTex");
-                gCelLitePostDepthAvailableLocation = glGetUniformLocation(gCelLitePostProgram, "depthTextureAvailable");
-                gCelLitePostDepthEdgeDetectionAvailableLocation = glGetUniformLocation(gCelLitePostProgram, "depthEdgeDetectionAvailable");
-                gCelLitePostCloudShadowEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "cloudShadowEnabled");
-                gCelLitePostCloudShadowTimeLocation = glGetUniformLocation(gCelLitePostProgram, "cloudShadowTime");
-                gCelLitePostCloudShadowStrengthLocation = glGetUniformLocation(gCelLitePostProgram, "cloudShadowStrengthMultiplier");
-                gCelLitePostCelEffectsLocation = glGetUniformLocation(gCelLitePostProgram, "celEffectsEnabled");
-                gCelLitePostMotionBlurEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "motionBlurEnabled");
-                gCelLitePostMotionBlurValidLocation = glGetUniformLocation(gCelLitePostProgram, "motionBlurCameraValid");
-                gCelLitePostMotionBlurScaleLocation = glGetUniformLocation(gCelLitePostProgram, "motionBlurTimeScale");
-                gCelLitePostCurrentCameraPositionLocation = glGetUniformLocation(gCelLitePostProgram, "currentCameraPosition");
-                gCelLitePostCurrentCameraRightLocation = glGetUniformLocation(gCelLitePostProgram, "currentCameraRight");
-                gCelLitePostCurrentCameraUpLocation = glGetUniformLocation(gCelLitePostProgram, "currentCameraUp");
-                gCelLitePostCurrentCameraForwardLocation = glGetUniformLocation(gCelLitePostProgram, "currentCameraForward");
-                gCelLitePostPreviousCameraPositionLocation = glGetUniformLocation(gCelLitePostProgram, "previousCameraPosition");
-                gCelLitePostPreviousCameraRightLocation = glGetUniformLocation(gCelLitePostProgram, "previousCameraRight");
-                gCelLitePostPreviousCameraUpLocation = glGetUniformLocation(gCelLitePostProgram, "previousCameraUp");
-                gCelLitePostPreviousCameraForwardLocation = glGetUniformLocation(gCelLitePostProgram, "previousCameraForward");
-                gCelLitePostCurrentTanHalfFovXLocation = glGetUniformLocation(gCelLitePostProgram, "currentTanHalfFovX");
-                gCelLitePostCurrentTanHalfFovYLocation = glGetUniformLocation(gCelLitePostProgram, "currentTanHalfFovY");
-                gCelLitePostPreviousTanHalfFovXLocation = glGetUniformLocation(gCelLitePostProgram, "previousTanHalfFovX");
-                gCelLitePostPreviousTanHalfFovYLocation = glGetUniformLocation(gCelLitePostProgram, "previousTanHalfFovY");
-                gCelLitePostCurrentNearPlaneLocation = glGetUniformLocation(gCelLitePostProgram, "currentNearPlane");
-                gCelLitePostCurrentFarPlaneLocation = glGetUniformLocation(gCelLitePostProgram, "currentFarPlane");
-                gCelLitePostPreviousNearPlaneLocation = glGetUniformLocation(gCelLitePostProgram, "previousNearPlane");
-                gCelLitePostCharacterMaskEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "characterMaskEnabled");
-                gCelLitePostCharacterMaskPositionLocation = glGetUniformLocation(gCelLitePostProgram, "characterMaskPosition");
-                gCelLitePostCharacterMaskSizeLocation = glGetUniformLocation(gCelLitePostProgram, "characterMaskSize");
-                gCelLitePostVehicleMaskEnabledLocation = glGetUniformLocation(gCelLitePostProgram, "vehicleMaskEnabled");
-                gCelLitePostVehicleMaskPositionLocation = glGetUniformLocation(gCelLitePostProgram, "vehicleMaskPosition");
-                gCelLitePostVehicleMaskSizeLocation = glGetUniformLocation(gCelLitePostProgram, "vehicleMaskSize");
-                gCelLitePostVehicleMotionIntensityLocation = glGetUniformLocation(gCelLitePostProgram, "vehicleMotionIntensity");
-            }
-            else
-            {
-                SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
-                    "[GRAPHICS] LITE effects composite unavailable; using the compatibility path");
-            }
-        }
+        glGenTextures(1, &gCelPostTexture);
 
         glGenTextures(1, &gCelPostTexture);
 
@@ -2569,11 +2298,7 @@ static void ApplyCelPostProcess(int width, int height)
         height = gSHARFrameHeight;
     }
 
-    const bool celEffectsEnabled = IsCelShadingEnabled();
-    const bool celShadingFull = IsSHARCelShadingFull();
-    // OFF also uses the LITE effects shader whenever an optional effect still needs compositing.
-    const bool liteCelShading = !celShadingFull || !celEffectsEnabled;
-    const bool motionBlurRequested = IsMotionBlurEnabled();
+    const bool motionBlurRequested = IsMotionBlurEnabled();    const bool motionBlurRequested = IsMotionBlurEnabled();
     const bool bloomRequested = IsSHARBloomEnabled();
     const bool cloudShadowsUserEnabled = IsSHARCloudShadowsEnabled();
     // Limit cloud shadows to the supported exterior gameplay levels.
@@ -2583,10 +2308,10 @@ static void ApplyCelPostProcess(int width, int height)
     // Camera reconstruction is required only by motion blur or active cloud shadows.
     // This leaves the no-effects LITE route free of unnecessary camera queries.
     const bool needMotionBlurCamera =
-        !liteCelShading || motionBlurRequested ||
+        motionBlurRequested ||
         (cloudShadowsUserEnabled && cloudShadowLevelAllowed && gCelDepthTextureActive);
     const float motionBlurTimeScale =
-        (!liteCelShading || motionBlurRequested) ? GetSHARMotionBlurTimeScale() : 1.0f;
+        motionBlurRequested ? GetSHARMotionBlurTimeScale() : 1.0f;
     SHARMotionBlurCameraState currentMotionBlurCamera = {};
     const bool haveCurrentMotionBlurCamera =
         needMotionBlurCamera && CaptureSHARMotionBlurCamera(&currentMotionBlurCamera);
@@ -2608,21 +2333,12 @@ static void ApplyCelPostProcess(int width, int height)
         motionBlurRequested && gCelDepthTextureActive && haveCurrentMotionBlurCamera &&
         IsSHARMotionBlurHistoryUsable(currentMotionBlurCamera, width, height);
 
-    // LITE has already rendered object toon lighting and expanded silhouettes
-    // into the scene texture. With all optional effects disabled, resolve it
-    // directly instead of running either full-screen effects shader.
-    if (liteCelShading && !bloomRequested && !cloudShadowsActive && !motionBlurRequested)
+    // Resolve the scene directly when no independent post effect is requested.
+    if (!bloomRequested && !cloudShadowsActive && !motionBlurRequested)
     {
         ResolveSceneToScreen(width, height);
         CommitSHARMotionBlurCameraHistory(currentMotionBlurCamera,
             haveCurrentMotionBlurCamera, width, height);
-        return;
-    }
-
-    if (!celEffectsEnabled && !motionBlurRequested && !cloudShadowsActive && !bloomRequested)
-    {
-        ResolveSceneToScreen(width, height);
-        CommitSHARMotionBlurCameraHistory(currentMotionBlurCamera, haveCurrentMotionBlurCamera, width, height);
         return;
     }
 
@@ -2724,51 +2440,44 @@ static void ApplyCelPostProcess(int width, int height)
     int outputHeight = height;
     QueryDefaultFramebufferSize(&outputWidth, &outputHeight);
 
-    // FULL keeps its original post-process program. LITE selects a separately
-    // compiled variant containing only the optional effects it actually uses.
-    const bool useLitePostProgram = liteCelShading && gCelLitePostProgram != 0;
-    const GLint postSceneLocation = useLitePostProgram ? gCelLitePostSceneLocation : gCelPostSceneLocation;
-    const GLint postTexelLocation = useLitePostProgram ? gCelLitePostTexelLocation : gCelPostTexelLocation;
-    const GLint postOutlineTexelSizeLocation = useLitePostProgram ? gCelLitePostOutlineTexelSizeLocation : gCelPostOutlineTexelSizeLocation;
-    const GLint postFineDetailEnabledLocation = useLitePostProgram ? gCelLitePostFineDetailEnabledLocation : gCelPostFineDetailEnabledLocation;
-    const GLint postScreenSpaceOutlineEnabledLocation = useLitePostProgram ? gCelLitePostScreenSpaceOutlineEnabledLocation : gCelPostScreenSpaceOutlineEnabledLocation;
-    const GLint postBloomLocation = useLitePostProgram ? gCelLitePostBloomLocation : gCelPostBloomLocation;
-    const GLint postBloomStrengthLocation = useLitePostProgram ? gCelLitePostBloomStrengthLocation : gCelPostBloomStrengthLocation;
-    const GLint postDepthLocation = useLitePostProgram ? gCelLitePostDepthLocation : gCelPostDepthLocation;
-    const GLint postDepthAvailableLocation = useLitePostProgram ? gCelLitePostDepthAvailableLocation : gCelPostDepthAvailableLocation;
-    const GLint postDepthEdgeDetectionAvailableLocation = useLitePostProgram ? gCelLitePostDepthEdgeDetectionAvailableLocation : gCelPostDepthEdgeDetectionAvailableLocation;
-    const GLint postCloudShadowEnabledLocation = useLitePostProgram ? gCelLitePostCloudShadowEnabledLocation : gCelPostCloudShadowEnabledLocation;
-    const GLint postCloudShadowTimeLocation = useLitePostProgram ? gCelLitePostCloudShadowTimeLocation : gCelPostCloudShadowTimeLocation;
-    const GLint postCloudShadowStrengthLocation = useLitePostProgram ? gCelLitePostCloudShadowStrengthLocation : gCelPostCloudShadowStrengthLocation;
-    const GLint postCelEffectsLocation = useLitePostProgram ? gCelLitePostCelEffectsLocation : gCelPostCelEffectsLocation;
-    const GLint postMotionBlurEnabledLocation = useLitePostProgram ? gCelLitePostMotionBlurEnabledLocation : gCelPostMotionBlurEnabledLocation;
-    const GLint postMotionBlurValidLocation = useLitePostProgram ? gCelLitePostMotionBlurValidLocation : gCelPostMotionBlurValidLocation;
-    const GLint postMotionBlurScaleLocation = useLitePostProgram ? gCelLitePostMotionBlurScaleLocation : gCelPostMotionBlurScaleLocation;
-    const GLint postCurrentCameraPositionLocation = useLitePostProgram ? gCelLitePostCurrentCameraPositionLocation : gCelPostCurrentCameraPositionLocation;
-    const GLint postCurrentCameraRightLocation = useLitePostProgram ? gCelLitePostCurrentCameraRightLocation : gCelPostCurrentCameraRightLocation;
-    const GLint postCurrentCameraUpLocation = useLitePostProgram ? gCelLitePostCurrentCameraUpLocation : gCelPostCurrentCameraUpLocation;
-    const GLint postCurrentCameraForwardLocation = useLitePostProgram ? gCelLitePostCurrentCameraForwardLocation : gCelPostCurrentCameraForwardLocation;
-    const GLint postPreviousCameraPositionLocation = useLitePostProgram ? gCelLitePostPreviousCameraPositionLocation : gCelPostPreviousCameraPositionLocation;
-    const GLint postPreviousCameraRightLocation = useLitePostProgram ? gCelLitePostPreviousCameraRightLocation : gCelPostPreviousCameraRightLocation;
-    const GLint postPreviousCameraUpLocation = useLitePostProgram ? gCelLitePostPreviousCameraUpLocation : gCelPostPreviousCameraUpLocation;
-    const GLint postPreviousCameraForwardLocation = useLitePostProgram ? gCelLitePostPreviousCameraForwardLocation : gCelPostPreviousCameraForwardLocation;
-    const GLint postCurrentTanHalfFovXLocation = useLitePostProgram ? gCelLitePostCurrentTanHalfFovXLocation : gCelPostCurrentTanHalfFovXLocation;
-    const GLint postCurrentTanHalfFovYLocation = useLitePostProgram ? gCelLitePostCurrentTanHalfFovYLocation : gCelPostCurrentTanHalfFovYLocation;
-    const GLint postPreviousTanHalfFovXLocation = useLitePostProgram ? gCelLitePostPreviousTanHalfFovXLocation : gCelPostPreviousTanHalfFovXLocation;
-    const GLint postPreviousTanHalfFovYLocation = useLitePostProgram ? gCelLitePostPreviousTanHalfFovYLocation : gCelPostPreviousTanHalfFovYLocation;
-    const GLint postCurrentNearPlaneLocation = useLitePostProgram ? gCelLitePostCurrentNearPlaneLocation : gCelPostCurrentNearPlaneLocation;
-    const GLint postCurrentFarPlaneLocation = useLitePostProgram ? gCelLitePostCurrentFarPlaneLocation : gCelPostCurrentFarPlaneLocation;
-    const GLint postPreviousNearPlaneLocation = useLitePostProgram ? gCelLitePostPreviousNearPlaneLocation : gCelPostPreviousNearPlaneLocation;
-    const GLint postCharacterMaskEnabledLocation = useLitePostProgram ? gCelLitePostCharacterMaskEnabledLocation : gCelPostCharacterMaskEnabledLocation;
-    const GLint postCharacterMaskPositionLocation = useLitePostProgram ? gCelLitePostCharacterMaskPositionLocation : gCelPostCharacterMaskPositionLocation;
-    const GLint postCharacterMaskSizeLocation = useLitePostProgram ? gCelLitePostCharacterMaskSizeLocation : gCelPostCharacterMaskSizeLocation;
-    const GLint postVehicleMaskEnabledLocation = useLitePostProgram ? gCelLitePostVehicleMaskEnabledLocation : gCelPostVehicleMaskEnabledLocation;
-    const GLint postVehicleMaskPositionLocation = useLitePostProgram ? gCelLitePostVehicleMaskPositionLocation : gCelPostVehicleMaskPositionLocation;
-    const GLint postVehicleMaskSizeLocation = useLitePostProgram ? gCelLitePostVehicleMaskSizeLocation : gCelPostVehicleMaskSizeLocation;
-    const GLint postVehicleMotionIntensityLocation = useLitePostProgram ? gCelLitePostVehicleMotionIntensityLocation : gCelPostVehicleMotionIntensityLocation;
+    // A single optional-effects composite remains for bloom, cloud shadows and motion blur.
+    const GLint postSceneLocation = gCelPostSceneLocation;
+    const GLint postTexelLocation = gCelPostTexelLocation;
+    const GLint postBloomLocation = gCelPostBloomLocation;
+    const GLint postBloomStrengthLocation = gCelPostBloomStrengthLocation;
+    const GLint postDepthLocation = gCelPostDepthLocation;
+    const GLint postDepthAvailableLocation = gCelPostDepthAvailableLocation;
+    const GLint postCloudShadowEnabledLocation = gCelPostCloudShadowEnabledLocation;
+    const GLint postCloudShadowTimeLocation = gCelPostCloudShadowTimeLocation;
+    const GLint postCloudShadowStrengthLocation = gCelPostCloudShadowStrengthLocation;
+    const GLint postMotionBlurEnabledLocation = gCelPostMotionBlurEnabledLocation;
+    const GLint postMotionBlurValidLocation = gCelPostMotionBlurValidLocation;
+    const GLint postMotionBlurScaleLocation = gCelPostMotionBlurScaleLocation;
+    const GLint postCurrentCameraPositionLocation = gCelPostCurrentCameraPositionLocation;
+    const GLint postCurrentCameraRightLocation = gCelPostCurrentCameraRightLocation;
+    const GLint postCurrentCameraUpLocation = gCelPostCurrentCameraUpLocation;
+    const GLint postCurrentCameraForwardLocation = gCelPostCurrentCameraForwardLocation;
+    const GLint postPreviousCameraPositionLocation = gCelPostPreviousCameraPositionLocation;
+    const GLint postPreviousCameraRightLocation = gCelPostPreviousCameraRightLocation;
+    const GLint postPreviousCameraUpLocation = gCelPostPreviousCameraUpLocation;
+    const GLint postPreviousCameraForwardLocation = gCelPostPreviousCameraForwardLocation;
+    const GLint postCurrentTanHalfFovXLocation = gCelPostCurrentTanHalfFovXLocation;
+    const GLint postCurrentTanHalfFovYLocation = gCelPostCurrentTanHalfFovYLocation;
+    const GLint postPreviousTanHalfFovXLocation = gCelPostPreviousTanHalfFovXLocation;
+    const GLint postPreviousTanHalfFovYLocation = gCelPostPreviousTanHalfFovYLocation;
+    const GLint postCurrentNearPlaneLocation = gCelPostCurrentNearPlaneLocation;
+    const GLint postCurrentFarPlaneLocation = gCelPostCurrentFarPlaneLocation;
+    const GLint postPreviousNearPlaneLocation = gCelPostPreviousNearPlaneLocation;
+    const GLint postCharacterMaskEnabledLocation = gCelPostCharacterMaskEnabledLocation;
+    const GLint postCharacterMaskPositionLocation = gCelPostCharacterMaskPositionLocation;
+    const GLint postCharacterMaskSizeLocation = gCelPostCharacterMaskSizeLocation;
+    const GLint postVehicleMaskEnabledLocation = gCelPostVehicleMaskEnabledLocation;
+    const GLint postVehicleMaskPositionLocation = gCelPostVehicleMaskPositionLocation;
+    const GLint postVehicleMaskSizeLocation = gCelPostVehicleMaskSizeLocation;
+    const GLint postVehicleMotionIntensityLocation = gCelPostVehicleMotionIntensityLocation;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, outputWidth, outputHeight);
-    glUseProgram(useLitePostProgram ? gCelLitePostProgram : gCelPostProgram);
+    glUseProgram(gCelPostProgram);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, gCelPostTexture);
@@ -2776,41 +2485,7 @@ static void ApplyCelPostProcess(int width, int height)
     if (postTexelLocation >= 0)
         glUniform2f(postTexelLocation, 1.0f / (float)width, 1.0f / (float)height);
 
-    // Keep 480p/720p at their existing tuning. Use a fixed 1.00x sampling
-    // distance at 1080p and above so fine contours are not skipped at high resolution.
-    if (postOutlineTexelSizeLocation >= 0)
-    {
-        float outlineScale = 1.0f;
-        if (height <= 480)
-        {
-            outlineScale = 0.25f;
-        }
-        else if (height <= 720)
-        {
-            outlineScale = 0.50f;
-        }
-
-        // The scene is sampled at internal render resolution but presented at
-        // output resolution. If supersampling is active, widen UV offsets by
-        // the internal/output ratio so outline taps stay one output pixel apart.
-        // Equal internal/output sizes preserve the original 480p/720p/1080p tuning.
-        if (outputWidth > 0 && outputHeight > 0 &&
-            width > outputWidth && height > outputHeight)
-        {
-            outlineScale *= (float)height / (float)outputHeight;
-        }
-
-        glUniform2f(postOutlineTexelSizeLocation,
-            outlineScale / (float)width, outlineScale / (float)height);
-    }
-    if (postFineDetailEnabledLocation >= 0)
-        glUniform1f(postFineDetailEnabledLocation,
-            (celShadingFull && height > 1080) ? 1.0f : 0.0f);
-    if (postScreenSpaceOutlineEnabledLocation >= 0)
-        glUniform1f(postScreenSpaceOutlineEnabledLocation,
-            celShadingFull ? 1.0f : 0.0f);
-
-    glActiveTexture(GL_TEXTURE1);
+    glActiveTexture(GL_TEXTURE1);    glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, bloomReady ? gCelBloomTexture : 0);
     if (postBloomLocation >= 0)
         glUniform1i(postBloomLocation, 1);
@@ -2823,12 +2498,6 @@ static void ApplyCelPostProcess(int width, int height)
         glUniform1i(postDepthLocation, 2);
     if (postDepthAvailableLocation >= 0)
         glUniform1f(postDepthAvailableLocation, gCelDepthTextureActive ? 1.0f : 0.0f);
-    if (postDepthEdgeDetectionAvailableLocation >= 0)
-        glUniform1f(postDepthEdgeDetectionAvailableLocation,
-            (gCelDepthTextureActive &&
-             haveCurrentMotionBlurCamera &&
-             currentMotionBlurCamera.nearPlane > 0.0f &&
-             currentMotionBlurCamera.farPlane > currentMotionBlurCamera.nearPlane) ? 1.0f : 0.0f);
     if (postCloudShadowEnabledLocation >= 0)
         glUniform1f(postCloudShadowEnabledLocation, cloudShadowsActive ? 1.0f : 0.0f);
     if (postCloudShadowTimeLocation >= 0)
@@ -2841,8 +2510,6 @@ static void ApplyCelPostProcess(int width, int height)
     if (postCloudShadowStrengthLocation >= 0)
         glUniform1f(postCloudShadowStrengthLocation, cloudShadowStrengthMultiplier);
 
-    if (postCelEffectsLocation >= 0)
-        glUniform1f(postCelEffectsLocation, celEffectsEnabled ? 1.0f : 0.0f);
     if (postMotionBlurEnabledLocation >= 0)
         glUniform1f(postMotionBlurEnabledLocation, motionBlurRequested ? 1.0f : 0.0f);
     if (postMotionBlurValidLocation >= 0)
@@ -2949,10 +2616,8 @@ static void ApplyCelPostProcess(int width, int height)
 
 static float GetSHARGlobalSaturationFactor()
 {
-    // FULL adds 12.5% in its existing world composite and then receives the
-    // normal 20% global saturation pass. LITE skips that composite adjustment,
-    // so raise the existing pass to the same effective 35% without another pass.
-    return (IsCelShadingEnabled() && !IsSHARCelShadingFull()) ? 1.35f : 1.20f;
+    // Both object-based modes retain the same established +35% saturation.
+    return IsCelShadingEnabled() ? 1.35f : 1.20f;
 }
 
 static void ApplyFrameSharpening(int width, int height);
@@ -3038,282 +2703,6 @@ bool BeginCelPostProcessFrame(int width, int height)
     gCelWorldInFbo = true;
     return true;
 }
-
-#if defined(RAD_ANDROID)
-// Front-end camera-set fine contour pass. The regular world post-process samples
-// the world FBO before Scrooby draws the menu, so its fine colour-edge detector
-// never sees the living-room camera set. Capture only while that 3D front-end
-// scene is active, then run a lightweight one-pixel colour-edge pass before touch HUD.
-static GLuint gSHARFrontendFineDetailProgram = 0;
-static GLuint gSHARFrontendFineDetailTexture = 0;
-static GLuint gSHARFrontendFineDetailVbo = 0;
-static GLuint gSHARFrontendFineDetailVao = 0;
-static GLint gSHARFrontendFineDetailSceneLocation = -1;
-static GLint gSHARFrontendFineDetailTexelSizeLocation = -1;
-static int gSHARFrontendFineDetailWidth = 0;
-static int gSHARFrontendFineDetailHeight = 0;
-static int gSHARFrontendFineDetailFailedWidth = 0;
-static int gSHARFrontendFineDetailFailedHeight = 0;
-
-static bool EnsureSHARFrontendFineDetailResources(int width, int height)
-{
-    if (!gSHARVertexArrayObjectsSupported || width <= 0 || height <= 0)
-        return false;
-
-    if (gSHARFrontendFineDetailFailedWidth == width &&
-        gSHARFrontendFineDetailFailedHeight == height)
-        return false;
-
-    GLint previousActiveTexture = GL_TEXTURE0;
-    GLint previousTexture = 0;
-    GLint previousArrayBuffer = 0;
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
-
-    if (gSHARFrontendFineDetailProgram == 0)
-    {
-        const char* vertexSource =
-            "attribute vec2 position;\n"
-            "varying vec2 texcoord;\n"
-            "void main() {\n"
-            "    texcoord = position * 0.5 + 0.5;\n"
-            "    gl_Position = vec4(position, 0.0, 1.0);\n"
-            "}\n";
-
-        const char* fragmentSource =
-            "precision mediump float;\n"
-            "uniform sampler2D sceneTex;\n"
-            "uniform vec2 texelSize;\n"
-            "varying vec2 texcoord;\n"
-            "float sceneLuma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }\n"
-            "void main() {\n"
-            "    vec4 source = texture2D(sceneTex, texcoord);\n"
-            "    float centre = sceneLuma(source.rgb);\n"
-            "    float left = sceneLuma(texture2D(sceneTex, texcoord - vec2(texelSize.x, 0.0)).rgb);\n"
-            "    float right = sceneLuma(texture2D(sceneTex, texcoord + vec2(texelSize.x, 0.0)).rgb);\n"
-            "    float up = sceneLuma(texture2D(sceneTex, texcoord + vec2(0.0, texelSize.y)).rgb);\n"
-            "    float down = sceneLuma(texture2D(sceneTex, texcoord - vec2(0.0, texelSize.y)).rgb);\n"
-            "    float upLeft = sceneLuma(texture2D(sceneTex, texcoord + vec2(-texelSize.x, texelSize.y)).rgb);\n"
-            "    float upRight = sceneLuma(texture2D(sceneTex, texcoord + vec2(texelSize.x, texelSize.y)).rgb);\n"
-            "    float downLeft = sceneLuma(texture2D(sceneTex, texcoord + vec2(-texelSize.x, -texelSize.y)).rgb);\n"
-            "    float downRight = sceneLuma(texture2D(sceneTex, texcoord + vec2(texelSize.x, -texelSize.y)).rgb);\n"
-            "    // Ink only the darker side of a luminance boundary. Absolute differences\n"
-            "    // outline both sides of an anti-aliased edge and create doubled contours.\n"
-            "    float neighbourMax = max(max(max(left, right), max(up, down)),\n"
-            "        max(max(upLeft, upRight), max(downLeft, downRight)));\n"
-            "    float edgeStrength = max(neighbourMax - centre, 0.0);\n"
-            "    // Recover fine detail without restoring two-sided lines.\n"
-            "    float detailEdge = smoothstep(0.020, 0.070, edgeStrength);\n"
-            "    float inkStrength = detailEdge * 0.34;\n"
-            "    vec3 finalColour = mix(source.rgb, vec3(0.012), inkStrength);\n"
-            "    gl_FragColor = vec4(finalColour, source.a);\n"
-            "}\n";
-
-        gSHARFrontendFineDetailProgram =
-            CreateCelPostProgram(vertexSource, fragmentSource, "frontend fine-detail contour");
-        if (gSHARFrontendFineDetailProgram == 0)
-        {
-            gSHARFrontendFineDetailFailedWidth = width;
-            gSHARFrontendFineDetailFailedHeight = height;
-            glBindBuffer(GL_ARRAY_BUFFER, (GLuint)previousArrayBuffer);
-            glActiveTexture((GLenum)previousActiveTexture);
-            glBindTexture(GL_TEXTURE_2D, (GLuint)previousTexture);
-            return false;
-        }
-
-        gSHARFrontendFineDetailSceneLocation =
-            glGetUniformLocation(gSHARFrontendFineDetailProgram, "sceneTex");
-        gSHARFrontendFineDetailTexelSizeLocation =
-            glGetUniformLocation(gSHARFrontendFineDetailProgram, "texelSize");
-    }
-
-    if (gSHARFrontendFineDetailVbo == 0)
-    {
-        const GLfloat vertices[] = {
-            -1.0f, -1.0f,
-             1.0f, -1.0f,
-            -1.0f,  1.0f,
-             1.0f,  1.0f
-        };
-        glGenBuffers(1, &gSHARFrontendFineDetailVbo);
-        glBindBuffer(GL_ARRAY_BUFFER, gSHARFrontendFineDetailVbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    }
-
-    if (gSHARFrontendFineDetailVao == 0)
-        SHARGenVertexArrays(1, &gSHARFrontendFineDetailVao);
-
-    if (gSHARFrontendFineDetailTexture == 0)
-        glGenTextures(1, &gSHARFrontendFineDetailTexture);
-
-    bool textureReady = gSHARFrontendFineDetailTexture != 0 &&
-                        gSHARFrontendFineDetailVbo != 0 &&
-                        gSHARFrontendFineDetailVao != 0;
-    if (textureReady &&
-        (gSHARFrontendFineDetailWidth != width ||
-         gSHARFrontendFineDetailHeight != height))
-    {
-        if (!CheckSHARRenderTargetSize(
-                width, height, "frontend fine-detail capture", 1, false, true))
-        {
-            textureReady = false;
-        }
-        else
-        {
-            glBindTexture(GL_TEXTURE_2D, gSHARFrontendFineDetailTexture);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0,
-                         GL_RGB, GL_UNSIGNED_BYTE, NULL);
-
-            const GLenum allocationError = glGetError();
-            if (allocationError != GL_NO_ERROR)
-            {
-                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                    "SHAR frontend fine-detail texture allocation failed (%dx%d), GL error=0x%04x",
-                    width, height, (unsigned)allocationError);
-                textureReady = false;
-            }
-            else
-            {
-                gSHARFrontendFineDetailWidth = width;
-                gSHARFrontendFineDetailHeight = height;
-                gSHARFrontendFineDetailFailedWidth = 0;
-                gSHARFrontendFineDetailFailedHeight = 0;
-            }
-        }
-    }
-
-    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)previousArrayBuffer);
-    glActiveTexture((GLenum)previousActiveTexture);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)previousTexture);
-    return textureReady;
-}
-
-void ApplySHARFrontendMenuFineDetail()
-{
-    if (!IsSHARFrontendMenuCelPassActive() || !IsCelShadingEnabled() ||
-        !IsSHARCelShadingFull())
-        return;
-
-    int outputWidth = 0;
-    int outputHeight = 0;
-    QueryDefaultFramebufferSize(&outputWidth, &outputHeight);
-    if (outputWidth <= 0 || outputHeight <= 0)
-        return;
-
-    if (!EnsureSHARFrontendFineDetailResources(outputWidth, outputHeight))
-        return;
-
-    GLint previousFramebuffer = 0;
-    GLint previousViewport[4] = {0, 0, outputWidth, outputHeight};
-    GLint previousProgram = 0;
-    GLint previousActiveTexture = GL_TEXTURE0;
-    GLint previousTexture = 0;
-    GLint previousTextureUnit0 = 0;
-    GLint previousArrayBuffer = 0;
-    GLint previousVao = 0;
-    GLboolean previousDepthEnabled = GL_FALSE;
-    GLboolean previousBlendEnabled = GL_FALSE;
-    GLboolean previousCullEnabled = GL_FALSE;
-    GLboolean previousScissorEnabled = GL_FALSE;
-    GLboolean previousStencilEnabled = GL_FALSE;
-    GLboolean previousColorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
-
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
-    glGetIntegerv(GL_VIEWPORT, previousViewport);
-    glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
-    glActiveTexture(GL_TEXTURE0);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTextureUnit0);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
-    previousVao = SHARGetBoundVertexArray();
-    glGetBooleanv(GL_COLOR_WRITEMASK, previousColorMask);
-    previousDepthEnabled = glIsEnabled(GL_DEPTH_TEST);
-    previousBlendEnabled = glIsEnabled(GL_BLEND);
-    previousCullEnabled = glIsEnabled(GL_CULL_FACE);
-    previousScissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
-    previousStencilEnabled = glIsEnabled(GL_STENCIL_TEST);
-
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, outputWidth, outputHeight);
-
-    // Capture the completed front-end frame, then sample the copy while drawing
-    // back to framebuffer 0. This pass runs after regular post-processing and
-    // before touch controls, preventing feedback from sampling the active target.
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gSHARFrontendFineDetailTexture);
-
-    // Fail open if this driver's default-framebuffer copy is unsupported: leave
-    // the already-rendered menu visible rather than drawing an empty/stale texture.
-    while (glGetError() != GL_NO_ERROR) {}
-    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0,
-                        outputWidth, outputHeight);
-    const GLenum captureError = glGetError();
-    if (captureError == GL_NO_ERROR)
-    {
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_BLEND);
-        glDisable(GL_CULL_FACE);
-        glDisable(GL_SCISSOR_TEST);
-        glDisable(GL_STENCIL_TEST);
-        InvalidateSHARTrackedColorWriteMaskCache();
-        SetSHARTrackedColorWriteMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
-        glUseProgram(gSHARFrontendFineDetailProgram);
-        glUniform1i(gSHARFrontendFineDetailSceneLocation, 0);
-        if (gSHARFrontendFineDetailTexelSizeLocation >= 0)
-            glUniform2f(gSHARFrontendFineDetailTexelSizeLocation,
-                        1.0f / (float)outputWidth, 1.0f / (float)outputHeight);
-
-        // Use a dedicated VAO so the renderer's own/default attribute pointer is
-        // untouched. Scrooby can reuse that pointer on the next frame.
-        SHARBindVertexArray(gSHARFrontendFineDetailVao);
-        glBindBuffer(GL_ARRAY_BUFFER, gSHARFrontendFineDetailVbo);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (const void*)0);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    }
-    else
-    {
-        static bool s_loggedFrontendFineDetailCopyError = false;
-        if (!s_loggedFrontendFineDetailCopyError)
-        {
-            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
-                "SHAR frontend fine-detail capture failed (GL error=0x%04x); leaving the frame unchanged",
-                (unsigned)captureError);
-            s_loggedFrontendFineDetailCopyError = true;
-        }
-    }
-
-    SHARBindVertexArray((GLuint)previousVao);
-    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)previousArrayBuffer);
-
-    if (previousDepthEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-    if (previousBlendEnabled) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-    if (previousCullEnabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-    if (previousScissorEnabled) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
-    if (previousStencilEnabled) glEnable(GL_STENCIL_TEST); else glDisable(GL_STENCIL_TEST);
-
-    InvalidateSHARTrackedColorWriteMaskCache();
-    SetSHARTrackedColorWriteMask(previousColorMask[0], previousColorMask[1],
-                                 previousColorMask[2], previousColorMask[3]);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)previousTextureUnit0);
-    glActiveTexture((GLenum)previousActiveTexture);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)previousTexture);
-    glUseProgram((GLuint)previousProgram);
-    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)previousFramebuffer);
-    glViewport(previousViewport[0], previousViewport[1],
-               previousViewport[2], previousViewport[3]);
-}
-#endif
 
 void ApplyCelPostProcessBeforeGui(int width, int height)
 {

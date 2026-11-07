@@ -58,8 +58,6 @@
 
 // Rendering toggles exposed by the GLES renderer.
 bool IsCelShadingEnabled();
-bool IsSHARCelShadingFull();
-void SetSHARCelShadingFull(bool full);
 int GetSHARCelShadingMode();
 void SetSHARCelShadingMode(int mode);
 void SetCelShadingEnabled(bool enabled);
@@ -1046,7 +1044,7 @@ MEMTRACK_PUSH_GROUP( "CGuiScreenPauseSettings" );
         }
     }
 
-    // Create a dedicated OFF/MIN/MID/MAX text object for the Graphics page.
+    // Create a dedicated OFF/LITE/FULL text object for the Graphics page.
     // AddHardCodedString calls ResetText immediately, so copy the original
     // style first and never mutate the original Scrooby value resource.
     {
@@ -1111,7 +1109,7 @@ MEMTRACK_PUSH_GROUP( "CGuiScreenPauseSettings" );
                 pGraphicsValue->SetBoundingBoxSize( width, height );
                 pGraphicsValue->SetPositionOfCenter( centerX, centerY );
 
-                const char* celValues[4] = { "OFF", "MIN", "MID", "MAX" };
+                const char* celValues[3] = { "OFF", "LITE", "FULL" };
                 const Scrooby::TextMode celTextMode = pGraphicsValue->GetTextMode();
                 // ResetText's wrapping path requires a live font. Build the
                 // fixed selector strings in overlap mode, then restore the
@@ -1449,25 +1447,25 @@ void CGuiScreenPauseSettings::ConfigureAndroidGraphicsMenu()
             }
             else if( i == 2 )
             {
-                // MIN is the character/vehicle/gag-only performance tier.
-                // MID retains the previous LITE coverage; MAX retains FULL effects.
+                // LITE is the character/vehicle/gag/coin-only performance tier.
+                // FULL restores broad object-based outline coverage.
                 value->SetVisible( true );
-                const char* celValues[4] = { "OFF", "MIN", "MID", "MAX" };
+                const char* celValues[3] = { "OFF", "LITE", "FULL" };
                 if( m_pGraphicsCelShadingValue != NULL &&
                     value == m_pGraphicsCelShadingValue )
                 {
-                    for( int valueIndex = 0; valueIndex < 4; ++valueIndex )
+                    for( int valueIndex = 0; valueIndex < 3; ++valueIndex )
                     {
                         value->SetString( valueIndex, celValues[valueIndex] );
                     }
-                    m_pMenu->SetSelectionValueCount( guiIndex, 4 );
+                    m_pMenu->SetSelectionValueCount( guiIndex, 3 );
                     m_pMenu->SetSelectionValue( guiIndex, celShadingMode );
                 }
                 else
                 {
                     // Safe fallback for layouts without the dedicated value object.
                     value->SetString( 0, "OFF" );
-                    value->SetString( 1, "MID" );
+                    value->SetString( 1, "FULL" );
                     m_pMenu->SetSelectionValueCount( guiIndex, 2 );
                     m_pMenu->SetSelectionValue( guiIndex, celShadingMode == 0 ? 0 : 1 );
                 }
@@ -2335,7 +2333,7 @@ void CGuiScreenPauseSettings::HandleMessage
                         }
                         else if( logicalMenuItem == MENU_ITEM_INTERSECT_NAV_SYSTEM )
                         {
-                            if( param2 < 4 )
+                            if( param2 < 3 )
                             {
                                 SetSHARCelShadingMode( static_cast<int>( param2 ) );
                             }
