@@ -2,10 +2,10 @@
 
 **Language:** [🇬🇧 English](README.md) · [🇫🇷 Français](README.fr.md) · [🇩🇪 Deutsch](README.de.md) · [🇪🇸 Español](README.es.md)
 
-## 📥 Downloads — v1.02
+## 📥 Downloads [v1.02]
 
-- **Android phones / tablets:** [Simpsons-H.R-Revamped.apk](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/download/v1.02/Simpsons-H.R-Revamped.apk)
-- **Android TV / NVIDIA Shield:** [ATV-Launcher.apk](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/download/v1.02/ATV-Launcher.apk)
+- **Android Devices:** [Simpsons-H.R-Revamped.apk](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/download/v1.02/Simpsons-H.R-Revamped.apk)
+- **Android TV / NVIDIA Shield (Optional Launcher):** [ATV-Launcher.apk](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/download/v1.02/ATV-Launcher.apk)
 
 [Release notes and version history](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/tag/v1.02)
 
@@ -29,7 +29,7 @@ This version is based on the excellent Carlox33's fork of ZenoArrows's original 
 
 *(All Enhancements OFF)*
 
-- Any older low/mid spec SOC [2GB RAM] (720p / 60FPS)
+- Any older low/mid spec SoC [2GB RAM] (720p / 60FPS)
 
 Stock settings are fine tuned to work nicely on most modern smartphones.
 
@@ -155,3 +155,4 @@ Some features remain experimental and may vary by device:
 - Refining compatibility for other languages.
 - Researching possible compatibility with game data from PS2, GameCube and Xbox releases.
 - Automatic extraction of game data from disc-image files.
+- iOS port (at the initial stages)

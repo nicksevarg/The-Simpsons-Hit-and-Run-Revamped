@@ -2,10 +2,10 @@
 
 **Idioma:** [🇬🇧 English](README.md) · [🇫🇷 Français](README.fr.md) · [🇩🇪 Deutsch](README.de.md) · [🇪🇸 Español](README.es.md)
 
-## 📥 Descargas — v1.02
+## 📥 Descargas [v1.02]
 
-- **Android (teléfonos / tabletas):** [Simpsons-H.R-Revamped.apk](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/download/v1.02/Simpsons-H.R-Revamped.apk)
-- **Android TV / NVIDIA Shield:** [ATV-Launcher.apk](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/download/v1.02/ATV-Launcher.apk)
+- **Dispositivos Android:** [Simpsons-H.R-Revamped.apk](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/download/v1.02/Simpsons-H.R-Revamped.apk)
+- **Android TV / NVIDIA Shield (lanzador opcional):** [ATV-Launcher.apk](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/download/v1.02/ATV-Launcher.apk)
 
 [Notas de la versión e historial](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/tag/v1.02)
 
@@ -154,5 +154,6 @@ Algunas funciones siguen siendo experimentales y pueden variar según el disposi
 - Perfeccionamiento de la compatibilidad con otros idiomas.
 - Investigación de una posible compatibilidad con datos de juego de los lanzamientos de PS2, GameCube y Xbox.
 - Extracción automática de datos del juego desde archivos de imagen de disco.
+- Port para iOS (actualmente en las etapas iniciales).
 
 ---
