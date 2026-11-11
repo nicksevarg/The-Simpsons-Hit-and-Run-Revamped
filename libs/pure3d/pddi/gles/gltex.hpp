@@ -24,6 +24,8 @@ public:
     int GetDepth();
     int GetNumMipMaps();
     int GetAlphaDepth();
+    // True only when the original asset explicitly had no alpha channel.
+    bool IsOpaqueSourceTexture() const { return type == PDDI_TEXTYPE_RGB && sourceAlphaDepth == 0; }
 
     // palette managment
     int GetNumPaletteEntries(void);
@@ -42,6 +44,8 @@ public:
 
     // gl specific stuff
     void SetGLState(void);
+    void SetSamplerParameters(unsigned int magFilter, unsigned int minFilter,
+                              unsigned int wrapS, unsigned int wrapT);
 
 protected:
     pglContext* context;
@@ -51,10 +55,21 @@ protected:
     int xSize, ySize;
     pddiTextureType type;
     int nMipMap;
+    int sourceAlphaDepth;
 
     bool valid;
     unsigned int gltexture;
     int priority;
+    bool samplerParamsValid;
+    unsigned int samplerMagFilter;
+    unsigned int samplerMinFilter;
+    unsigned int samplerWrapS;
+    unsigned int samplerWrapT;
+#if defined(RAD_ANDROID)
+    int anisotropySelectionApplied;
+    bool mipmapsAvailable;
+    bool mipmapGenerationAttempted;
+#endif
 
     pddiLockInfo lock;
 

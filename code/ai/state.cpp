@@ -466,7 +466,8 @@ void InCar::Update( float timeins )
         VehicleController* v = GetVehicleCentral()->GetVehicleController(GetVehicleCentral()->GetVehicleId(mpCharacter->GetTargetVehicle(), false));
         if(v)
         {
-            float steer = pVehicle->mUnmodifiedInputWheelTurnAngle;
+            bool duh;
+            float steer = v->GetSteering(duh);
 
             Action* action = NULL;
 

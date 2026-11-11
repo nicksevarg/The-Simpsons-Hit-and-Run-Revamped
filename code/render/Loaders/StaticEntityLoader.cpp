@@ -13,6 +13,8 @@
 //========================================
 #include <p3d/chunkfile.hpp>
 #include <p3d/utility.hpp>
+#include <p3d/geometry.hpp>
+#include <p3d/shader.hpp>
 
 //========================================
 // Project Includes
@@ -26,6 +28,17 @@
 #include <memory/srrmemory.h>
 
 #include <render/Loaders/AllWrappers.h>
+#include <string.h>
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+bool IsSHAREnvironmentRoadEntityName(const char* name);
+
+static bool IsSHARHouseLeafMaterial(const tShader* shader)
+{
+    return shader != NULL &&
+        static_cast<unsigned long long>(shader->GetUID()) == 0x396C6BB87163F912ULL;
+}
+#endif
 
 //************************************************************************
 //
@@ -102,6 +115,30 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 				tGeometry* pGeo = (tGeometry*)pGeoLoader->LoadObject(f, store);
                 rAssert(pGeo!=NULL);
                 pStaticEntityDSG->SetGeometry(pGeo);
+#ifdef RAD_ANDROID
+                const bool foliageNameTag = IsSHAREnvironmentFoliageEntityName(name, NULL);
+                bool houseLeafMaterialTag = false;
+                unsigned long long matchedHouseLeafShaderUID = 0;
+                for (int shaderIndex = 0; shaderIndex < pGeo->GetNumShader(); ++shaderIndex)
+                {
+                    tShader* shader = pGeo->GetShader(shaderIndex);
+                    if (IsSHARHouseLeafMaterial(shader))
+                    {
+                        houseLeafMaterialTag = true;
+                        matchedHouseLeafShaderUID =
+                            static_cast<unsigned long long>(shader->GetUID());
+                        break;
+                    }
+                }
+                const bool foliageTag = foliageNameTag || houseLeafMaterialTag;
+                const bool roadTag = IsSHAREnvironmentRoadEntityName(name);
+                tUID sourceAssetUID = tName::MakeUID(name);
+                pStaticEntityDSG->SetSHAREnvironmentFoliageMesh(foliageTag);
+                pStaticEntityDSG->SetSHAREnvironmentRoadCandidate(roadTag);
+                pStaticEntityDSG->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+
+                
+                #endif
             }
 
             default:

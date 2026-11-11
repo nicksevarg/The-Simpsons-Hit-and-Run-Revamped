@@ -15,12 +15,292 @@
 #include <constants/chunkids.hpp>
 #include <constants/srrchunks.h> // For SetChunk.
 
+#ifdef RAD_ANDROID
+#include <ctype.h>
+#include <vector>
+#include <mutex>
+#include <string.h>
+
+bool IsCelShadingEnabled();
+
+namespace
+{
+    struct SelectedShadowAlphaState
+    {
+        tTexture* texture;
+        std::vector< std::vector<unsigned char> > originalAlpha;
+        bool sharpened;
+    };
+
+    std::vector<SelectedShadowAlphaState*> gSelectedShadowAlphaStates;
+    std::mutex gSelectedShadowAlphaMutex;
+
+    bool IsSelectedShadowAlphaTextureName(const char* name)
+    {
+        if (name == NULL)
+        {
+            return false;
+        }
+
+        char lowerName[256];
+        size_t i = 0;
+        for (; name[i] != '\0' && i < sizeof(lowerName) - 1; ++i)
+        {
+            lowerName[i] = (char)tolower((unsigned char)name[i]);
+        }
+        lowerName[i] = '\0';
+
+        // Keep this allow-list narrow so character/vehicle blob shadows
+        // and unrelated shadow textures retain their original appearance.
+        // "treeshad" covers treeshadow, treeshadowsmall, treeshad_overcast,
+        // and deadtreeshad_overcast variants.
+        return strstr(lowerName, "treeshad") != NULL ||
+               strstr(lowerName, "beeshadow") != NULL;
+    }
+
+    bool CaptureSelectedShadowAlpha(SelectedShadowAlphaState* state)
+    {
+        if (state == NULL || state->texture == NULL)
+        {
+            return false;
+        }
+
+        const int lastMip = state->texture->GetNumMipMaps();
+        if (lastMip < 0 || lastMip > 12)
+        {
+            return false;
+        }
+
+        state->originalAlpha.clear();
+        for (int mip = 0; mip <= lastMip; ++mip)
+        {
+            pddiLockInfo* lock = state->texture->Lock(mip);
+            if (lock == NULL || lock->bits == NULL)
+            {
+                if (lock != NULL)
+                {
+                    state->texture->Unlock(mip);
+                }
+                state->originalAlpha.clear();
+                return false;
+            }
+
+            // Android GLES uses 32-bit ARGB for normal textured assets.
+            // Compressed or unexpected formats are deliberately left alone.
+            const unsigned int alphaMask = lock->rgbaMask[3];
+            int alphaShift = 0;
+            while (alphaShift < 32 &&
+                   ((alphaMask >> alphaShift) & 1U) == 0U)
+            {
+                ++alphaShift;
+            }
+
+            if (lock->format != PDDI_PIXEL_ARGB8888 ||
+                lock->width <= 0 || lock->height <= 0 ||
+                lock->pitch == 0 || alphaMask == 0 ||
+                alphaShift >= 32 || (alphaMask >> alphaShift) != 0xffU)
+            {
+                state->texture->Unlock(mip);
+                state->originalAlpha.clear();
+                return false;
+            }
+
+            std::vector<unsigned char> alpha;
+            alpha.resize((size_t)lock->width * (size_t)lock->height);
+
+            unsigned char* row = (unsigned char*)lock->bits;
+            for (int y = 0; y < lock->height; ++y)
+            {
+                for (int x = 0; x < lock->width; ++x)
+                {
+                    unsigned int pixel = 0;
+                    memcpy(&pixel, row + (x * 4), sizeof(pixel));
+                    alpha[(size_t)y * (size_t)lock->width + (size_t)x] =
+                        (unsigned char)((pixel & alphaMask) >> alphaShift);
+                }
+                // A negative pitch is valid on the GLES backend.
+                row += lock->pitch;
+            }
+
+            state->texture->Unlock(mip);
+            state->originalAlpha.push_back(alpha);
+        }
+
+        return !state->originalAlpha.empty();
+    }
+
+    bool WriteSelectedShadowAlpha(SelectedShadowAlphaState* state, bool sharpen)
+    {
+        if (state == NULL || state->texture == NULL ||
+            state->originalAlpha.empty())
+        {
+            return false;
+        }
+
+        for (size_t mip = 0; mip < state->originalAlpha.size(); ++mip)
+        {
+            pddiLockInfo* lock = state->texture->Lock((int)mip);
+            if (lock == NULL || lock->bits == NULL)
+            {
+                if (lock != NULL)
+                {
+                    state->texture->Unlock((int)mip);
+                }
+                return false;
+            }
+
+            const unsigned int alphaMask = lock->rgbaMask[3];
+            int alphaShift = 0;
+            while (alphaShift < 32 &&
+                   ((alphaMask >> alphaShift) & 1U) == 0U)
+            {
+                ++alphaShift;
+            }
+
+            const std::vector<unsigned char>& original =
+                state->originalAlpha[mip];
+            if (lock->format != PDDI_PIXEL_ARGB8888 ||
+                lock->width <= 0 || lock->height <= 0 ||
+                lock->pitch == 0 || alphaMask == 0 ||
+                alphaShift >= 32 || (alphaMask >> alphaShift) != 0xffU ||
+                original.size() != (size_t)lock->width * (size_t)lock->height)
+            {
+                state->texture->Unlock((int)mip);
+                return false;
+            }
+
+            unsigned int maxAlpha = 0;
+            for (size_t i = 0; i < original.size(); ++i)
+            {
+                if (original[i] > maxAlpha)
+                {
+                    maxAlpha = original[i];
+                }
+            }
+
+            // Drop faint edge pixels, then remap the remaining range to a
+            // stronger yet translucent shadow. The relative cutoff keeps
+            // lower-resolution mip levels from disappearing at distance.
+            const unsigned int threshold = (maxAlpha * 72U) / 100U;
+            unsigned char* row = (unsigned char*)lock->bits;
+            for (int y = 0; y < lock->height; ++y)
+            {
+                for (int x = 0; x < lock->width; ++x)
+                {
+                    const size_t index =
+                        (size_t)y * (size_t)lock->width + (size_t)x;
+                    unsigned int pixel = 0;
+                    memcpy(&pixel, row + (x * 4), sizeof(pixel));
+
+                    unsigned int newAlpha = original[index];
+                    if (sharpen)
+                    {
+                        if (maxAlpha <= threshold || newAlpha <= threshold)
+                        {
+                            newAlpha = 0;
+                        }
+                        else
+                        {
+                            newAlpha = ((newAlpha - threshold) * 200U) /
+                                       (maxAlpha - threshold);
+                            if (newAlpha > 200U)
+                            {
+                                newAlpha = 200U;
+                            }
+                        }
+                    }
+
+                    pixel = (pixel & ~alphaMask) |
+                            ((newAlpha << alphaShift) & alphaMask);
+                    memcpy(row + (x * 4), &pixel, sizeof(pixel));
+                }
+                row += lock->pitch;
+            }
+
+            state->texture->Unlock((int)mip);
+        }
+
+        return true;
+    }
+
+    void RemoveSelectedShadowAlphaState(tTexture* texture)
+    {
+        std::lock_guard<std::mutex> guard(gSelectedShadowAlphaMutex);
+        for (std::vector<SelectedShadowAlphaState*>::iterator it =
+                 gSelectedShadowAlphaStates.begin();
+             it != gSelectedShadowAlphaStates.end(); ++it)
+        {
+            if (*it != NULL && (*it)->texture == texture)
+            {
+                delete *it;
+                gSelectedShadowAlphaStates.erase(it);
+                return;
+            }
+        }
+    }
+
+    void RegisterSelectedShadowTexture(tTexture* texture, const char* name)
+    {
+        if (texture == NULL || !IsSelectedShadowAlphaTextureName(name))
+        {
+            return;
+        }
+
+        std::lock_guard<std::mutex> guard(gSelectedShadowAlphaMutex);
+        for (size_t i = 0; i < gSelectedShadowAlphaStates.size(); ++i)
+        {
+            if (gSelectedShadowAlphaStates[i] != NULL &&
+                gSelectedShadowAlphaStates[i]->texture == texture)
+            {
+                return;
+            }
+        }
+
+        SelectedShadowAlphaState* state = new SelectedShadowAlphaState;
+        state->texture = texture;
+        state->sharpened = false;
+
+        if (!CaptureSelectedShadowAlpha(state))
+        {
+            delete state;
+            return;
+        }
+
+        gSelectedShadowAlphaStates.push_back(state);
+    }
+}
+
+void UpdateSelectedShadowAlphaForCelState()
+{
+    std::lock_guard<std::mutex> guard(gSelectedShadowAlphaMutex);
+    const bool celEnabled = IsCelShadingEnabled();
+
+    for (size_t i = 0; i < gSelectedShadowAlphaStates.size(); ++i)
+    {
+        SelectedShadowAlphaState* state = gSelectedShadowAlphaStates[i];
+        if (state == NULL || state->sharpened == celEnabled)
+        {
+            continue;
+        }
+
+        if (WriteSelectedShadowAlpha(state, celEnabled))
+        {
+            state->sharpened = celEnabled;
+        }
+    }
+}
+#endif
+
+
 tTexture::tTexture() : texture(NULL)
 {
 }
 
 tTexture::~tTexture()
 {
+#ifdef RAD_ANDROID
+    RemoveSelectedShadowAlphaState(this);
+#endif
     tRefCounted::Release(texture);
 }
 
@@ -219,6 +499,9 @@ tTexture* tTextureLoader::LoadTexture(tChunkFile* f)
     {
         texture->SetName(name);
         texture->SetPriority(priority);
+#ifdef RAD_ANDROID
+        RegisterSelectedShadowTexture(texture, name);
+#endif
     }
     return texture;
 }

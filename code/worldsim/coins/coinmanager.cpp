@@ -40,6 +40,52 @@
 #include <mission/gameplaymanager.h>
 #include <mission/charactersheet/charactersheetmanager.h>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsCelShadingObjectEnabled();
+void SetCelShadingObjectEnabled(bool enabled);
+bool IsCelShadingOutlinePass();
+void SetCelShadingOutlinePass(bool enabled);
+bool IsSHAREnvironmentCelPassActive();
+void SetSHAREnvironmentCelPassActive(bool enabled);
+bool IsSHAREnvironmentCelMaterialEligible();
+void SetSHAREnvironmentCelMaterialEligible(bool eligible);
+#endif
+
+static void DisplayCoinDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL) return;
+#ifdef RAD_ANDROID
+    if (IsCelShadingEnabled())
+    {
+        // Coin drawables bypass normal DSG outline wrappers. Mark only the shell
+        // draw as eligible environment geometry so meshes without stored normals
+        // receive generated normals and pixel-width silhouette expansion.
+        // The 3D HUD coin uses this helper; GUI counter artwork is a separate element.
+        const bool oldObjectEnabled = IsCelShadingObjectEnabled();
+        const bool oldOutlinePass = IsCelShadingOutlinePass();
+        const bool oldEnvironmentPass = IsSHAREnvironmentCelPassActive();
+        const bool oldMaterialEligible = IsSHAREnvironmentCelMaterialEligible();
+
+        SetSHAREnvironmentCelPassActive(true);
+        SetSHAREnvironmentCelMaterialEligible(true);
+        SetCelShadingObjectEnabled(true);
+        SetCelShadingOutlinePass(true);
+        drawable->Display();
+
+        SetCelShadingOutlinePass(false);
+        SetSHAREnvironmentCelPassActive(oldEnvironmentPass);
+        SetSHAREnvironmentCelMaterialEligible(oldMaterialEligible);
+        drawable->Display();
+
+        SetCelShadingOutlinePass(oldOutlinePass);
+        SetCelShadingObjectEnabled(oldObjectEnabled);
+        return;
+    }
+#endif
+    drawable->Display();
+}
+
 /* Watcher stuff */
 #ifndef RAD_RELEASE
 #include <raddebug.hpp>
@@ -990,7 +1036,7 @@ void CoinManager::Render( void )
                                     c.Position.x, c.Position.y, c.Position.z, 1.0f );
 
                 p3d::pddi->PushMultMatrix( PDDI_MATRIX_MODELVIEW, &transform );
-                m_pCoinDrawable->Display();
+                DisplayCoinDrawable(m_pCoinDrawable);
                 p3d::pddi->PopMatrix( PDDI_MATRIX_MODELVIEW );
             }
         }
@@ -1084,7 +1130,7 @@ void CoinManager::HUDRender( void )
             }
             --mHUDSparkle;
             p3d::pddi->PushMultMatrix( PDDI_MATRIX_MODELVIEW, &transform );
-            m_pCoinDrawable->Display();
+            DisplayCoinDrawable(m_pCoinDrawable);
             p3d::pddi->PopMatrix( PDDI_MATRIX_MODELVIEW );
         }
 	    p3d::stack->LoadIdentity();
@@ -1113,7 +1159,7 @@ void CoinManager::HUDRender( void )
                 ++dbg_CoinsDrawn;
     #endif
                 p3d::pddi->PushMultMatrix( PDDI_MATRIX_MODELVIEW, &transform );
-                m_pCoinDrawable->Display();
+                DisplayCoinDrawable(m_pCoinDrawable);
                 p3d::pddi->PopMatrix( PDDI_MATRIX_MODELVIEW );
             }
         }

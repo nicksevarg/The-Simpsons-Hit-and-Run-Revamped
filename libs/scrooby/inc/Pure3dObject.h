@@ -72,6 +72,11 @@ class Pure3dObject
         //overrides the underlying P3D object being rendered
         virtual void SetDrawable( tDrawable* drawable ) = 0;
 
+#ifdef RAD_ANDROID
+        // Opts this isolated Scrooby preview into SHAR's skinned-character cel pass.
+        virtual void SetSHARPreviewCharacterCelShadingEnabled( bool enabled ) = 0;
+#endif
+
         //adds a default light to P3D object's view
         virtual void SetDefaultLight( tLight* light ) = 0;
 

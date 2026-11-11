@@ -25,6 +25,7 @@
 #include "xml/XMLTree.h"
 #include <raddebug.hpp>
 
+
 //===========================================================================
 // Global Data, Local Data, Local Classes
 //===========================================================================
@@ -299,6 +300,10 @@ void FeScreen::DisplayForeground()
 
     p3d::stack->Translate( -0.5f, -0.5f / aspect, 0.5f );
     bool draw = false;
+    // Resolve the fallback from the screen's page resource table. Looking it
+    // up by GetName() is fragile because page resource names and display names
+    // are not guaranteed to use the same extension spelling.
+    FeDrawable* tvFrameFallback = dynamic_cast<FeDrawable*>( GetPage( "TVFrame" ) );
     for( int i = 0; i < GetChildrenCount(); i++ )
     {
         FeEntity* feEntity = this->GetChildIndex( i );
@@ -318,6 +323,11 @@ void FeScreen::DisplayForeground()
                 draw = true;
             }
         }
+    }
+
+    if( !draw && tvFrameFallback != NULL )
+    {
+        tvFrameFallback->Display();
     }
     p3d::stack->Pop();
     p3d::pddi->PopState( PDDI_STATE_RENDER );

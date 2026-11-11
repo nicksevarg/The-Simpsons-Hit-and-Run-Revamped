@@ -19,6 +19,16 @@
 #include <radmath/radmath.hpp>
 #include <pddi/pddiext.hpp>
 #include <p3d/anim/instancedgeometry.hpp>
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHARGagCharacterCelPassActive();
+bool IsSHARFrontendMenuCelPassActive();
+bool IsSHARPreviewCharacterCelPassActive();
+bool IsSHAREnvironmentCelPassActive();
+void SetSHARCharacterMaskModelPass(bool enabled);
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+#endif
 
 #include <string.h>
 
@@ -61,33 +71,79 @@ tPolySkin::~tPolySkin()
 
 void tPolySkin::Display(tPose* p)
 {
+#ifdef RAD_ANDROID
+    // NIS/gag characters, Scrooby clothing previews and skinned models in the
+    // main-menu camera set bypass CharacterRenderable::DisplayModel(), so give
+    // those meshes the same silhouette + normal pass. Ordinary gameplay remains unchanged.
+    const bool frontendCelPassAlreadyActive =
+        IsSHARFrontendMenuCelPassActive() && IsSHAREnvironmentCelPassActive();
+    if ((IsSHARGagCharacterCelPassActive() ||
+         IsSHARPreviewCharacterCelPassActive() ||
+         (IsSHARFrontendMenuCelPassActive() && !frontendCelPassAlreadyActive)) &&
+        IsCelShadingEnabled())
+    {
+        tSHARSkinnedGeometryReuseScope skinnedGeometryReuseScope;
+        SetSHARCharacterMaskModelPass(true);
+        SetCelShadingObjectEnabled(true);
+
+        SetCelShadingOutlinePass(true);
+        DisplaySkinGeometry(p);
+
+        skinnedGeometryReuseScope.BeginReusePass();
+        SetCelShadingOutlinePass(false);
+        DisplaySkinGeometry(p);
+
+        SetCelShadingObjectEnabled(false);
+        SetSHARCharacterMaskModelPass(false);
+        return;
+    }
+#endif
+
+    DisplaySkinGeometry(p);
+}
+
+void tPolySkin::DisplaySkinGeometry(tPose* p)
+{
     if (p == NULL)
     {
         return;
     }
 
-    // transform the pose joints into world space
-    p->Evaluate();
-
+    // Transform the pose joints into world space.
     // The skin vertices are stored in rest-pose relative world space.
-    // The below matrix will transform from this space, into bone-local
-    // space where the animation is applied, and then back into camera space.
-    for(int i = 0; i < p->GetNumJoint(); i++)
+    // The below matrix transforms from rest-pose relative space, into
+    // bone-local space where the animation is applied, and then into view space.
+    bool reuseAllSkinnedGroups = false;
+#ifdef RAD_ANDROID
+    const unsigned long long reusePairID = GetSHARSkinnedGeometryReusePairID();
+    reuseAllSkinnedGroups =
+        IsSHARSkinnedGeometryReusePass() && reusePairID != 0 &&
+        primGroup.Size() > 0;
+    for (unsigned j = 0; reuseAllSkinnedGroups && j < primGroup.Size(); ++j)
     {
-#ifndef RAD_PS2
-        boneMatrix[i].Mult(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
-#else
-        boneMatrix[i].MultAligned(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
+        if (!primGroup[j]->CanReuseSHARSkinnedGeometry(reusePairID))
+            reuseAllSkinnedGroups = false;
+    }
 #endif
 
-        boneMatrix[i].Mult(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
+    // Unknown/streamed groups deliberately return false from the reuse query,
+    // preserving the original pose and bone-matrix path as a safe fallback.
+    if (!reuseAllSkinnedGroups)
+    {
+        p->Evaluate();
+        for(int i = 0; i < p->GetNumJoint(); i++)
+        {
+#ifndef RAD_PS2
+            boneMatrix[i].Mult(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
+#else
+            boneMatrix[i].MultAligned(skeleton->GetJoint(i)->inverseWorldMatrix, p->GetJoint(i)->worldMatrix);
+#endif
+        }
 
+        boneMatrix[skeleton->GetNumJoint()].Identity();
     }
 
-    boneMatrix[skeleton->GetNumJoint()].Identity();
-
     pddiExtHardwareSkinning* hwSkin = p3d::context->GetHardwareSkinning();
-
     if(hwSkin)
     {
         hwSkin->Begin();
@@ -191,8 +247,19 @@ tEntity* tPolySkinLoader::LoadObject(tChunkFile* f, tEntityStore* store)
             case Pure3D::Mesh::PRIMGROUP:
             {
                 P3DASSERT(index < nPrimGroup);
-                tPrimGroupLoader pgLoader;                
-                skin->primGroup[index] = pgLoader.Load(f, store, skin->boneMatrix, optimise, true);
+                tPrimGroupLoader pgLoader;
+#ifdef RAD_ANDROID
+                // Correct the known right-arm winding issues in memory only.
+                // The frontend arm is separately gated by its exact mesh signature
+                // in tPrimGroupLoader, leaving gag Homer and unrelated skins untouched.
+                const bool fixHomerRightArm =
+                    ((strcmp(name, "homer_h_merged") == 0) && (index < 2)) ||
+                    (strcmp(name, "hom_high_arm_RShape") == 0);
+#else
+                const bool fixHomerRightArm = false;
+#endif
+                skin->primGroup[index] = pgLoader.Load(
+                    f, store, skin->boneMatrix, optimise, true, fixHomerRightArm);
                 skin->primGroup[index]->AddRef();
                 index++;
             }

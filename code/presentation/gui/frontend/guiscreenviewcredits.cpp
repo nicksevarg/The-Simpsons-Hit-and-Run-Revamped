@@ -36,6 +36,7 @@
 // ATG
 #include <raddebug.hpp>
 
+
 //===========================================================================
 // Global Data, Local Data, Local Classes
 //===========================================================================
@@ -45,7 +46,6 @@ const float CREDITS_MANUAL_SCROLL_FACTOR = 5.0f;
 const float CREDITS_FGD_CORRECTION_SCALE = 2.0f;
 
 const int CREDITS_PARTITION_FOR_LOCALIZATION = 13;
-const int CREDITS_PARTITION_FOR_LOGITECH = 30;
 
 float CGuiScreenViewCredits::s_totalTranslateY = 0.0f;
 float CGuiScreenViewCredits::s_numPixelsPerLine = 0.0f;
@@ -90,6 +90,7 @@ CGuiScreenViewCredits::CGuiScreenViewCredits
     bool isFirstTime = ( s_totalTranslateY == 0.0f );
     float currentTranslateY = 0.0f;
 
+
     // get all credits (partitioned) text
     //
     for( int i = 0; i < MAX_NUM_CREDITS_PARTITIONS; i++ )
@@ -100,6 +101,10 @@ CGuiScreenViewCredits::CGuiScreenViewCredits
 
         if( m_credits[ i ] != NULL )
         {
+            int authoredX = 0;
+            int authoredY = 0;
+            m_credits[ i ]->GetOriginPosition( authoredX, authoredY );
+            P3D_UNICODE* rawText = static_cast<P3D_UNICODE*>( m_credits[ i ]->GetStringBuffer() );
 #ifndef PAL
             // hide localization partition from credits for NTSC builds
             //
@@ -113,13 +118,66 @@ CGuiScreenViewCredits::CGuiScreenViewCredits
 
 #ifndef RAD_GAMECUBE
     #ifndef RAD_PS2
-            // hide logitech line from credits for non-GC and non-PS2 platforms
+            // Hide only the platform-specific Logitech line, rather than a
+            // fixed partition number. The frontend asset can place the line
+            // in a later credits text object alongside the final thanks, so
+            // hiding a whole partition can discard unrelated credits.
             //
-            if( i == CREDITS_PARTITION_FOR_LOGITECH )
+            if( rawText != NULL )
             {
-                m_credits[ i ]->SetVisible( false );
+                P3D_UNICODE* logitechText = NULL;
+                const char* logitechToken = "Logitech";
+                for( int textIndex = 0; rawText[ textIndex ] != '\0' && logitechText == NULL; textIndex++ )
+                {
+                    bool matches = true;
+                    for( int tokenIndex = 0; logitechToken[ tokenIndex ] != '\0'; tokenIndex++ )
+                    {
+                        if( rawText[ textIndex + tokenIndex ] == '\0' ||
+                            rawText[ textIndex + tokenIndex ] != static_cast<P3D_UNICODE>( logitechToken[ tokenIndex ] ) )
+                        {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if( matches )
+                    {
+                        logitechText = &rawText[ textIndex ];
+                    }
+                }
 
-                continue;
+                if( logitechText != NULL )
+                {
+                    // Move to the beginning of the line and remove it plus
+                    // its authored trailing line breaks. Keep any following
+                    // paragraph (notably the final family-and-friends thanks).
+                    P3D_UNICODE* lineStart = logitechText;
+                    while( lineStart > rawText && lineStart[ -1 ] != '\\' )
+                    {
+                        lineStart--;
+                    }
+
+                    P3D_UNICODE* lineEnd = logitechText;
+                    while( *lineEnd != '\0' && *lineEnd != '\\' )
+                    {
+                        lineEnd++;
+                    }
+
+                    P3D_UNICODE* copyFrom = lineEnd;
+                    if( *copyFrom == '\\' )
+                    {
+                        copyFrom++;
+                        if( *copyFrom == '\\' )
+                        {
+                            copyFrom++;
+                        }
+                    }
+
+                    P3D_UNICODE* destination = lineStart;
+                    while( ( *destination++ = *copyFrom++ ) != '\0' )
+                    {
+                    }
+
+                }
             }
     #endif // !RAD_PS2
 #endif // !RAD_GAMECUBE
@@ -132,10 +190,12 @@ CGuiScreenViewCredits::CGuiScreenViewCredits
                 s_totalTranslateY += currentTranslateY;
             }
 
+
             // offset current credits partition by total translation so far
             //
             m_credits[ i ]->ResetTransformation();
-            m_credits[ i ]->Translate( 0, (int)s_creditsOffsets[ i ] );
+            m_credits[ i ]->SetPosition( authoredX, authoredY + (int)s_creditsOffsets[ i ] );
+
 
             // disable any text outlining or drop shadow effects
             //
@@ -144,9 +204,12 @@ CGuiScreenViewCredits::CGuiScreenViewCredits
         }
         else
         {
-            // assuming there's no more partitions to follow
+            // Some platform-specific credits partitions may be absent while
+            // later partitions still exist. Do not stop here: unprocessed
+            // later partitions remain at their authored position and can
+            // appear at the top of the scrolling credits.
             //
-            break;
+            continue;
         }
     }
 
@@ -154,7 +217,11 @@ CGuiScreenViewCredits::CGuiScreenViewCredits
     //
     if( isFirstTime )
     {
-        s_totalTranslateY += Scrooby::App::GetInstance()->GetScreenHeight();
+        float screenHeight = Scrooby::App::GetInstance()->GetScreenHeight();
+        s_totalTranslateY += screenHeight;
+    }
+    else
+    {
     }
 
 /*
@@ -163,6 +230,7 @@ CGuiScreenViewCredits::CGuiScreenViewCredits
     m_buttonIcons[ BUTTON_ICON_ACCEPT ] = pPage->GetGroup( "SkipLabel" );
     this->SetButtonVisible( BUTTON_ICON_ACCEPT, false );
 */
+
 
     // apply correction scale to credits foreground overlay image (from CreditsFgd.pag)
     //
@@ -388,6 +456,7 @@ CGuiScreenViewCredits::ResetScrolling()
 {
     rAssert( m_creditsGroup != NULL );
     m_creditsGroup->ResetTransformation();
+
 
     m_currentTranslateY = 0.0f;
 

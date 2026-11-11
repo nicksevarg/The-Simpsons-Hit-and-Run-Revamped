@@ -36,6 +36,7 @@ CheatInputSystem* CheatInputSystem::spInstance = NULL;
 //===========================================================================
 
 CHEATBITMASK CheatInputSystem::s_cheatsEnabled = 0;
+bool CheatInputSystem::s_moonJumpEnabled = false;
 
 //===========================================================================
 // Public Member Functions
@@ -290,9 +291,10 @@ void
 CheatInputSystem::SetCheatEnabled( eCheatID cheatID, bool enable )
 {
 #ifdef FINAL
-    if( cheatID == CHEAT_ID_UNLOCK_CARDS ||
-        cheatID == CHEAT_ID_UNLOCK_SKINS ||
-        cheatID == CHEAT_ID_UNLOCK_VEHICLES )
+    if( enable &&
+        ( cheatID == CHEAT_ID_UNLOCK_CARDS ||
+          cheatID == CHEAT_ID_UNLOCK_SKINS ||
+          cheatID == CHEAT_ID_UNLOCK_VEHICLES ) )
     {
         // for these cheats, unless all missions are completed, don't do
         // anything
@@ -358,6 +360,8 @@ CheatInputSystem::IsCheatEnabled( eCheatID cheatID ) const
 void
 CheatInputSystem::DisableAllCheats()
 {
+    SetMoonJumpEnabled( false );
+
     for( int cheatID = 0; cheatID < MAX_NUM_CHEATS; cheatID++ )
     {
         eCheatID id = static_cast<eCheatID>( cheatID );

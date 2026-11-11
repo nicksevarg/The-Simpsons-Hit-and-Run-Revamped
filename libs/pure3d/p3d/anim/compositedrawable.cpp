@@ -23,6 +23,71 @@
 #include <float.h>
 #include <string.h>
 
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentCelPassActive();
+bool IsCelShadingOutlinePass();
+bool IsCelShadingEnabled();
+bool IsSHARGagCatapultCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+
+static bool IsSHARCatapultStaticProp(tDrawable* drawable)
+{
+    if (drawable == NULL || !IsSHARGagCatapultCelPassActive())
+        return false;
+
+    // Release builds do not retain Pure3D entity names. Match only the
+    // ten solid catapult components by their verified 64-bit geometry UIDs.
+    static const unsigned long long catapultPropUIDs[] =
+    {
+        0x34F5EECE3D25F2D2ULL, // catapult_bodyShape
+        0xC6E6B129EE50B649ULL, // handleShape
+        0xA3EF87A25C25DBC5ULL, // handleShape2
+        0xA5F3A41A957C4E8BULL, // wheel3Shape
+        0x87CF2C9F17F4F253ULL, // scoopShape
+        0xD2A9CBC74D728C5AULL, // pads1Shape
+        0x92DB7271AABBB4DCULL, // rope1Shape
+        0x6BA1D77559721009ULL, // wheel5Shape
+        0x4CA77C46F1A05148ULL, // wheel6Shape
+        0x3942FF4D2537D587ULL  // wheel7Shape
+    };
+
+    const unsigned long long drawableUID =
+        static_cast<unsigned long long>(drawable->GetUID());
+    for (unsigned i = 0; i < sizeof(catapultPropUIDs) / sizeof(catapultPropUIDs[0]); ++i)
+    {
+        if (drawableUID == catapultPropUIDs[i])
+            return true;
+    }
+    return false;
+}
+
+static void DisplaySHARCatapultStaticProp(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+
+    SetCelShadingOutlinePass(false);
+    drawable->Display();
+
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
 const int resizeElementSize = 2;
 const int defaultInitialElementSize = 5;
 
@@ -178,10 +243,15 @@ void tCompositeDrawable::Display(tPose* p)
             {
                 if (elements[i]->IsTranslucent())
                 {
-                    //if( BillboardQuadManager::sEnabled )    
-                    //    elements[i]->Display();
-                    //else 
-                        translucentObjects.Add(elements[i]->GetDrawable(), elements[i]->GetWorldMatrix(),elements[i]->SortOrder());            
+#ifdef RAD_ANDROID
+                    // Keep translucent effects out of the environment silhouette
+                    // pass. They are queued normally on the second draw, so blend
+                    // and alpha effects are rendered once with their original state.
+                    if (!(IsSHAREnvironmentCelPassActive() && IsCelShadingOutlinePass()))
+#endif
+                    {
+                        translucentObjects.Add(elements[i]->GetDrawable(), elements[i]->GetWorldMatrix(),elements[i]->SortOrder());
+                    }
                 }
                 else
                 {
@@ -348,7 +418,12 @@ void tCompositeDrawable::DrawablePropElement::Draw(tPose* pose)
     P3DASSERTMSG(prop, "No prop attached", "tCompositeDrawable::DrawPropElement()");
 
     p3d::stack->PushMultiply( (pose->GetJoint(poseIndex))->worldMatrix );
-    prop->Display();
+#ifdef RAD_ANDROID
+    if (IsSHARCatapultStaticProp(prop))
+        DisplaySHARCatapultStaticProp(prop);
+    else
+#endif
+        prop->Display();
     p3d::stack->Pop();
 }
 

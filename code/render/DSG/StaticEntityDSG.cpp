@@ -18,6 +18,52 @@
 #include <render/DSG/StaticEntityDSG.h>
 #include <memory/srrmemory.h>
 #include <p3d/utility.hpp>
+#include <p3d/texture.hpp>
+
+#ifdef RAD_ANDROID
+
+bool IsCelShadingEnabled();
+bool IsSHARCelShadingLite();
+bool IsSHARGagCharacterCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+
+
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable,
+                                                bool foliageBillboard = false,
+                                                bool foliageMesh = false)
+{
+    if (drawable == NULL)
+        return;
+    if (!IsCelShadingEnabled() ||
+        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+    {
+        drawable->Display();
+        return;
+    }
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+    if (foliageBillboard)
+        SetSHAREnvironmentBillboardFoliagePassActive(true);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(false);
+    if (foliageBillboard)
+        SetSHAREnvironmentBillboardFoliagePassActive(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
 
 //************************************************************************
 //
@@ -46,6 +92,9 @@
 StaticEntityDSG::StaticEntityDSG()
 {
    mpDrawstuff = NULL;
+#ifdef RAD_ANDROID
+   mSHAREnvironmentFoliageBillboard = false;
+#endif
 }
 //========================================================================
 // StaticEntityDSG::
@@ -222,6 +271,9 @@ void StaticEntityDSG::Display()
     char profileName[] = "  StaticEntityDSG Display";
 #endif
     if(IS_DRAW_LONG) return;
+#ifdef RAD_ANDROID
+    UpdateSelectedShadowAlphaForCelState();
+#endif
     DSG_BEGIN_PROFILE(profileName)
 
     if(mIsGeo & IS_SHADOW)
@@ -232,7 +284,26 @@ void StaticEntityDSG::Display()
     }
     else
     {
+#ifdef RAD_ANDROID
+        if (mpDrawstuff != NULL)
+        {
+            const bool isGeometry = (mIsGeo & GEO) != 0;
+            const bool foliageName = mSHAREnvironmentFoliageBillboard;
+            const bool foliageBillboard =
+                !isGeometry && !mTranslucent && foliageName;
+            const bool foliageMesh =
+                isGeometry && IsSHAREnvironmentFoliageMesh();
+            if (isGeometry)
+                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, false, foliageMesh);
+            else if (foliageBillboard)
+                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, true);
+            else
+                mpDrawstuff->Display();
+
+                    }
+#else
         mpDrawstuff->Display();
+#endif
     }
     DSG_END_PROFILE(profileName)
 }

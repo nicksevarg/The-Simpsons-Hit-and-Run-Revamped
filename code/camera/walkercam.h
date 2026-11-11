@@ -118,6 +118,14 @@ private:
 
     AnimatedIcon* mCollectible;
 
+#if defined(RAD_ANDROID)
+    // On-foot L1 zoom cycle: 0 = trigger zoom, -1 = not cycled yet,
+    // 0/1/2 after the first press = in/default/out preset sequence.
+    int mOnFootZoomCycleStep;
+    bool mPreviousCameraCyclePressed;
+    bool mCenterCameraHeld;
+#endif
+
     void UpdatePositionNormal( unsigned int milliseconds, float timeMod );
     void UpdatePositionInCollision( unsigned int milliseconds, float timeMod );
     bool UpdatePositionOneCollsion( unsigned int milliseconds, float timeMod, unsigned int collisionIndex = 0 );

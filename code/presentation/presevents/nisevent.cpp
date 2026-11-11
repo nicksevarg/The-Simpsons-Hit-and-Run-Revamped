@@ -25,6 +25,25 @@
 #include <presentation/presentation.h>
 #include <presentation/presevents/nisevent.h>
 
+#include <string.h>
+
+#ifdef RAD_ANDROID
+static bool IsSHARCatapultGagFile(const char* path)
+{
+    if (path == NULL || path[0] == 0)
+        return false;
+
+    const char* baseName = path;
+    for (const char* cursor = path; *cursor != 0; ++cursor)
+    {
+        if (*cursor == '/' || *cursor == 92)
+            baseName = cursor + 1;
+    }
+
+    return strcmp(baseName, "gag_cata.p3d") == 0;
+}
+#endif
+
 //******************************************************************************
 //
 // Global Data, Local Data, Local Classes
@@ -215,6 +234,11 @@ void NISEvent::SetNames()
         case NIS_SCENEGRAPH:
             {
                 NISPlayer* player = GetPresentationManager()->GetNISPlayer();
+#ifdef RAD_ANDROID
+                // Set this for every scene-graph NIS so the flag cannot leak
+                // from the catapult into unrelated gag scenes.
+                player->SetSHARCatapultOutlineGag(IsSHARCatapultGagFile(fileName));
+#endif
                 player->SetNameData( controller, camera, animation );
                 break;
             }

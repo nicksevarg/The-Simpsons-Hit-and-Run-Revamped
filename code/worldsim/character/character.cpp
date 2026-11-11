@@ -42,6 +42,9 @@
 #include <camera/supercammanager.h>
 
 #include <mission/gameplaymanager.h>
+#ifdef RAD_ANDROID
+void RegisterSHARMotionBlurSubjectBounds(int subjectType, float x, float y, float z, float halfWidth, float halfHeight, float speedKmh);
+#endif
 
 #include <meta/locator.h>
 #include <meta/spheretriggervolume.h>
@@ -110,6 +113,21 @@ const static rmt::Vector vUp( 0.0f, 1.0f, 0.0f );
 const float KICK_ANGLE = 45;
 
 static int s_IntersectFrame;
+
+#if defined(RAD_ANDROID)
+// Keep this separate from mbSolveCollisions, which changes during physics lifecycle transitions.
+static bool sSHARNoclipEnabled = false;
+
+bool IsSHARNoclipEnabled()
+{
+    return sSHARNoclipEnabled;
+}
+
+void SetSHARNoclipEnabled( bool enabled )
+{
+    sSHARNoclipEnabled = enabled;
+}
+#endif
 
 class AmbientDialogueButton : public ActionButton::ButtonHandler
 {
@@ -2023,7 +2041,9 @@ BEGIN_PROFILE("OnPostSimUpdate")
         mSecondsSinceOnPostSimUpdate = 0.0f;
     }
 
-    mbNeedChoreoUpdate = mbNeedChoreoUpdate && shouldUpdate && (!mTooFarToUpdate || ((frameCount & modulo) == (mIntersectFrame & modulo)));
+    mbNeedChoreoUpdate = mbNeedChoreoUpdate && shouldUpdate &&
+        (!mTooFarToUpdate || mbInAnyonesFrustrum ||
+         ((frameCount & modulo) == (mIntersectFrame & modulo)));
 
 END_PROFILE("OnPostSimUpdate")
 
@@ -2134,8 +2154,14 @@ END_PROFILE("UpdateFootPlant")
     }
     else
     {
-        if(mCollisionAreaIndex != -1)
+        if(mCollisionAreaIndex != -1
+#if defined(RAD_ANDROID)
+           && !( sSHARNoclipEnabled && !IsNPC() && !IsInCar() )
+#endif
+          )
         {
+            // Noclip skips fence correction as well as static wall response,
+            // while retaining the large-movement safety reset above.
             if(GetWorldPhysicsManager()->FenceSanityCheck(mCollisionAreaIndex, mLastFramePos, tmp, &tmp))
             {
                 SetPosition( tmp );
@@ -2927,6 +2953,14 @@ Character::eCollisionType Character::SolveCollisionWithStatic( const rmt::Vector
     {
         return NoCollision;
     }
+#if defined(RAD_ANDROID)
+    // Bypass player static wall/head response only. Ground support uses a
+    // separate ground-plane collision object; NPCs remain unaffected.
+    if( sSHARNoclipEnabled && !IsNPC() && !IsInCar() )
+    {
+        return NoCollision;
+    }
+#endif
     eCollisionType collisionType = NoCollision;
     int intCollisionType = collisionType;
     int i = 0;
@@ -4938,6 +4972,15 @@ void Character::Display(void)
 
     p3d::stack->Push();
     p3d::stack->Translate(rootPos);
+
+#ifdef RAD_ANDROID
+    Avatar* motionBlurPlayerAvatar = GetAvatarManager()->GetAvatarForPlayer(0);
+    if (motionBlurPlayerAvatar != NULL && motionBlurPlayerAvatar->GetCharacter() == this)
+    {
+        // Keep the player biped sharp while the surrounding scene receives camera blur.
+        RegisterSHARMotionBlurSubjectBounds(0, rootPos.x, rootPos.y + 0.95f, rootPos.z, 0.65f, 1.15f, 0.0f);
+    }
+#endif
 
     mpCharacterRenderable->Display( mSphere.centre, pose );
 

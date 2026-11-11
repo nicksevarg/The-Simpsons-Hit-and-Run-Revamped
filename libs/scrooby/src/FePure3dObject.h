@@ -81,6 +81,13 @@ class FePure3dObject :
         void SetDrawable( tDrawable* drawable );
         tDrawable* GetDrawable();
 
+#ifdef RAD_ANDROID
+        virtual void SetSHARPreviewCharacterCelShadingEnabled( bool enabled )
+        {
+            m_sharPreviewCharacterCelShadingEnabled = enabled;
+        }
+#endif
+
         void SetDrawableTranslation( float x, float y, float z )
         {
             m_drawableTranslateX = x;
@@ -146,6 +153,9 @@ class FePure3dObject :
         bool m_zbufferEnabled : 1;
 
         bool m_isWideScreenCorrectionEnabled : 1;
+#ifdef RAD_ANDROID
+        bool m_sharPreviewCharacterCelShadingEnabled : 1;
+#endif
 
 };
 

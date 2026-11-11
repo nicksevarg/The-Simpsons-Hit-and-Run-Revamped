@@ -20,6 +20,18 @@
 #endif
 
 // Increase this when the TXT format changes and must be migrated or regenered if is corrupted or not exist
+#if defined(RAD_ANDROID)
+static void MigrateLegacyTouchDirectory(const char* storagePath)
+{
+    char oldPath[512], newPath[512];
+    snprintf(oldPath, sizeof(oldPath), "%s/touch_controls", storagePath);
+    snprintf(newPath, sizeof(newPath), "%s/Touch", storagePath);
+    struct stat oldInfo, newInfo;
+    if (stat(newPath, &newInfo) != 0 && stat(oldPath, &oldInfo) == 0)
+        rename(oldPath, newPath);
+}
+#endif
+
 static const char* TOUCH_CONTROLS_CONFIGURATION_VERSION = "2";
 
 static const char* TOUCH_CONTROLS_CONFIGURATION_FILENAME =
@@ -555,17 +567,23 @@ bool TouchControlsConfigurationManager::BuildPaths()
 
     return true;
 #else
-    const char* storagePath = SDL_AndroidGetExternalStoragePath();
+    // Touch-control settings must stay in the app's primary Android
+    // external-files directory. Do not use SDL_AndroidGetExternalStoragePath()
+    // because this project overrides that API to point at the selected
+    // game-data location, which may be a USB drive.
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
 
     if ( storagePath == 0 || storagePath[ 0 ] == '\0' )
     {
         return false;
     }
 
+    MigrateLegacyTouchDirectory( storagePath );
+
     snprintf(
         mConfigRoot,
         sizeof( mConfigRoot ),
-        "%s/touch_controls",
+        "%s/Touch",
         storagePath
     );
 

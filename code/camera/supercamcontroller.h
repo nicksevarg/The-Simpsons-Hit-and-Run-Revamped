@@ -62,6 +62,10 @@ public:
         mouseLookUp,
         mouseLookDown
 #endif
+        ,zToggleOut
+#if defined(RAD_ANDROID)
+        ,centerCamera
+#endif
     };
 
     SuperCamController();

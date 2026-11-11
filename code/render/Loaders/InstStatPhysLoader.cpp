@@ -14,6 +14,11 @@
 #include <simcollision/collisionobject.hpp>
 #include <p3d/chunkfile.hpp>
 #include <p3d/utility.hpp>
+#include <string.h>
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+bool IsSHAREnvironmentRoadEntityName(const char* name);
+#endif
 
 //========================================
 // Project Includes
@@ -102,6 +107,12 @@ tEntity* InstStatPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     char objName[128];
     f->GetPString(objName);
 
+#ifdef RAD_ANDROID
+    const bool sourceFoliageTag = IsSHAREnvironmentFoliageEntityName(objName, NULL);
+    const bool sourceRoadTag = IsSHAREnvironmentRoadEntityName(objName);
+    tUID sourceAssetUID = tName::MakeUID(objName);
+#endif
+
     int version = f->GetLong();
     int HasAlpha = f->GetLong();
 
@@ -165,6 +176,13 @@ tEntity* InstStatPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                     {
                         // We are dealing with a global entity.
                         InstStatPhysDSG* clone = pCurStatPhysDSG->Clone(name, matrix);
+#ifdef RAD_ANDROID
+                        clone->SetSHAREnvironmentFoliageMesh(sourceFoliageTag ||
+                            IsSHAREnvironmentFoliageEntityName(name, NULL));
+                        clone->SetSHAREnvironmentRoadCandidate(sourceRoadTag ||
+                            IsSHAREnvironmentRoadEntityName(name));
+                        clone->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+#endif
                         mpListenerCB->OnChunkLoaded( clone, mUserData, _id );
                     }
                     else
@@ -172,6 +190,13 @@ tEntity* InstStatPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         pCurStatPhysDSG = new InstStatPhysDSG();
                         rAssert(pCurStatPhysDSG);
                         pCurStatPhysDSG->SetName(name);
+#ifdef RAD_ANDROID
+                        pCurStatPhysDSG->SetSHAREnvironmentFoliageMesh(sourceFoliageTag ||
+                            IsSHAREnvironmentFoliageEntityName(name, NULL));
+                        pCurStatPhysDSG->SetSHAREnvironmentRoadCandidate(sourceRoadTag ||
+                            IsSHAREnvironmentRoadEntityName(name));
+                        pCurStatPhysDSG->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+#endif
 
                         if(HasAlpha)
                         {
@@ -288,6 +313,11 @@ tEntity* InstStatPhysLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         pCurStatPhysDSG = new InstStatPhysDSG();
         rAssert(pCurStatPhysDSG);
         pCurStatPhysDSG->SetName(objName);
+#ifdef RAD_ANDROID
+        pCurStatPhysDSG->SetSHAREnvironmentFoliageMesh(sourceFoliageTag);
+        pCurStatPhysDSG->SetSHAREnvironmentRoadCandidate(sourceRoadTag);
+        pCurStatPhysDSG->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+#endif
         pCurStatPhysDSG->mTranslucent = HasAlpha != 0;
         pSimState = sim::SimState::CreateStaticSimState(pCollObj);
         pCurStatPhysDSG->SetShadow(pShadow);

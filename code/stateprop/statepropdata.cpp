@@ -3,6 +3,8 @@
 #include <p3d/anim/animatedobject.hpp>
 #include <constants/chunkids.hpp>
 #include <p3d/chunkfile.hpp>
+#ifdef RAD_ANDROID
+#endif
 
 #include "stateprop/statepropdata.hpp"
 
@@ -123,18 +125,22 @@ tEntity* CStatePropDataLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
     unsigned int version = f->GetLong();
         
-    //get the name
-    char buf[256];     
-    f->GetPString(buf);
-    statePropData->SetName(buf);
-    
+    // Preserve source names here: runtime StatePropDSG names can be NO_NAME_TEXT.
+    char statePropName[256];
+    char factoryName[256];
+    char buf[256];
+    f->GetPString(statePropName);
+    statePropData->SetName(statePropName);
+
     //get the object factory
-    f->GetPString(buf);   
-    statePropData->m_ObjectFactory = p3d::find<tAnimatedObjectFactory>(store, buf);
+    f->GetPString(factoryName);
+    statePropData->m_ObjectFactory = p3d::find<tAnimatedObjectFactory>(store, factoryName);
     if ( statePropData->m_ObjectFactory )
     {
         statePropData->m_ObjectFactory->AddRef();
     }
+#ifdef RAD_ANDROID
+    #endif
     
     //get the num states
     statePropData->m_NumStates = f->GetLong();

@@ -56,7 +56,7 @@
 #include <data/config/androidconfigurationmanager.h>
 extern "C" void radControllerSDLSetAndroidRumblePolicyCallback( bool (*callback)() );
 extern "C" void radControllerSDLSetAndroidGamepadCandidateConnectedCallback(void (*callback)(int));
-extern "C" void radControllerSDLSetAndroidGamepadInputCallback( void (*callback)(int,float) );
+extern "C" void radControllerSDLSetAndroidGamepadInputCallback( void (*callback)(int,int,float) );
 extern "C" void radControllerSDLSetAndroidGamepadDisconnectedCallback(void (*callback)(int));
 #endif
 
@@ -102,12 +102,14 @@ static void AndroidInputManagerGamepadCandidateConnectedCallback( int instanceId
 static void AndroidInputManagerGamepadInputCallback
 (
     int instanceId,
-    float magnitude
+    int inputIndex,
+    float value
 )
 {
     InputManager::GetInstance()->NotifyAndroidPhysicalGamepadInput(
         instanceId,
-        magnitude
+        inputIndex,
+        value
     );
 }
 
@@ -335,21 +337,26 @@ static bool IsAndroidRumbleAllowed( bool rumbleEnabled )
 void InputManager::NotifyAndroidPhysicalGamepadInput
 (
     int instanceId,
-    float magnitude
+    int inputIndex,
+    float value
 )
 {
+    (void)inputIndex;
+
     if ( instanceId < 0 )
     {
         return;
     }
 
-    if ( magnitude < 0.0f )
-    {
-        magnitude = -magnitude;
-    }
-
     TouchInputModeManager& inputMode =
         TouchInputModeManager::GetInstance();
+
+    /*
+     * SDL GameController input is delivered through the normal Radical
+     * controller callback path. This callback is only used here to confirm
+     * that a real Android gamepad is active and switch the touch HUD off.
+     */
+    const float magnitude = value < 0.0f ? -value : value;
 
     if ( magnitude < inputMode.GetGamepadInputThreshold() )
     {
@@ -380,6 +387,8 @@ void InputManager::NotifyAndroidPhysicalGamepadInput
         )
     )
     {
+        // This controller may be taking priority back after a touchscreen tap.
+        inputMode.NotifyGamepadInput( magnitude );
         return;
     }
 
@@ -398,14 +407,23 @@ void InputManager::NotifyAndroidPhysicalGamepadInput
         return;
     }
 
+    // Every real controller-input confirmation selects Gamepad mode,
+    // including another controller or a controller resuming after touch input.
+    inputMode.NotifyGamepadConnected();
+
     /*
      * Only the transition 0 -> 1 should do the strong cleanup.
      * If this is a second/third/fourth gamepad, the HUD is already hidden.
      */
     if ( !hadConfirmedGamepad )
     {
-        inputMode.NotifyGamepadConnected();
-
+        /*
+         * Android raw SDL joystick events are injected directly into
+         * controller 0. Do not force EnumerateControllers() here: that
+         * releases/reinitializes the Rad controller and clears mButtonArray,
+         * which races the raw event stream and causes intermittent button
+         * failures.
+         */
         TouchInputAdapter::GetInstance().ClearQueuedInputs();
         TouchInputAdapter::GetInstance().ClearActiveInputs();
 
@@ -683,6 +701,7 @@ void InputManager::Update( unsigned int timeinms )
 
 void InputManager::OnControllerConnectionStatusChange( IRadController * pIController2 )
 {
+    (void)pIController2;
     mConnectStateChanged = true;
 }
 

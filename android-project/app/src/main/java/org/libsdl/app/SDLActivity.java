@@ -942,7 +942,35 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
     /**
      * This method is called by SDL using JNI.
+     *
+     * Request a change to the internal world-render resolution. SDLSurface posts
+     * the target size to the Android UI thread, but does not resize the output
+     * Surface. Native code commits the new offscreen target on the GL thread.
      */
+    public static boolean requestSHARRenderResolutionHeight(int targetHeight) {
+        SDLSurface surface = mSurface;
+        if (surface == null) {
+            Log.e("SDL", "SHAR live resolution request rejected: SurfaceView is unavailable");
+            return false;
+        }
+
+        return surface.requestSHARRenderResolutionHeight(targetHeight);
+    }
+
+    /**
+     * Request the preferred output refresh rate for the selectable gameplay FPS cap.
+     * Android 11+ may switch to a matching supported display mode; this remains a hint.
+     */
+    public static boolean requestSHARDisplayFrameRate(int targetFPS) {
+        SDLSurface surface = mSurface;
+        if (surface == null) {
+            Log.w("SDL", "SHAR FPS request deferred: SurfaceView is unavailable");
+            return false;
+        }
+
+        return surface.requestSHARDisplayFrameRate(targetFPS);
+    }
+
     public static boolean setActivityTitle(String title) {
         // Called from SDLMain() thread and can't directly affect the view
         return mSingleton.sendCommand(COMMAND_CHANGE_TITLE, title);
@@ -1403,6 +1431,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 //        } else if (event.getAction() == KeyEvent.ACTION_UP) {
 //            Log.v("SDL", "key up: " + keyCode + ", deviceId = " + deviceId + ", source = " + source);
 //        }
+
 
         // Dispatch the different events depending on where they come from
         // Some SOURCE_JOYSTICK, SOURCE_DPAD or SOURCE_GAMEPAD are also SOURCE_KEYBOARD

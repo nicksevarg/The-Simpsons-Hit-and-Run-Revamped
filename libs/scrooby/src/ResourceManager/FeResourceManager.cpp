@@ -66,6 +66,9 @@
     const char* FILENAME_SUFFIX_FOR_CHRISTMAS = "_C.p3d";
 #endif
 
+#ifdef RAD_ANDROID
+#endif
+
 //===========================================================================
 // Member Functions
 //===========================================================================
@@ -189,16 +192,40 @@ int FeResourceManager::AddResource( const char* filename, FeEntity* parent, Reso
                     radDate today;
                     ::radTimeGetDate( &today );
 
-                    if( today.m_Month == 10 && today.m_Day == 31 ) // hallowe'en
+                    int thanksgivingDay = 0;
+                    if( today.m_Month == 11 )
+                    {
+                        // The fourth Thursday always falls between November 22 and 28.
+                        for( int day = 22; day <= 28; ++day )
+                        {
+                            if( radTimeGetWeekday( today.m_Year, 11, day ) == Weekday_Thursday )
+                            {
+                                thanksgivingDay = day;
+                                break;
+                            }
+                        }
+                    }
+
+                    const bool isHalloween =
+                        ( today.m_Month == 10 && today.m_Day >= 24 ) ||
+                        ( today.m_Month == 11 && today.m_Day == 1 );
+                    const bool isThanksgiving =
+                        ( today.m_Month == 11 && thanksgivingDay != 0 &&
+                          today.m_Day >= thanksgivingDay - 2 &&
+                          today.m_Day <= thanksgivingDay + 1 );
+                    const bool isChristmas =
+                        ( today.m_Month == 12 && today.m_Day >= 18 ) ||
+                        ( today.m_Month == 1 && today.m_Day <= 7 );
+
+                    if( isHalloween ) // October 24 through November 1, inclusive
                     {
                         strcat( filenameModified, FILENAME_SUFFIX_FOR_HALLOWEEN );
                     }
-                    else if( today.m_Month == 11 && today.m_Day > 21 && today.m_Day <= 28 &&
-                             radTimeGetWeekday( today.m_Year, today.m_Month, today.m_Day ) == Weekday_Thursday ) // US thanksgiving
+                    else if( isThanksgiving ) // Tuesday through Friday, fourth-Thursday week
                     {
                         strcat( filenameModified, FILENAME_SUFFIX_FOR_THANKSGIVING );
                     }
-                    else if( today.m_Month == 12 && today.m_Day == 25 ) // christmas
+                    else if( isChristmas ) // December 18 through January 7, inclusive
                     {
                         strcat( filenameModified, FILENAME_SUFFIX_FOR_CHRISTMAS );
                     }
@@ -1042,6 +1069,10 @@ FeResourceManager::SetSecondaryInventorySection( const char* name )
 //===========================================================================
 void FeResourceManager::SetLocalizationLanguage( const Scrooby::XLLanguage lang )
 {
+    // This must also be updated when no text bible is currently loaded.
+    // Future bible loads use it to choose the best available language table.
+    FeTextBible::SetCurrentLanguageID( Scrooby::language_ID[ lang ] );
+
     if( m_eLang != lang )
     {
         m_eLang = lang;

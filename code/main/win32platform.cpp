@@ -142,17 +142,14 @@
 #if defined(RAD_ANDROID)
   #include <android/log.h>
   #define LOG_TAG "SimpsonsHitAndRun"
-  #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
   #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 #elif defined(RAD_VITA)
   #include <psp2/kernel/clib.h>
-  #define LOGI(...) do { sceClibPrintf(__VA_ARGS__); sceClibPrintf("\n"); } while(0)
   #define LOGE(...) do { sceClibPrintf(__VA_ARGS__); sceClibPrintf("\n"); } while(0)
 
 #else
   #include <cstdio>
-  #define LOGI(...) do { std::printf(__VA_ARGS__); std::printf("\n"); std::fflush(stdout); } while(0)
   #define LOGE(...) do { std::printf(__VA_ARGS__); std::printf("\n"); std::fflush(stdout); } while(0)
 #endif
 
@@ -175,6 +172,13 @@ SDL_Window* Win32Platform::mWnd = NULL;
 void* Win32Platform::mhMutex = NULL;
 #endif
 bool Win32Platform::mShowCursor = true;
+
+#if defined(RAD_ANDROID)
+// The GLES display implementation owns these values so every target linking
+// the renderer (including helper executables) resolves the shared state.
+extern int gSHARRequestedOpenGLESVersionMajor;
+extern int gSHARActiveOpenGLESVersionMajor;
+#endif
 
 //The Adlib font.  <sigh>
 unsigned char gFont[] = 
@@ -341,6 +345,8 @@ bool Win32Platform::InitializeWindow()
 #ifdef RAD_ANDROID
 
     // Attempt #1 : GLES3
+    gSHARRequestedOpenGLESVersionMajor = 3;
+    gSHARActiveOpenGLESVersionMajor = 3;
 #if SDL_MAJOR_VERSION < 3
     SDL_GL_ResetAttributes();
 #endif
@@ -413,6 +419,7 @@ bool Win32Platform::InitializeWindow()
         rDebugPrintf( "SDL_CreateWindow GLES3 failed: %s\n", SDL_GetError() );
 
         // Attempt #2 : GLES2
+        gSHARActiveOpenGLESVersionMajor = 2;
 #if SDL_MAJOR_VERSION < 3
         SDL_GL_ResetAttributes();
 #endif
@@ -923,63 +930,6 @@ void Win32Platform::OnControllerError(const char* msg)
 #endif
 }
 
-// NUEVA FUNCION MISMO COMPORTAMIENTO CON LOGI 
-/*
-void Win32Platform::OnControllerError(const char *msg)
-{
-    LOGI("[Platform]: OnControllerError ENTER msg=%s", msg ? msg : "(null)");
-
-    LOGI("[Platform]: Before DisplaySplashScreen");
-    DisplaySplashScreen( Error, msg, 0.7f, 0.0f, 0.0f, tColour(255, 255, 255), 0 );
-    LOGI("[Platform]: After DisplaySplashScreen");
-
-    LOGI("[Platform]: Before mErrorState = CTL_ERROR");
-    mErrorState = CTL_ERROR;
-    LOGI("[Platform]: After mErrorState = CTL_ERROR");
-
-    LOGI("[Platform]: Before mPauseForError = true");
-    mPauseForError = true;
-    LOGI("[Platform]: After mPauseForError = true");
-}
-*/
-/*
-
-
-// PRUEBA A 
-void Win32Platform::OnControllerError(const char *msg)
-{
-    LOGI("[Platform][TEST A]: ENTER");
-    DisplaySplashScreen( Error, msg, 0.7f, 0.0f, 0.0f, tColour(255, 255, 255), 0 );
-    LOGI("[Platform][TEST A]: EXIT");
-}
-*/
-
-/*
-// PRUEBA B
-void Win32Platform::OnControllerError(const char *msg)
-{
-    LOGI("[Platform][TEST B]: ENTER");
-    mErrorState = CTL_ERROR;
-    mPauseForError = true;
-    LOGI("[Platform][TEST B]: EXIT");
-}
-*/
-/*
-void Win32Platform::OnControllerError(const char *msg)
-{
-    LOGI("[Platform][TEST ORDER]: ENTER");
-
-    DisplaySplashScreen( Error, msg, 0.7f, 0.0f, 0.0f, tColour(255, 255, 255), 0 );
-    LOGI("[Platform][TEST ORDER]: After DisplaySplashScreen");
-
-   
-
-    LOGI("[Platform][TEST ORDER]: Before mErrorState / mPauseForError");
-    mErrorState = CTL_ERROR;
-    mPauseForError = true;
-    LOGI("[Platform][TEST ORDER]: After mErrorState / mPauseForError");
-}
-*/
 //=============================================================================
 // Win32Platform::OnDriveError
 //=============================================================================
@@ -1025,22 +975,23 @@ bool Win32Platform::OnDriveError( radFileError error, const char* pDriveName, vo
             radFileRequest* request = static_cast<radFileRequest*>( pUserData );
             const char* fileName = request->GetFilename();
 
-            //Get rid of the slashes.
-            unsigned int i;
-            unsigned int lastIndex = 0;
-            for ( i = 0; i < strlen( fileName ); ++i )
+            // Find the basename without copying an arbitrarily long path
+            // into a fixed-size temporary buffer.
+            const char* adjustedName = fileName != NULL ? fileName : "(unknown)";
+            if (fileName != NULL)
             {
-                if ( fileName[ i ] == '\\' )
+                const char* lastSlash = strrchr(fileName, '/');
+                const char* lastBackslash = strrchr(fileName, '\\');
+                if (lastBackslash != NULL &&
+                    (lastSlash == NULL || lastBackslash > lastSlash))
                 {
-                    lastIndex = i;
+                    lastSlash = lastBackslash;
+                }
+                if (lastSlash != NULL)
+                {
+                    adjustedName = lastSlash + 1;
                 }
             }
-
-            unsigned int adjustedIndex = lastIndex == 0 ? lastIndex : lastIndex + 1;
-
-            char adjustedName[32];
-            strncpy( adjustedName, &fileName[adjustedIndex], ( strlen( fileName ) - lastIndex ) );
-            adjustedName[ strlen( fileName ) - lastIndex ] = '\0';
 
 #ifdef RAD_PC
             if( strcmp( fileName, GameConfigManager::ConfigFilename ) == 0 )
@@ -1049,14 +1000,27 @@ bool Win32Platform::OnDriveError( radFileError error, const char* pDriveName, vo
             }
 #endif
 
+#ifdef RAD_ANDROID
+            // FileNotFound is not recoverable by retrying the same path. Fail
+            // this request and keep the frame loop alive instead of repeatedly
+            // showing the error splash and compounding post-processing.
+            LOGE("RAD FileNotFound: failing request without retry. drive='%s' file='%s'",
+                 pDriveName != NULL ? pDriveName : "(unknown)",
+                 fileName != NULL ? fileName : "(unknown)");
+            mErrorState = NONE;
+            mPauseForError = false;
+            return false;
+#else
             char errorString[256];
-            sprintf( errorString, "%s:\n%s", ERROR_STRINGS[error], adjustedName );
+            snprintf(errorString, sizeof(errorString), "%s:\n%s",
+                     ERROR_STRINGS[error], adjustedName);
             fprintf(stderr, "error: %s\n", errorString);
             DisplaySplashScreen( Error, errorString, 1.0f, 0.0f, 0.0f, tColour(255, 255, 255), 0 );
             mErrorState = P_ERROR;
             mPauseForError = true;
 
             return true;
+#endif
         }
     case NoMedia:
     case MediaNotFormatted:
@@ -1830,13 +1794,8 @@ void Win32Platform::InitializeContext()
         #if defined(RAD_ANDROID)
         // VSYNC on + habilita cap a 60 (m_only60)
         mpContext->GetDisplay()->SetForceVSync(true, true);
-        // opcional (1 vez): pedir VSYNC al driver
+        // Keep existing VSync behaviour unchanged.
         SDL_GL_SetSwapInterval(1);
-		
-		// ESTO ES PARA VER LA RESOLUCION ACTUIAL 
-		int realW = mpContext->GetDisplay()->GetWidth();
-        int realH = mpContext->GetDisplay()->GetHeight();
-        rDebugPrintf("[RES] REAL display/backbuffer = %dx%d\n", realW, realH);
         #endif
     }
     else
@@ -1847,12 +1806,6 @@ void Win32Platform::InitializeContext()
         // por si InitDisplay recrea / resetea algo
         mpContext->GetDisplay()->SetForceVSync(true, true);
         SDL_GL_SetSwapInterval(1);
-		
-		
-		// aqui lo repito para ver resolucion real
-		int realW = mpContext->GetDisplay()->GetWidth();
-        int realH = mpContext->GetDisplay()->GetHeight();
-        rDebugPrintf("[RES] REAL display/backbuffer = %dx%d\n", realW, realH);
 		
         #endif
     }

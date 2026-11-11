@@ -15,7 +15,13 @@
 #include <p3d/array.hpp>
 
 #include <string.h>
-
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHARFrontendMenuCelPassActive();
+bool IsSHAREnvironmentCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+#endif
 
 using namespace RadicalMathLibrary;
 
@@ -89,6 +95,44 @@ void tGeometry::SetPrimGroup(int i, tPrimGroup* group)
 //------------------------------------------------------------------------
 void tGeometry::Display()
 {
+#ifdef RAD_ANDROID
+    // The menu camera set is a static Scenegraph, not a world DSG entity, so it
+    // bypasses the character/world toon path. Shade its geometry only while the
+    // main-menu screen is active; keep all normal game and other GUI rendering
+    // on the existing single-pass path.
+    if (IsSHARFrontendMenuCelPassActive() && IsCelShadingEnabled())
+    {
+        // A drawable/display-list wrapper may already be managing the menu's
+        // outline and colour passes. Draw once in that wrapper's current pass.
+        if (IsSHAREnvironmentCelPassActive())
+        {
+            for (unsigned i = 0; i < primGroup.Size(); i++)
+            {
+                if (primGroup[i])
+                    primGroup[i]->Display();
+            }
+            return;
+        }
+
+        SetCelShadingObjectEnabled(true);
+        SetCelShadingOutlinePass(true);
+        for (unsigned i = 0; i < primGroup.Size(); i++)
+        {
+            if (primGroup[i])
+                primGroup[i]->Display();
+        }
+
+        SetCelShadingOutlinePass(false);
+        for (unsigned i = 0; i < primGroup.Size(); i++)
+        {
+            if (primGroup[i])
+                primGroup[i]->Display();
+        }
+        SetCelShadingObjectEnabled(false);
+        return;
+    }
+#endif
+
     for( unsigned i = 0; i < primGroup.Size(); i++)
     {
         if( primGroup[i])

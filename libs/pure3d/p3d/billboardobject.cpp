@@ -18,6 +18,10 @@
 #include <p3d/billboardobject.hpp>
 #include <pddi/pddiext.hpp>
 
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentBillboardFoliagePassActive();
+#endif
+
 #ifdef RAD_XBOX
 #include <pddi/pddixbox.hpp>
 #endif
@@ -25,6 +29,92 @@
 //for memcpy
 #include <stdio.h>
 #include <string.h>
+#ifdef RAD_ANDROID
+#include <ctype.h>
+bool IsCelShadingEnabled();
+bool IsCelShadingOutlinePass();
+bool IsSHAREnvironmentCelPassActive();
+bool IsSHAREnvironmentBillboardFoliagePassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled);
+
+static bool SHARBillboardNameEqualsIgnoreCase(const char* lhs, const char* rhs)
+{
+    if (lhs == NULL || rhs == NULL)
+        return false;
+    while (*lhs != '\0' && *rhs != '\0')
+    {
+        if (tolower(static_cast<unsigned char>(*lhs)) !=
+            tolower(static_cast<unsigned char>(*rhs)))
+            return false;
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == '\0' && *rhs == '\0';
+}
+
+static bool SHARBillboardNameContainsIgnoreCase(const char* name, const char* token)
+{
+    if (name == NULL || token == NULL || token[0] == '\0')
+        return false;
+    for (const char* start = name; *start != '\0'; ++start)
+    {
+        const char* a = start;
+        const char* b = token;
+        while (*a != '\0' && *b != '\0' &&
+               tolower(static_cast<unsigned char>(*a)) ==
+               tolower(static_cast<unsigned char>(*b)))
+        {
+            ++a;
+            ++b;
+        }
+        if (*b == '\0')
+            return true;
+    }
+    return false;
+}
+
+static bool SHARBillboardNameHasTokenPrefixIgnoreCase(const char* name, const char* token)
+{
+    if (name == NULL || token == NULL || token[0] == '\0')
+        return false;
+    for (const char* start = name; *start != '\0'; ++start)
+    {
+        if (start != name && start[-1] != '_' && start[-1] != '-' && start[-1] != '/')
+            continue;
+        const char* a = start;
+        const char* b = token;
+        while (*a != '\0' && *b != '\0' &&
+               tolower(static_cast<unsigned char>(*a)) ==
+               tolower(static_cast<unsigned char>(*b)))
+        {
+            ++a;
+            ++b;
+        }
+        if (*b == '\0')
+            return true;
+    }
+    return false;
+}
+
+static bool SHARIsKnownFoliageBillboardSource(const char* groupName, const char* shaderName)
+{
+    const bool knownLegacyName =
+        SHARBillboardNameEqualsIgnoreCase(groupName, "treesShape") ||
+        SHARBillboardNameEqualsIgnoreCase(shaderName, "treesShape") ||
+        SHARBillboardNameEqualsIgnoreCase(groupName, "l1_treebig_billboard_m") ||
+        SHARBillboardNameEqualsIgnoreCase(shaderName, "l1_treebig_billboard_m");
+    const bool namedTreeBillboard =
+        (SHARBillboardNameHasTokenPrefixIgnoreCase(groupName, "tree") &&
+         SHARBillboardNameContainsIgnoreCase(groupName, "billboard")) ||
+        (SHARBillboardNameHasTokenPrefixIgnoreCase(shaderName, "tree") &&
+         SHARBillboardNameContainsIgnoreCase(shaderName, "billboard"));
+    return knownLegacyName || namedTreeBillboard;
+}
+
+#endif
 
 #ifdef RAD_PS2
 #define PS2_OCCLUSION_FLARE
@@ -127,6 +217,10 @@ tBillboardQuad::Display(pddiPrimStream* stream, const Matrix& world, const Matri
     {
         return;
     }
+
+#ifdef RAD_ANDROID
+    const bool useFoliageOutlineNormals = IsSHAREnvironmentBillboardFoliagePassActive();
+#endif
 
     //Vector  v[4];
     //Vector2 t[4];
@@ -366,31 +460,55 @@ tBillboardQuad::Display(pddiPrimStream* stream, const Matrix& world, const Matri
     if ((!flip)||(billboardMode != p3dBillboardConstants::BillboardMode::NO_AXIS))
     {
         //bottom left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[0].u, t[0].v);
         stream->Coord(v[0].x, v[0].y, v[0].z);
     
         //top right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[2].u, t[2].v);
         stream->Coord(v[2].x, v[2].y, v[2].z);
 
         //bottom right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[1].u, t[1].v);
         stream->Coord(v[1].x, v[1].y, v[1].z);
     
         // top left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[3].u, t[3].v);
         stream->Coord(v[3].x, v[3].y, v[3].z);
 
         // top right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[2].u, t[2].v);
         stream->Coord(v[2].x, v[2].y, v[2].z);
 
         // bottom left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[0].u, t[0].v);
         stream->Coord(v[0].x, v[0].y, v[0].z);
@@ -398,106 +516,101 @@ tBillboardQuad::Display(pddiPrimStream* stream, const Matrix& world, const Matri
     else
     {        
         //bottom left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[0].u, t[0].v);
         stream->Coord(v[0].x, v[0].y, v[0].z);
     
         //bottom right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[1].u, t[1].v);
         stream->Coord(v[1].x, v[1].y, v[1].z);
 
         //top right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[2].u, t[2].v);
         stream->Coord(v[2].x, v[2].y, v[2].z);
     
         // bottom left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, -1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[0].u, t[0].v);
         stream->Coord(v[0].x, v[0].y, v[0].z);
 
         // top right
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[2].u, t[2].v);
         stream->Coord(v[2].x, v[2].y, v[2].z);
 
         // top left
+#ifdef RAD_ANDROID
+        if (useFoliageOutlineNormals)
+            stream->Normal(-1.0f, 1.0f, 0.0f);
+#endif
         stream->Colour(displayColour);
         stream->UV(t[3].u, t[3].v);
         stream->Coord(v[3].x, v[3].y, v[3].z);
     }
 }
 
-void BakedBillboardQuad::Display(pddiPrimStream* stream)
+static void SHARDisplayBakedBillboardVertex(pddiPrimStream* stream,
+                                             bool useFoliageOutlineNormals,
+                                             tColour colour,
+                                             const rmt::Vector2& uv,
+                                             const rmt::Vector& position,
+                                             float normalX,
+                                             float normalY)
 {
-    //displayColour.SetAlpha(255);
-    //displayColour.SetRed(255);
-    //displayColour.SetGreen(255);
-    //displayColour.SetBlue(255);
+#ifdef RAD_ANDROID
+    if (useFoliageOutlineNormals)
+        stream->Normal(normalX, normalY, 0.0f);
+#else
+    (void)useFoliageOutlineNormals;
+    (void)normalX;
+    (void)normalY;
+#endif
+    stream->Colour(colour);
+    stream->UV(uv.u, uv.v);
+    stream->Coord(position.x, position.y, position.z);
+}
+
+void BakedBillboardQuad::Display(pddiPrimStream* stream, bool useFoliageOutlineNormals)
+{
     if ((!flip)||(billboardMode != p3dBillboardConstants::BillboardMode::NO_AXIS))
     {
-        //bottom left
-        stream->Colour(displayColour);
-        stream->UV(t[0].u, t[0].v);
-        stream->Coord(v[0].x, v[0].y, v[0].z);
-
-        //top right
-        stream->Colour(displayColour);
-        stream->UV(t[2].u, t[2].v);
-        stream->Coord(v[2].x, v[2].y, v[2].z);
-
-        //bottom right
-        stream->Colour(displayColour);
-        stream->UV(t[1].u, t[1].v);
-        stream->Coord(v[1].x, v[1].y, v[1].z);
-
-        // top left
-        stream->Colour(displayColour);
-        stream->UV(t[3].u, t[3].v);
-        stream->Coord(v[3].x, v[3].y, v[3].z);
-
-        // top right
-        stream->Colour(displayColour);
-        stream->UV(t[2].u, t[2].v);
-        stream->Coord(v[2].x, v[2].y, v[2].z);
-
-        // bottom left
-        stream->Colour(displayColour);
-        stream->UV(t[0].u, t[0].v);
-        stream->Coord(v[0].x, v[0].y, v[0].z);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[0], v[0], -1.0f, -1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[2], v[2],  1.0f,  1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[1], v[1],  1.0f, -1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[3], v[3], -1.0f,  1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[2], v[2],  1.0f,  1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[0], v[0], -1.0f, -1.0f);
     }
     else
-    {        
-        //bottom left
-        stream->Colour(displayColour);
-        stream->UV(t[0].u, t[0].v);
-        stream->Coord(v[0].x, v[0].y, v[0].z);
-
-        //bottom right
-        stream->Colour(displayColour);
-        stream->UV(t[1].u, t[1].v);
-        stream->Coord(v[1].x, v[1].y, v[1].z);
-
-        //top right
-        stream->Colour(displayColour);
-        stream->UV(t[2].u, t[2].v);
-        stream->Coord(v[2].x, v[2].y, v[2].z);
-
-        // bottom left
-        stream->Colour(displayColour);
-        stream->UV(t[0].u, t[0].v);
-        stream->Coord(v[0].x, v[0].y, v[0].z);
-
-        // top right
-        stream->Colour(displayColour);
-        stream->UV(t[2].u, t[2].v);
-        stream->Coord(v[2].x, v[2].y, v[2].z);
-
-        // top left
-        stream->Colour(displayColour);
-        stream->UV(t[3].u, t[3].v);
-        stream->Coord(v[3].x, v[3].y, v[3].z);
+    {
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[0], v[0], -1.0f, -1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[1], v[1],  1.0f, -1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[2], v[2],  1.0f,  1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[0], v[0], -1.0f, -1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[2], v[2],  1.0f,  1.0f);
+        SHARDisplayBakedBillboardVertex(stream, useFoliageOutlineNormals, displayColour, t[3], v[3], -1.0f,  1.0f);
     }
 }
 //THIS FUNCTION MUST BE OPTIMIZED!!!
@@ -1189,7 +1302,8 @@ tBillboardQuadGroup::tBillboardQuadGroup():
     shader(NULL),
     numQuads(0),
     zTest(false),
-    zWrite(false),    
+    zWrite(false),
+    mSHAREnvironmentFoliageBillboard(false),
     occlusionMode(0),
     intensityBias(1.0f)
 {
@@ -1242,6 +1356,9 @@ tBillboardQuadGroup::FindQuadByName(const char* name)
 void 
 tBillboardQuadGroup::Display()
 {
+#ifdef RAD_ANDROID
+    #endif
+
     if ( !BillboardQuadManager::sEnabled )
     {
         Matrix world = *(p3d::context->GetWorldMatrix());
@@ -1335,7 +1452,13 @@ tBillboardQuadGroup::Display()
         #endif
 
 
+#ifdef RAD_ANDROID
+        const unsigned int vertexFormat = IsSHAREnvironmentBillboardFoliagePassActive()
+            ? (PDDI_V_NT | PDDI_V_COLOUR) : PDDI_V_CT;
+        pddiPrimStream* stream = p3d::pddi->BeginPrims(shader->GetShader(), PDDI_PRIM_TRIANGLES, vertexFormat, numVisibleQuads*6);
+#else
         pddiPrimStream* stream = p3d::pddi->BeginPrims(shader->GetShader(), PDDI_PRIM_TRIANGLES, PDDI_V_CT, numVisibleQuads*6);
+#endif
 
         for (int i = 0; i < numQuads; i++)
         {
@@ -1469,15 +1592,47 @@ tBillboardQuadGroup::Display()
 
         p3d::stack->PushIdentity();
 
-        pddiPrimStream* stream = p3d::pddi->BeginPrims(shader->GetShader(), PDDI_PRIM_TRIANGLES, PDDI_V_CT, mTempQuads.mUseSize*6);
-
-        for (int i = 0; i < mTempQuads.mUseSize; i++)
+#ifdef RAD_ANDROID
+        const bool foliageOutlineBatch =
+            mSHAREnvironmentFoliageBillboard &&
+            IsCelShadingEnabled();
+        if (foliageOutlineBatch)
         {
-            mTempQuads[i].Display(stream);//,world,camera,worldToCamera,intensityBias);
-            //quads[i]->Display(stream,world,camera,worldToCamera,intensityBias);
-        }
+            SetSHAREnvironmentCelPassActive(true);
+            SetCelShadingObjectEnabled(true);
+            SetSHAREnvironmentBillboardFoliagePassActive(true);
+            SetCelShadingOutlinePass(true);
 
-        p3d::pddi->EndPrims(stream);   
+            pddiPrimStream* outlineStream = p3d::pddi->BeginPrims(
+                shader->GetShader(), PDDI_PRIM_TRIANGLES,
+                PDDI_V_NT | PDDI_V_COLOUR, mTempQuads.mUseSize*6);
+            for (int i = 0; i < mTempQuads.mUseSize; i++)
+                mTempQuads[i].Display(outlineStream, true);
+            p3d::pddi->EndPrims(outlineStream);
+
+            SetCelShadingOutlinePass(false);
+            SetSHAREnvironmentBillboardFoliagePassActive(false);
+            SetCelShadingObjectEnabled(false);
+
+            pddiPrimStream* baseStream = p3d::pddi->BeginPrims(
+                shader->GetShader(), PDDI_PRIM_TRIANGLES,
+                PDDI_V_CT, mTempQuads.mUseSize*6);
+            for (int i = 0; i < mTempQuads.mUseSize; i++)
+                mTempQuads[i].Display(baseStream, false);
+            p3d::pddi->EndPrims(baseStream);
+
+            SetSHAREnvironmentCelPassActive(false);
+        }
+        else
+#endif
+        {
+            pddiPrimStream* stream = p3d::pddi->BeginPrims(shader->GetShader(), PDDI_PRIM_TRIANGLES, PDDI_V_CT, mTempQuads.mUseSize*6);
+
+            for (int i = 0; i < mTempQuads.mUseSize; i++)
+                mTempQuads[i].Display(stream, false);
+
+            p3d::pddi->EndPrims(stream);
+        }
 
         p3d::stack->Pop();   
 
@@ -1763,6 +1918,14 @@ tBillboardQuadGroupLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     quadGroup->SetOcclusion(f->GetInt()); // is "Fog" in shader
     quadGroup->numQuads = f->GetLong();
     quadGroup->quads.SetSize( quadGroup->numQuads );
+#ifdef RAD_ANDROID
+    const bool translucent = shader && shader->mTranslucent;
+    const bool foliageSourceMatch = SHARIsKnownFoliageBillboardSource(name, shaderName);
+    const bool foliageTag = foliageSourceMatch && !translucent;
+    quadGroup->SetSHAREnvironmentFoliageBillboard(foliageTag);
+    // One record per loaded group: all opaque groups, including <10 quads,
+    // plus likely foliage even when the shader is marked blended.
+    #endif
 
     int quadNum = 0;
     while( f->ChunksRemaining() )
@@ -1977,9 +2140,11 @@ void BillboardQuadManager::Add(tBillboardQuadGroup* ipBBQG)
     tUID shaderUID = ipBBQG->GetShader()->GetUID();
     int i=mpBBQGs.mUseSize-1;//, j;
 
+    const bool foliageBatch = ipBBQG->IsSHAREnvironmentFoliageBillboard();
     for(; i>-1; i--)
     {
-        if( mpBBQGs[i]->GetShader()->GetUID() == shaderUID )
+        if( mpBBQGs[i]->GetShader()->GetUID() == shaderUID &&
+            mpBBQGs[i]->IsSHAREnvironmentFoliageBillboard() == foliageBatch )
         {
             mpBBQGs[i]->AddQuads(ipBBQG);
             break;

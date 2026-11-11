@@ -639,6 +639,11 @@ CGuiScreenPurchaseRewards::On3DModelLoaded( const PreviewObject* previewObject )
     {
         rAssert( m_previewWindow != NULL );
         m_previewWindow->SetDrawable( drawable );
+#ifdef RAD_ANDROID
+        // Restrict the skinned cel pass to the live clothing preview, not vehicles.
+        m_previewWindow->SetSHARPreviewCharacterCelShadingEnabled(
+            m_currentType == Merchandise::SELLER_INTERIOR);
+#endif
 
         if( m_currentType != Merchandise::SELLER_INTERIOR )
         {

@@ -28,6 +28,11 @@
 #include <render/Loaders/AllWrappers.h>
 #include <p3d/effects/particleloader.hpp>
 #include <render/breakables/breakablesmanager.h>
+#ifdef RAD_ANDROID
+// The state lives in Pure3D's animated-object loader so that static library
+// links never require the lower-level Pure3D library to call back into game code.
+void SetSHARBreakableFactoryLoadActive(bool active);
+#endif
 
 //===========================================================================
 // Local Constants, Typedefs, and Macros
@@ -208,7 +213,13 @@ MEMTRACK_PUSH_GROUP( "Breakables" );
         case Pure3D::AnimatedObject::FACTORY:
             {
                 rAssert( pFactory == NULL );
+#ifdef RAD_ANDROID
+                SetSHARBreakableFactoryLoadActive(true);
+#endif
                 tEntity* entity = mpFactoryLoader->LoadObject( file, store );
+#ifdef RAD_ANDROID
+                SetSHARBreakableFactoryLoadActive(false);
+#endif
                 pFactory = static_cast<tAnimatedObjectFactory*> (entity);
                 rAssert( dynamic_cast< tAnimatedObjectFactory* >(entity) != NULL );
             }

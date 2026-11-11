@@ -13,6 +13,7 @@
 // System Includes
 //========================================
 #include <raddebug.hpp>
+#include <radtime.hpp>
 #include <p3d/view.hpp>
 #include <p3d/billboardobject.hpp>
 
@@ -26,6 +27,10 @@
 #include <gameflow/gameflow.h>
 #include <contexts/contextenum.h>
 #include <contexts/gameplay/gameplaycontext.h>
+#include <App.h>
+#include <Project.h>
+#include <Screen.h>
+#include <Page.h>
 #include <worldsim/coins/coinmanager.h>
 #include <worldsim/coins/sparkle.h>
 #ifdef RAD_WIN32
@@ -34,26 +39,16 @@
 #ifdef RAD_ANDROID
 #include <presentation/fmvplayer/fmvplayer.h>
 #include <input/touch/touchhudrenderer.h>
+void ApplySHARPostProcessingBeforeTouchHud();
+bool IsSHARFrontendMenuCelPassActive();
+void SetSHARFrontendMenuLightingActive(bool enabled);
+
+
 #endif
 
 
-#if defined(RAD_ANDROID)
-  #include <android/log.h>
+#ifdef RAD_ANDROID
 #include "RenderManager.h"
-
-#define LOG_TAG "SimpsonsHitAndRun"
-  #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
-  #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
-#elif defined(RAD_VITA)
-  #include <psp2/kernel/clib.h>
-  #define LOGI(...) do { sceClibPrintf(__VA_ARGS__); sceClibPrintf("\n"); } while(0)
-  #define LOGE(...) do { sceClibPrintf(__VA_ARGS__); sceClibPrintf("\n"); } while(0)
-
-#else
-  #include <cstdio>
-  #define LOGI(...) do { std::printf(__VA_ARGS__); std::printf("\n"); std::fflush(stdout); } while(0)
-  #define LOGE(...) do { std::printf(__VA_ARGS__); std::printf("\n"); std::fflush(stdout); } while(0)
 #endif
 //************************************************************************
 //
@@ -276,15 +271,39 @@ void FrontEndRenderLayer::Render()
     {
         fmvPlaying = pm->GetFMVPlayer()->IsPlaying();
     }
-
     if( fmvPlaying )
     {
+#ifdef RAD_ANDROID
+        // Do not call DrawFrame() during an FMV: that would render the full
+        // movie screen UI and can cover the video. Render only the foreground
+        // pages, which is where the standalone TVFrame page belongs.
+        for( unsigned int view = 0; view < mNumViews; view++ )
+        {
+            if( mpView[ view ] == NULL )
+            {
+                continue;
+            }
+
+            mpView[ view ]->BeginRender();
+
+            if( mpScroobyApp != NULL )
+            {
+
+                mpScroobyApp->DrawForeground( static_cast<float>( g_scroobySimulationTime ) );
+            }
+
+            mpView[ view ]->EndRender();
+        }
+#else
+        // Preserve the original non-Android behavior during FMV playback.
+#endif
 #ifdef DEBUGWATCH
         mDebugRenderTime = radTimeGetMicroseconds() - mDebugRenderTime;
 #endif
         END_PROFILE( "FE Render" );
         return;
     }
+
 
     for( unsigned int view = 0; view < mNumViews; view++ )
     {
@@ -300,11 +319,40 @@ void FrontEndRenderLayer::Render()
         HeapMgr()->PushHeap( GMA_TEMP );
 
         if( !GetCoinManager()->DrawAfterGui() )
+        {
             DrawCoinObject();
+        }
 
         if( mpScroobyApp != NULL )
         {
+#ifdef RAD_ANDROID
+            // Apply the living-room lighting adjustment only to the 3D camera-set
+            // background; Scrooby foreground text and sprites remain untouched.
+            Scrooby::Project* project = mpScroobyApp->GetProject();
+            Scrooby::Screen* screen = project != NULL ? project->GetCurrentScreen() : NULL;
+            const bool celPassActive = IsSHARFrontendMenuCelPassActive();
+            Scrooby::Page* menu3dPage = screen != NULL ? screen->GetPage( "3dFE" ) : NULL;
+
+            // FeDivide is Scrooby's internal drawable divider, not a page.
+            // DrawBackground/DrawForeground already split on that drawable, so
+            // do not require a separate divider-page lookup here.
+            const bool hasMenuCameraSet =
+                celPassActive && screen != NULL && menu3dPage != NULL;
+            if( hasMenuCameraSet )
+            {
+                const float frameDelta = static_cast<float>( g_scroobySimulationTime );
+                SetSHARFrontendMenuLightingActive(true);
+                mpScroobyApp->DrawBackground( frameDelta );
+                SetSHARFrontendMenuLightingActive(false);
+                mpScroobyApp->DrawForeground( frameDelta );
+            }
+            else
+            {
+                mpScroobyApp->DrawFrame( static_cast<float>( g_scroobySimulationTime ) );
+            }
+#else
             mpScroobyApp->DrawFrame( static_cast<float>( g_scroobySimulationTime ) );
+#endif
         }
 
 #ifdef RAD_PC
@@ -312,12 +360,18 @@ void FrontEndRenderLayer::Render()
 #endif
 
         if( GetCoinManager()->DrawAfterGui() )
+        {
             DrawCoinObject();
-        
-        
-        #ifdef RAD_ANDROID
-        TouchHudRenderer::GetInstance().Render(); // Excelente sitio para renderizar pero hay que vigilar el caso de cinematica
-        #endif
+        }
+
+#ifdef RAD_ANDROID
+        {
+            ApplySHARPostProcessingBeforeTouchHud();
+        }
+        {
+            TouchHudRenderer::GetInstance().Render(); // Render touch controls after full-frame filters.
+        }
+#endif
         HeapMgr()->PopHeap( GMA_TEMP );
 
         mpView[ view ]->EndRender();

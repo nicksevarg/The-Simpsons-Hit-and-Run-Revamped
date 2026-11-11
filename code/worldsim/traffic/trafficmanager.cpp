@@ -64,11 +64,11 @@ TrafficManager* TrafficManager::mInstance = NULL;
     const float TrafficManager::REMOVE_RADIUS = 35.0f;
     const float TrafficManager::INITIAL_ADD_RADIUS = 20.0f;
 #else
-    const float TrafficManager::FADE_RADIUS = 85.0;
-    const float TrafficManager::CENTER_OFFSET = 40.0f;
-    const float TrafficManager::ADD_RADIUS = 65.0f;
-    const float TrafficManager::REMOVE_RADIUS = 75.0f;
-    const float TrafficManager::INITIAL_ADD_RADIUS = 100.0f;
+    const float TrafficManager::FADE_RADIUS = 116.875f;
+    const float TrafficManager::CENTER_OFFSET = 55.0f;
+    const float TrafficManager::ADD_RADIUS = 89.375f;
+    const float TrafficManager::REMOVE_RADIUS = 103.125f;
+    const float TrafficManager::INITIAL_ADD_RADIUS = 137.5f;
 #endif
 
 const unsigned int TrafficManager::MILLISECONDS_BETWEEN_REMOVE = 200;

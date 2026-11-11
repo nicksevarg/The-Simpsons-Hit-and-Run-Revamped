@@ -1258,9 +1258,32 @@ tEntity* FeTextBibleLoader::LoadObject( tChunkFile* file, tEntityStore* store )
     numLanguages = file->GetUInt();
     file->GetString( languages );
 
+    char languageIDToLoad = FeTextBible::GetCurrentLanguageID();
+    if( s_onlyLoadCurrentLanguage && strchr( languages, languageIDToLoad ) == NULL )
+    {
+        // Keep translated text where present; otherwise use English text for
+        // this bible, or its first available table if it has no English table.
+        const char* englishLanguage = strchr( languages, 'e' );
+        if( englishLanguage == NULL )
+        {
+            englishLanguage = strchr( languages, 'E' );
+        }
+
+        if( englishLanguage != NULL )
+        {
+            languageIDToLoad = *englishLanguage;
+        }
+        else if( languages[0] != '\0' )
+        {
+            languageIDToLoad = languages[0];
+        }
+    }
+
     rValue->SetName( name );
-//    rValue->m_languageIDs = new char[strlen(languages)+1];
-    strcpy( rValue->m_languageIDs, languages );
+// Store the language list on this bible. Keep it bounded to the fixed-size
+    // table used by FeTextBible, and always terminate it.
+    strncpy( rValue->m_languageIDs, languages, sizeof( rValue->m_languageIDs ) - 1 );
+    rValue->m_languageIDs[ sizeof( rValue->m_languageIDs ) - 1 ] = '\0';
 
     while( file->ChunksRemaining() )
     {
@@ -1269,7 +1292,7 @@ tEntity* FeTextBibleLoader::LoadObject( tChunkFile* file, tEntityStore* store )
         switch( returnMeId )
         {
         case Pure3D::Scrooby::LANGUAGE :
-            entity = dynamic_cast<FeLanguage*>(LoadLanguage( file, store ));
+            entity = dynamic_cast<FeLanguage*>(LoadLanguage( file, store, languageIDToLoad ));
             break;
         default:
             break;
@@ -1282,16 +1305,88 @@ tEntity* FeTextBibleLoader::LoadObject( tChunkFile* file, tEntityStore* store )
         rValue->m_languages.Insert( entity );
     }
 
+    // Keep a dedicated English reference before slot aliases below replace
+    // non-active language entries. This enables per-string fallback.
+    for( unsigned int i = 0; i < static_cast<unsigned int>( rValue->m_languages.Size() ); ++i )
+    {
+        FeLanguage* language = rValue->m_languages[ i ];
+        if( language != NULL &&
+            ( language->GetLanguageID() == 'e' || language->GetLanguageID() == 'E' ) )
+        {
+            language->AddRef();
+            rValue->m_englishFallback = language;
+            break;
+        }
+    }
+
     if( s_onlyLoadCurrentLanguage )
     {
-        rAssert( rValue->m_languages[ FeTextBible::GetLanguageIndex() ] != NULL );
+        unsigned int activeIndex = FeTextBible::GetLanguageIndex();
+        if( activeIndex >= FeTextBible::MAX_NUM_LANGUAGES )
+        {
+            activeIndex = 0;
+        }
+
+        // Keep every language index valid even if this bible only contains
+        // English (or another fallback language). These entries are pointer
+        // aliases, so the extra slots have negligible memory cost.
+        while( rValue->m_languages.Size() < FeTextBible::MAX_NUM_LANGUAGES )
+        {
+            FeLanguage* emptyLanguage = NULL;
+            rValue->m_languages.Insert( emptyLanguage );
+        }
+
+        FeLanguage* activeLanguage = NULL;
+        // English is also retained for fallback, so select the requested table
+        // by language ID rather than simply taking the first loaded table.
         for( unsigned int i = 0; i < static_cast<unsigned int>( rValue->m_languages.Size() ); i++ )
         {
-            if( i != FeTextBible::GetLanguageIndex() )
+            if( rValue->m_languages[ i ] != NULL &&
+                rValue->m_languages[ i ]->GetLanguageID() == languageIDToLoad )
             {
-                rAssert( rValue->m_languages[ i ] == NULL );
-                rValue->m_languages[ i ] = rValue->m_languages[ FeTextBible::GetLanguageIndex() ];
-                rValue->m_languages[ i ]->AddRef();
+                activeLanguage = rValue->m_languages[ i ];
+                break;
+            }
+        }
+        if( activeLanguage == NULL )
+        {
+            for( unsigned int i = 0; i < static_cast<unsigned int>( rValue->m_languages.Size() ); i++ )
+            {
+                if( rValue->m_languages[ i ] != NULL )
+                {
+                    activeLanguage = rValue->m_languages[ i ];
+                    break;
+                }
+            }
+        }
+
+        // The selected language may be absent. LoadLanguage then supplies
+        // English (or the first available table) and use it for all slots.
+        if( activeLanguage != NULL )
+        {
+            if( rValue->m_languages[ activeIndex ] != activeLanguage )
+            {
+                if( rValue->m_languages[ activeIndex ] != NULL )
+                {
+                    rValue->m_languages[ activeIndex ]->Release();
+                }
+                activeLanguage->AddRef();
+                rValue->m_languages[ activeIndex ] = activeLanguage;
+            }
+
+            for( unsigned int i = 0; i < static_cast<unsigned int>( rValue->m_languages.Size() ); i++ )
+            {
+                if( i == activeIndex || rValue->m_languages[ i ] == activeLanguage )
+                {
+                    continue;
+                }
+
+                if( rValue->m_languages[ i ] != NULL )
+                {
+                    rValue->m_languages[ i ]->Release();
+                }
+                activeLanguage->AddRef();
+                rValue->m_languages[ i ] = activeLanguage;
             }
         }
     }
@@ -1299,7 +1394,7 @@ tEntity* FeTextBibleLoader::LoadObject( tChunkFile* file, tEntityStore* store )
     return rValue;
 }
 
-tEntity* FeTextBibleLoader::LoadLanguage( tChunkFile* file, tEntityStore* store )
+tEntity* FeTextBibleLoader::LoadLanguage( tChunkFile* file, tEntityStore* store, char languageIDToLoad )
 {
     char name[256];
     file->GetString( name );
@@ -1308,7 +1403,15 @@ tEntity* FeTextBibleLoader::LoadLanguage( tChunkFile* file, tEntityStore* store 
 
     if( s_onlyLoadCurrentLanguage )
     {
-        if( languageID != FeTextBible::GetCurrentLanguageID() )
+        const bool isEnglish = ( languageID == 'e' || languageID == 'E' );
+        const bool requestedLanguageIsEnglish =
+            ( languageIDToLoad == 'e' || languageIDToLoad == 'E' );
+
+        // Keep English alongside the requested language for missing-string
+        // fallback. If the requested table is absent, LoadObject has already
+        // selected English (or the first available table) as the active one.
+        if( languageID != languageIDToLoad &&
+            !( isEnglish && !requestedLanguageIsEnglish ) )
         {
             return NULL;
         }

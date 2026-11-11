@@ -13,6 +13,62 @@
 #include <p3d/chunkfile.hpp>
 #include <p3d/utility.hpp>
 #include <constants/chunkids.hpp>
+#ifdef RAD_ANDROID
+#include <ctype.h>
+void RegisterSHAREnvironmentFoliageUID(unsigned long long uid);
+static bool gSHARBreakableFactoryLoadActive = false;
+void SetSHARBreakableFactoryLoadActive(bool active)
+{
+    gSHARBreakableFactoryLoadActive = active;
+}
+static bool IsSHARBreakableFactoryLoadActive()
+{
+    return gSHARBreakableFactoryLoadActive;
+}
+
+static bool SHARNameEqualsNoCase(const char* left, const char* right)
+{
+    if (left == NULL || right == NULL)
+        return false;
+    while (*left != '\0' && *right != '\0')
+    {
+        if (tolower(static_cast<unsigned char>(*left)) !=
+            tolower(static_cast<unsigned char>(*right)))
+            return false;
+        ++left;
+        ++right;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static bool SHARIsKnownFoliageBreakableFactory(const char* name)
+{
+    // These are exact names observed in the breakable factory chunks. Do not
+    // broaden this to a "tree" substring test (which would also match streetlamp).
+    static const char* foliageFactoryNames[] =
+    {
+        "tree",
+        "oaktree_S_fx",
+        "treemorn_fx",
+        "willowtree_fx",
+        "fx_evergreen",
+        "cypress_tree",
+        "deadtree",
+        "l3_treepalm",
+        "l3_treepalmtall",
+        "l6_treepalm",
+        "l6_treepalmtall"
+    };
+    for (size_t i = 0;
+         i < sizeof(foliageFactoryNames) / sizeof(foliageFactoryNames[0]);
+         ++i)
+    {
+        if (SHARNameEqualsNoCase(name, foliageFactoryNames[i]))
+            return true;
+    }
+    return false;
+}
+#endif
 
 #include <string.h>
 
@@ -465,14 +521,34 @@ tEntity* tAnimatedObjectFactoryLoader::LoadObject(tChunkFile* f, tEntityStore* s
     
     tAnimatedObjectFactory* factory = new tAnimatedObjectFactory;
 
-    char buf[256];
+    char factoryName[256];
+    char baseDrawableName[256];
 
-    f->GetPString(buf);
-    factory->SetName(buf);
- 
-    f->GetPString(buf);   
-    factory->baseObject = p3d::find<tCompositeDrawable>(store, buf);
+    f->GetPString(factoryName);
+    factory->SetName(factoryName);
+
+    f->GetPString(baseDrawableName);
+    factory->baseObject = p3d::find<tCompositeDrawable>(store, baseDrawableName);
     P3DASSERT(factory->baseObject);
+#ifdef RAD_ANDROID
+    if (IsSHARBreakableFactoryLoadActive())
+    {
+        const bool knownFoliageFactory =
+            SHARIsKnownFoliageBreakableFactory(factoryName) ||
+            SHARIsKnownFoliageBreakableFactory(baseDrawableName);
+        if (knownFoliageFactory)
+        {
+            RegisterSHAREnvironmentFoliageUID(
+                static_cast<unsigned long long>(factory->GetUID()));
+            if (factory->baseObject != NULL)
+            {
+                RegisterSHAREnvironmentFoliageUID(
+                    static_cast<unsigned long long>(factory->baseObject->GetUID()));
+            }
+        }
+
+            }
+#endif
     factory->baseObject->AddRef();
 
     factory->numAnimations = f->GetLong();

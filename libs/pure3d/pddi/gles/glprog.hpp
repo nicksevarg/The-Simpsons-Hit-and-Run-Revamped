@@ -36,6 +36,30 @@ public:
     void SetTextureEnvironment(const pglTextureEnv* texEnv);
     void SetLightState(int handle, const pddiLight* lightState);
     void SetAmbientLight(pddiColour ambient);
+    void SetCelShadingEnabled(bool enabled);
+#ifdef RAD_ANDROID
+    struct SHARCelShadingStateCache
+    {
+        bool valid;
+        unsigned int generation;
+        bool enabled;
+        bool objectEnabled;
+        bool outlinePass;
+        bool rimLightingEnabled;
+        bool environmentPass;
+        bool frontendMenuLighting;
+        float objectBrightness;
+        float objectSaturation;
+        float viewportWidth;
+        float viewportHeight;
+        float moodTintRed;
+        float moodTintGreen;
+        float moodTintBlue;
+    } celShadingStateCache;
+
+    void SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, float viewportWidth, float viewportHeight, bool frontendMenuLighting, float moodTintRed, float moodTintGreen, float moodTintBlue);
+    void SetOpaqueOutlineTexture(bool opaque);
+#endif
 
     inline bool SupportsLighting() { return acs >= 0; }
     inline bool SupportsTextures() { return sampler >= 0; }
@@ -70,8 +94,30 @@ protected:
     #ifdef RAD_ANDROID
     // Ubicación del uniform "lit" del vertex shader.
     GLint lit;
+    GLint toonEnabled;
+    GLint toonObjectEnabled;
+    GLint toonRimEnabled;
+    GLint toonOutlinePass;
+    GLint toonOutlineOpaque;
+    GLint toonEnvironmentPass;
+    GLint toonOutlineWidth;
+    GLint toonViewportSize;
+    GLint nightObjectBrightness;
+    GLint nightObjectSaturation;
+    GLint toonFrontendMenuLighting;
+    GLint toonMoodTint;
     #endif
 #endif
+
+    // CPU-side cache for the inverse-transpose normal matrix. It is independent
+    // of GL context state and valid for this program object's lifetime.
+    pddiMatrix normalMatrixModelViewCache;
+    pddiMatrix normalMatrixValueCache;
+    bool normalMatrixCacheValid;
 };
+
+#ifdef RAD_ANDROID
+void InvalidateSHARUniformCaches();
+#endif
 
 #endif

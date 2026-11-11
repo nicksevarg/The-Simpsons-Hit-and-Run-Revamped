@@ -19,6 +19,19 @@
 #include <p3d/utility.hpp>
 #include <p3d/anim/compositedrawable.hpp>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHARCelShadingLite();
+bool IsSHARGagCharacterCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+bool IsSHAREnvironmentRoadEntityName(const char* name);
+bool IsSHAREnvironmentFoliageUID(unsigned long long uid);
+#endif
+
 //===========================================================================
 // Local Constants, Typedefs, and Macros
 //===========================================================================
@@ -131,6 +144,28 @@ void BreakableObjectDSG::Init( tAnimatedObjectFactory* pFactory, tAnimatedObject
     mpObject = pFactory->CreateObject( mpController );
 
     mpObject->ProcessShaders(*this);
+#ifdef RAD_ANDROID
+    // Breakables are allocated from a shared animated-object factory. Tag the
+    // DSG from both the factory and its source drawable so release builds do
+    // not depend on instance names being retained.
+    tDrawable* sourceDrawable = mpObject->GetBaseObject();
+    const char* factoryName = pFactory->GetName();
+    const char* drawableName = sourceDrawable ? sourceDrawable->GetName() : NULL;
+    const bool foliageTag =
+        IsSHAREnvironmentFoliageUID(
+            static_cast<unsigned long long>(pFactory->GetUID())) ||
+        (sourceDrawable && IsSHAREnvironmentFoliageUID(
+            static_cast<unsigned long long>(sourceDrawable->GetUID()))) ||
+        IsSHAREnvironmentFoliageEntityName(factoryName, drawableName);
+    const bool roadTag =
+        IsSHAREnvironmentRoadEntityName(factoryName) ||
+        IsSHAREnvironmentRoadEntityName(drawableName);
+    tUID sourceAssetUID = sourceDrawable ?
+        sourceDrawable->GetUID() : pFactory->GetUID();
+        SetSHAREnvironmentFoliageMesh(foliageTag);
+    SetSHAREnvironmentRoadCandidate(roadTag);
+    SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+    #endif
 }
 //===========================================================================
 // BreakableObjectDSG::Display
@@ -157,7 +192,39 @@ void BreakableObjectDSG::Display()
 #endif
     DSG_BEGIN_PROFILE(profileName)
     p3d::stack->PushMultiply( *mpMatrix );
-    mpObject->Display(); 
+#ifdef RAD_ANDROID
+    const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
+    tDrawable* sourceDrawable = mpObject ? mpObject->GetBaseObject() : NULL;
+    
+    if (IsCelShadingEnabled() &&
+        (!IsSHARCelShadingLite() || IsSHARGagCharacterCelPassActive()))
+    {
+        SetSHAREnvironmentCelPassActive(true);
+        SetCelShadingObjectEnabled(true);
+        if (foliageMesh)
+            SetSHAREnvironmentFoliageMeshPassActive(true);
+        SetCelShadingOutlinePass(true);
+        // The first animated-object display advances its accumulated time
+        // and draws the updated base object as the outline shell. Draw the
+        // already-updated base drawable directly for the normal surface so
+        // the animation wrapper is not evaluated a second time.
+        mpObject->Display();
+        SetCelShadingOutlinePass(false);
+        if (foliageMesh)
+            SetSHAREnvironmentFoliageMeshPassActive(false);
+        if (sourceDrawable != NULL)
+            sourceDrawable->Display();
+        SetCelShadingObjectEnabled(false);
+        SetSHAREnvironmentCelPassActive(false);
+    }
+    else
+    {
+        mpObject->Display();
+    }
+
+    #else
+    mpObject->Display();
+#endif
     p3d::stack->Pop();
     DSG_END_PROFILE(profileName)
 }

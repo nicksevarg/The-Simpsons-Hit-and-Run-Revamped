@@ -38,6 +38,41 @@
 #include <p3d/billboardobject.hpp>
 #include <p3d/anim/compositedrawable.hpp>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHARCelShadingLite();
+bool IsSHARGagCharacterCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMeshPass = false)
+{
+    if (drawable == NULL)
+        return;
+    if (!IsCelShadingEnabled() ||
+        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+    {
+        drawable->Display();
+        return;
+    }
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+    if (foliageMeshPass)
+        SetSHAREnvironmentFoliageMeshPassActive(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    if (foliageMeshPass)
+        SetSHAREnvironmentFoliageMeshPassActive(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
+
 //************************************************************************
 //
 // Global Data, Local Data, Local Classes
@@ -70,7 +105,8 @@ const float INST_DYNA_MASS_IMPULSE_PARTICLE_BIAS = 5.0f;
 //
 //========================================================================
 InstDynaPhysDSG::InstDynaPhysDSG()
-:  /*mIsHit( false ), moved up to DynaPhysDSG*/ mpGeo( NULL ), mHideOnHitIndex( -1 )
+:  /*mIsHit( false ), moved up to DynaPhysDSG*/ mpGeo( NULL ), mHideOnHitIndex( -1 ),
+   mSHAREnvironmentCelEligible( true ), mSHAREnvironmentFoliageMeshEligible( false )
 {
 
     // move to DynaPhysDSG
@@ -131,7 +167,14 @@ void InstDynaPhysDSG::Display()
         tCompositeDrawable* compDraw = static_cast<tCompositeDrawable*>( mpGeo );
         compDraw->GetDrawableElement( mHideOnHitIndex )->SetVisibility( !mIsHit );
     }
+#ifdef RAD_ANDROID
+    if (mSHAREnvironmentCelEligible)
+        DisplaySHAREnvironmentCelDrawable(mpGeo, mSHAREnvironmentFoliageMeshEligible);
+    else
+        mpGeo->Display();
+#else
     mpGeo->Display();
+#endif
     p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
     if(CastsShadow())
     {
@@ -622,6 +665,8 @@ InstDynaPhysDSG* InstDynaPhysDSG::Clone(const char* Name, const rmt::Matrix& iMa
     rAssert(c);
     c->SetName(Name);
     c->mMatrix = iMatrix;
+    c->mSHAREnvironmentCelEligible = this->mSHAREnvironmentCelEligible;
+    c->mSHAREnvironmentFoliageMeshEligible = this->mSHAREnvironmentFoliageMeshEligible;
     c->mpGeo = this->mpGeo;
     c->mpGeo->AddRef();
     c->SetCollisionAttributes(this->GetCollisionAttributes());

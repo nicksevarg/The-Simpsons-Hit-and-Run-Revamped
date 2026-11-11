@@ -106,6 +106,12 @@ public:
     //Selecting which cam(s) to make active
     enum SelectFlag { CUT = 0x00000001, QUICK = 0x00000010, FORCE = 0x00000100, NO_TRANS = 0x10000000};
     bool            ToggleSuperCam( bool forwards, bool quickTransition = true );
+#if defined(RAD_ANDROID)
+    // Keep the Settings camera selector synchronized with the four-state L1 cycle.
+    void SetDrivingCameraModeFromSettings( int mode );
+    void ResetDrivingCameraModeFromSettings();
+    int GetDrivingCameraModeForSettings() const;
+#endif
     void            SelectSuperCam( unsigned int which, int flags = CUT | QUICK, unsigned int timems = 7000 );
     void            SelectSuperCam( SuperCam::Type type, int flags = CUT | QUICK, unsigned int timems = 7000 );
     void            SelectSuperCam( SuperCam* cam, int flags = CUT | QUICK, unsigned int timems = 7000 );
@@ -196,6 +202,10 @@ private:
     //Things to share between SuperCams
     tPointCamera*       mCamera;
     ISuperCamTarget*    mTarget;
+#if defined(RAD_ANDROID)
+    // -1 represents the initial/default view before a camera-cycle press.
+    int mDrivingCameraCycleStep;
+#endif
 
     static unsigned char    mTotalSuperCamCentrals;
     unsigned char           mMyNumber;

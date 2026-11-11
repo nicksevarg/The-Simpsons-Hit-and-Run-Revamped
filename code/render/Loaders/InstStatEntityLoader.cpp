@@ -12,6 +12,11 @@
 // System Includes
 //========================================
 #include <p3d/chunkfile.hpp>
+#include <string.h>
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
+bool IsSHAREnvironmentRoadEntityName(const char* name);
+#endif
 
 //========================================
 // Project Includes
@@ -78,6 +83,15 @@ tEntity* InstStatEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     IEntityDSG::msDeletionsSafe=true;
     char name[255];
     f->GetPString(name);
+    char sourceAssetName[255];
+    strncpy(sourceAssetName, name, sizeof(sourceAssetName) - 1);
+    sourceAssetName[sizeof(sourceAssetName) - 1] = '\0';
+
+#ifdef RAD_ANDROID
+    const bool sourceFoliageTag = IsSHAREnvironmentFoliageEntityName(sourceAssetName, NULL);
+    const bool sourceRoadTag = IsSHAREnvironmentRoadEntityName(sourceAssetName);
+    tUID sourceAssetUID = tName::MakeUID(sourceAssetName);
+#endif
 
     int version = f->GetLong();
     int HasAlpha = f->GetLong();
@@ -121,6 +135,15 @@ tEntity* InstStatEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
                     pCurStatEntity = new InstStatEntityDSG;
                     pCurStatEntity->SetName(name);
+#ifdef RAD_ANDROID
+                    const bool foliageTag = sourceFoliageTag ||
+                        IsSHAREnvironmentFoliageEntityName(name, NULL);
+                    const bool roadTag = sourceRoadTag ||
+                        IsSHAREnvironmentRoadEntityName(name);
+                    pCurStatEntity->SetSHAREnvironmentFoliageMesh(foliageTag);
+                    pCurStatEntity->SetSHAREnvironmentRoadCandidate(roadTag);
+                    pCurStatEntity->SetSHAREnvironmentSourceAssetUID(sourceAssetUID);
+#endif
 
                     if(HasAlpha)
                     {

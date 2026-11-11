@@ -17,6 +17,27 @@ class tPrimGroupStreamed;
 class tVertexList;
 class tShader;
 
+#ifdef RAD_ANDROID
+class tSHARSkinnedGeometryReuseScope
+{
+public:
+    tSHARSkinnedGeometryReuseScope();
+    ~tSHARSkinnedGeometryReuseScope();
+
+    void BeginReusePass();
+
+private:
+    unsigned long long mPreviousPairID;
+    bool mPreviousReusePass;
+
+    tSHARSkinnedGeometryReuseScope(const tSHARSkinnedGeometryReuseScope&);
+    tSHARSkinnedGeometryReuseScope& operator=(const tSHARSkinnedGeometryReuseScope&);
+};
+
+unsigned long long GetSHARSkinnedGeometryReusePairID();
+bool IsSHARSkinnedGeometryReusePass();
+#endif
+
 class pddiPrimBuffer;
 class pddiPrimStream;
 class pddiPrimBufferStream;
@@ -29,6 +50,11 @@ public:
     virtual ~tPrimGroup();
 
     virtual void Display() = 0;
+#ifdef RAD_ANDROID
+    // Returns true only when this group can consume the skinned vertices
+    // cached for the current silhouette/normal pair without new bone matrices.
+    virtual bool CanReuseSHARSkinnedGeometry(unsigned long long) const { return false; }
+#endif
 
     void SetShader(tShader *);
     tShader *GetShader()            { return mShader; }
@@ -183,6 +209,9 @@ class tPrimGroupSkinnedPC : public tPrimGroupSkinnedOptimised
 
     virtual void Display();
     virtual void DisplayInstanced(unsigned);
+#ifdef RAD_ANDROID
+    virtual bool CanReuseSHARSkinnedGeometry(unsigned long long pairID) const;
+#endif
 
     struct SkinVertex
     {
@@ -197,8 +226,12 @@ class tPrimGroupSkinnedPC : public tPrimGroupSkinnedOptimised
 
 protected:
 	
-    friend class tPrimGroupLoader;	
+    friend class tPrimGroupLoader;
     SkinVertex* mVertices;
+#ifdef RAD_ANDROID
+    unsigned long long mSHARSkinnedGeometryPairID;
+    bool mSHARSkinnedGeometryPairCacheValid;
+#endif
 };
 #endif
 //-------------------------------------------------------------------
@@ -210,7 +243,7 @@ public:
     tPrimGroupLoader(void);
     virtual ~tPrimGroupLoader();
 
-    virtual tPrimGroup*          Load(tChunkFile *file, tEntityStore *store, rmt::Matrix* bones, bool optimise, bool deform);
+    virtual tPrimGroup*          Load(tChunkFile *file, tEntityStore *store, rmt::Matrix* bones, bool optimise, bool deform, bool fixHomerRightArm = false);
 
     void SetVertexFormatMask(unsigned int m) { mVertexFormatMask = m; }
 
@@ -218,7 +251,7 @@ private:
     virtual tPrimGroup*          LoadStreamed(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones);
 
     #ifndef RAD_PS2
-	    virtual tPrimGroup*          LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones);
+	    virtual tPrimGroup*          LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones, bool fixHomerRightArm, int sourceIndexCount);
     #endif
 
     bool Load(tChunkFile *f, tEntityStore *store);

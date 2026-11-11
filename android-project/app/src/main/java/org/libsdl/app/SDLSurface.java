@@ -19,6 +19,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.RelativeLayout;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -44,28 +45,19 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     // Keep track of the surface size to normalize touch events
     protected float mWidth, mHeight;
 
-    // Internal render resolution used by the Android Surface buffer
+    // Internal world-render resolution used by the offscreen framebuffer
     private int mRenderWidth = 0;
     private int mRenderHeight = 0;
 
-    // Avoid repeatedly applying the same fixed Surface size
-    private int mLastFixedSurfaceWidth = 0;
-    private int mLastFixedSurfaceHeight = 0;
+    // Pending render-target selection processed on the Android UI thread.
+    private int mSHARPendingRenderHeight = 0;
+
+    // Preferred display refresh-rate request from the in-game Max FPS selector.
+    private int mSHARRequestedFrameRate = 60;
 
     // Avoid repeatedly sending the same render resolution to native code
     private int mLastNativeSentRenderWidth = 0;
     private int mLastNativeSentRenderHeight = 0;
-
-    // Avoid noisy resolution logs
-    private int mLastLoggedRenderWidth = 0;
-    private int mLastLoggedRenderHeight = 0;
-    private int mLastLoggedDeviceWidth = 0;
-    private int mLastLoggedDeviceHeight = 0;
-    private int mLastLoggedSurfaceWidth = 0;
-    private int mLastLoggedSurfaceHeight = 0;
-    private int mLastLoggedTouchWidth = 0;
-    private int mLastLoggedTouchHeight = 0;
-    private boolean mNativeResolutionHookWarned = false;
 
     /*
      * Simpsons Hit & Run Android adaptive resolution config.
@@ -75,32 +67,34 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
      */
     private static final boolean SHAR_USE_ADAPTIVE_RENDER_RESOLUTION = true;
 
-    // First safe profile. Later we can make this configurable through a text file.
+    // Default profile; the in-game Graphics menu can change this target live.
+    private static final String SHAR_GRAPHICS_FOLDER = "Graphics";
     private static final String SHAR_RESOLUTION_CONFIG_FILE = "Simpsons_resolution.txt";
-    private static final String SHAR_TOUCH_CONTROLS_FOLDER = "touch_controls";
+    private static final String SHAR_TOUCH_CONTROLS_FOLDER = "Touch";
+    private static final String SHAR_LEGACY_TOUCH_CONTROLS_FOLDER = "touch_controls";
     private static final String SHAR_TOUCH_MODE_CONFIG_FILE = "Simpsons_touch_mode.txt";
 
     private static final int SHAR_DEFAULT_TARGET_RENDER_HEIGHT = 1080;
     private static final int SHAR_MIN_TARGET_RENDER_HEIGHT = 300;
+    // Explicit render modes may supersample above the display's native resolution.
+    // Keep this cap aligned with the highest option exposed by the Graphics menu.
+    private static final int SHAR_MAX_TARGET_RENDER_HEIGHT = 2160;
 
     /*
-     * Fallback only. The real maximum is calculated at runtime using the
-     * physical short side of the device.
+     * Fallback for the "max" setting only. Explicit 1440p/2160p choices remain
+     * available for supersampling even when the screen's native short side is
+     * 1080 pixels.
      *
-     * Example:
-     * 2772x1280 -> max target height = 1280
-     * 2400x1080 -> max target height = 1080
+     * If physical display modes cannot be queried, use a conservative native
+     * maximum for "max"; explicit modes still use SHAR_MAX_TARGET_RENDER_HEIGHT.
      */
     private static final int SHAR_FALLBACK_MAX_TARGET_RENDER_HEIGHT = 1080;
 
-    // Runtime value loaded from Simpsons_resolution.txt.
+    // Runtime value optionally loaded from app-internal Graphics/Simpsons_resolution.txt.
     private int mSHARTargetRenderHeight = SHAR_DEFAULT_TARGET_RENDER_HEIGHT;
 
     // Round render width to avoid odd framebuffer sizes.
     private static final int SHAR_RENDER_WIDTH_ALIGNMENT = 8;
-
-    // Keep logs useful but not invasive.
-    private static final boolean SHAR_LOG_RESOLUTION = true;
 
     /*
     * Touch coordinate normalization mode.
@@ -114,7 +108,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
     *     Use the physical display size in landscape terms as the touch
     *     normalization base.
     *     This is useful on some older/32-bit devices where getWidth()/getHeight()
-    *     does not match the actual touch coordinate space after setFixedSize().
+    *     does not match the actual touch coordinate space on all Android devices.
     */
     private static final int SHAR_TOUCH_MODE_VIEW = 1;
     private static final int SHAR_TOUCH_MODE_PHYSICAL_LANDSCAPE = 2;
@@ -146,7 +140,9 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
 
         /*
          * Simpsons Android:
-         * Load/create the user resolution config before applying the Surface size.
+         * Load the optional user resolution config from app-internal storage
+         * before applying the Surface size. When it is absent, use the built-in
+         * 1080p target without creating a file on first launch.
          *
          * The config file is read before native code starts, so PDDI receives
          * the correct render resolution from the beginning.
@@ -158,7 +154,7 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
          * Simpsons Android:
          * Apply the internal render resolution before the native surface starts.
          */
-        applyAdaptiveFixedSurfaceSize("constructor", false);
+        applyAdaptiveRenderResolution("constructor", false);
 
         setOnGenericMotionListener(SDLActivity.getMotionListener());
 
@@ -169,19 +165,18 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         mIsSurfaceReady = false;
     }
 
+    /*
+     * Android's "external files" directory on the primary device storage is
+     * the app-specific location under /Android/data/<package>/files.
+     *
+     * This is intentionally separate from the selectable USB game-data path.
+     */
     private File getSHARPrivateBaseDir() {
         File baseDir = null;
 
         try {
             baseDir = getContext().getExternalFilesDir(null);
         } catch (Exception ignored) {
-        }
-
-        if (baseDir == null) {
-            try {
-                baseDir = getContext().getFilesDir();
-            } catch (Exception ignored) {
-            }
         }
 
         return baseDir;
@@ -194,7 +189,133 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             return null;
         }
 
-        return new File(baseDir, SHAR_RESOLUTION_CONFIG_FILE);
+        File graphicsDir = new File(baseDir, SHAR_GRAPHICS_FOLDER);
+        if (!graphicsDir.exists() && !graphicsDir.mkdirs() && !graphicsDir.isDirectory()) {
+            Log.w("SDL", "SHAR graphics folder could not be created: " + graphicsDir.getAbsolutePath());
+            return null;
+        }
+
+        File configFile = new File(graphicsDir, SHAR_RESOLUTION_CONFIG_FILE);
+        File legacyConfigFile = new File(baseDir, SHAR_RESOLUTION_CONFIG_FILE);
+        migrateSHARConfigFile(legacyConfigFile, configFile);
+        return configFile;
+    }
+
+    private void migrateSHARConfigFile(File legacyFile, File newFile) {
+        if (legacyFile == null || newFile == null || !legacyFile.exists()) {
+            return;
+        }
+
+        if (newFile.exists()) {
+            if (!legacyFile.delete()) {
+                Log.w("SDL", "Could not remove duplicate legacy config: " + legacyFile.getAbsolutePath());
+            }
+            return;
+        }
+
+        File parent = newFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs() && !parent.isDirectory()) {
+            Log.w("SDL", "Could not create config parent: " + parent.getAbsolutePath());
+            return;
+        }
+
+        if (legacyFile.renameTo(newFile)) {
+            Log.i("SDL", "Migrated config to " + newFile.getAbsolutePath());
+            return;
+        }
+
+        // renameTo can fail on some Android filesystem/provider combinations;
+        // fall back to copying before deleting the old copy.
+        try (FileInputStream input = new FileInputStream(legacyFile);
+             FileOutputStream output = new FileOutputStream(newFile)) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) >= 0) {
+                output.write(buffer, 0, count);
+            }
+            output.flush();
+            if (!legacyFile.delete()) {
+                Log.w("SDL", "Copied config, but could not remove old file: " + legacyFile.getAbsolutePath());
+            }
+        } catch (Exception e) {
+            Log.e("SDL", "Failed migrating config " + legacyFile.getAbsolutePath() + " to " +
+                    newFile.getAbsolutePath(), e);
+        }
+    }
+
+    private void migrateLegacyTouchDirectory(File baseDir, File touchDir) {
+        if (baseDir == null || touchDir == null) {
+            return;
+        }
+
+        File legacyDir = new File(baseDir, SHAR_LEGACY_TOUCH_CONTROLS_FOLDER);
+        if (!legacyDir.isDirectory()) {
+            return;
+        }
+
+        if (!touchDir.exists() && legacyDir.renameTo(touchDir)) {
+            Log.i("SDL", "Migrated touch controls folder to " + touchDir.getAbsolutePath());
+            return;
+        }
+
+        if (!touchDir.exists() && !touchDir.mkdirs() && !touchDir.isDirectory()) {
+            Log.w("SDL", "Could not create Touch folder: " + touchDir.getAbsolutePath());
+            return;
+        }
+
+        File[] legacyChildren = legacyDir.listFiles();
+        if (legacyChildren == null) {
+            return;
+        }
+
+        for (File child : legacyChildren) {
+            File destination = new File(touchDir, child.getName());
+            if (child.isDirectory()) {
+                migrateLegacyTouchDirectoryContents(child, destination);
+            } else if (destination.exists()) {
+                if (!child.delete()) {
+                    Log.w("SDL", "Could not delete duplicate touch file: " + child.getAbsolutePath());
+                }
+            } else if (!child.renameTo(destination)) {
+                Log.w("SDL", "Could not migrate touch file: " + child.getAbsolutePath());
+            }
+        }
+
+        File[] remaining = legacyDir.listFiles();
+        if (remaining != null && remaining.length == 0) {
+            legacyDir.delete();
+        }
+    }
+
+    private void migrateLegacyTouchDirectoryContents(File legacyDir, File targetDir) {
+        if (legacyDir == null || targetDir == null || !legacyDir.isDirectory()) {
+            return;
+        }
+        if (!targetDir.exists() && legacyDir.renameTo(targetDir)) {
+            return;
+        }
+        if (!targetDir.exists() && !targetDir.mkdirs() && !targetDir.isDirectory()) {
+            return;
+        }
+
+        File[] children = legacyDir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            File destination = new File(targetDir, child.getName());
+            if (child.isDirectory()) {
+                migrateLegacyTouchDirectoryContents(child, destination);
+            } else if (destination.exists()) {
+                child.delete();
+            } else {
+                child.renameTo(destination);
+            }
+        }
+        File[] remaining = legacyDir.listFiles();
+        if (remaining != null && remaining.length == 0) {
+            legacyDir.delete();
+        }
     }
 
     private File getSHARTouchModeConfigFile() {
@@ -205,6 +326,8 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         }
 
         File touchControlsDir = new File(baseDir, SHAR_TOUCH_CONTROLS_FOLDER);
+        // Migrate the old directory before this method creates /files/Touch.
+        migrateLegacyTouchDirectory(baseDir, touchControlsDir);
 
         return new File(touchControlsDir, SHAR_TOUCH_MODE_CONFIG_FILE);
     }
@@ -235,56 +358,33 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
             writer.write("# You only need to change target_height.\n");
             writer.write("# The render width is calculated automatically to preserve the device aspect ratio.\n");
             writer.write("#\n");
-            writer.write("# Standard values: 720, 800, 850, 900, 1080.\n");
-            writer.write("# Recommended value: 720 or higher is an light and optimized game.\n");
+            writer.write("# Standard values: 720, 800, 850, 900, 1080, 1440, 2160.\n");
             writer.write("# Higher values improve sharpness but increase GPU load.\n");
             writer.write("# Lower values improve performance but reduce image quality.\n");
             writer.write("# The maximum target_height is the device landscape height, which is the physical short side.\n");
-            writer.write("# Example: on a 2772x1280 device, the maximum target_height is 1280.\n");
-            writer.write("# If target_height is set above 1280 on that device, it will be clamped to 1280.\n");
             writer.write("# Values lower than 300 will be clamped to 300 automatically.\n");
             writer.write("#\n");
             writer.write("# How it works:\n");
-            writer.write("# 1. The phone physical resolution is converted to landscape terms.\n");
+            writer.write("# 1. The device display resolution is converted to landscape terms.\n");
             writer.write("# 2. target_height becomes the internal render height.\n");
             writer.write("# 3. The internal render width is calculated using the physical aspect ratio.\n");
             writer.write("# 4. The calculated width is rounded to a multiple of 8 to avoid odd framebuffer sizes.\n");
             writer.write("# 5. Android scales the final image to the full physical screen.\n");
             writer.write("#\n");
-            writer.write("# Example with a POCO F7 with 2772x1280 device and target_height=1080:\n");
-            writer.write("# physical landscape size = 2772x1280\n");
-            writer.write("# target render height = 1080\n");
-            writer.write("# raw render width = 1080 * 2772 / 1280 = 2338.875\n");
-            writer.write("# rounded raw width = 2339\n");
-            writer.write("# aligned width to multiple of 8 = 2336\n");
-            writer.write("# final internal render resolution = 2336x1080\n");
-            writer.write("# final visual output = scaled by Android to 2772x1280\n");
+            writer.write("# You can also use MAX to render at the maximum useful height reported by the display modes.\n");
             writer.write("#\n");
-            writer.write("# Examples:\n");
+            writer.write("# Manual examples:\n");
             writer.write("# target_height=720\n");
-            writer.write("# target_height=900\n");
             writer.write("# target_height=1080\n");
-            writer.write("# You can also use MAX to render at the maximum useful height for your device.\n");
-            writer.write("# Example: on a 2772x1280 device, target_height=MAX means target_height=1280.\n");
-            writer.write("\n");
+            writer.write("# target_height=1440\n");
+            writer.write("# target_height=2160\n");
+            writer.write("#\n");
             writer.write("target_height=" + SHAR_DEFAULT_TARGET_RENDER_HEIGHT + "\n");
 
             writer.flush();
             writer.close();
 
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR resolution config created: " + configFile.getAbsolutePath()
-                );
-            }
         } catch (Exception e) {
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR resolution config creation failed: " + e.getMessage()
-                );
-            }
         }
     }
 
@@ -316,19 +416,7 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
             writer.flush();
             writer.close();
 
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR touch mode config created: " + configFile.getAbsolutePath()
-                );
-            }
         } catch (Exception e) {
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR touch mode config creation failed: " + e.getMessage()
-                );
-            }
         }
     }
 
@@ -343,25 +431,12 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
         File configFile = getSHARResolutionConfigFile();
 
         if (configFile == null) {
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR resolution config skipped: no valid config directory"
-                );
-            }
             return;
         }
 
         createDefaultSHARResolutionConfigIfNeeded(configFile);
 
         if (!configFile.exists()) {
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR resolution config missing, using default targetHeight=" +
-                                mSHARTargetRenderHeight
-                );
-            }
             return;
         }
 
@@ -411,45 +486,17 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
 
                 mSHARTargetRenderHeight = sanitizeSHARTargetRenderHeight(parsedValue);
 
-                if (SHAR_LOG_RESOLUTION) {
-                    Log.v(
-                            "SDL",
-                            "SHAR resolution config loaded: targetHeight=" +
-                                    mSHARTargetRenderHeight +
-                                    " maxDeviceTargetHeight=" +
-                                    getDeviceMaxTargetRenderHeight() +
-                                    " file=" +
-                                    configFile.getAbsolutePath()
-                    );
-                }
-
                 reader.close();
                 return;
             }
 
             reader.close();
 
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR resolution config has no valid value, using default targetHeight=" +
-                                mSHARTargetRenderHeight
-                );
-            }
         } catch (Exception e) {
             mSHARTargetRenderHeight = sanitizeSHARTargetRenderHeight(
                     SHAR_DEFAULT_TARGET_RENDER_HEIGHT
             );
 
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR resolution config read failed, using default targetHeight=" +
-                                mSHARTargetRenderHeight +
-                                " error=" +
-                                e.getMessage()
-                );
-            }
         }
     }
 
@@ -460,25 +507,12 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
         File configFile = getSHARTouchModeConfigFile();
 
         if (configFile == null) {
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR touch mode config skipped: no valid config directory"
-                );
-            }
             return;
         }
 
         createDefaultSHARTouchModeConfigIfNeeded(configFile);
 
         if (!configFile.exists()) {
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR touch mode config missing, using default touchMode=" +
-                                mSHARTouchMode
-                );
-            }
             return;
         }
 
@@ -523,41 +557,15 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
 
                 mSHARTouchMode = sanitizeSHARTouchMode(parsedValue);
 
-                if (SHAR_LOG_RESOLUTION) {
-                    Log.v(
-                            "SDL",
-                            "SHAR touch mode config loaded: touchMode=" +
-                                    mSHARTouchMode +
-                                    " file=" +
-                                    configFile.getAbsolutePath()
-                    );
-                }
-
                 reader.close();
                 return;
             }
 
             reader.close();
 
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR touch mode config has no valid value, using default touchMode=" +
-                                mSHARTouchMode
-                );
-            }
         } catch (Exception e) {
             mSHARTouchMode = sanitizeSHARTouchMode(SHAR_DEFAULT_TOUCH_MODE);
 
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR touch mode config read failed, using default touchMode=" +
-                                mSHARTouchMode +
-                                " error=" +
-                                e.getMessage()
-                );
-            }
         }
     }
 
@@ -566,16 +574,60 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
         int[] size = new int[] { 0, 0 };
 
         try {
-            DisplayMetrics realMetrics = new DisplayMetrics();
+            /*
+             * Android TV devices such as the Shield can expose a logical
+             * 1920x1080 display size even when the active HDMI output is 4K.
+             *
+             * Prefer the largest physical display mode reported by Android.
+             * Display.Mode describes the actual pixel dimensions supported by
+             * the display, which lets target_height=max resolve to 2160 on
+             * a 3840x2160 Shield output.
+             */
+            if (Build.VERSION.SDK_INT >= 23) {
+                Display.Mode[] modes = mDisplay.getSupportedModes();
 
-            if (Build.VERSION.SDK_INT >= 17) {
-                mDisplay.getRealMetrics(realMetrics);
-            } else {
-                mDisplay.getMetrics(realMetrics);
+                if (modes != null) {
+                    long bestArea = 0;
+
+                    for (Display.Mode mode : modes) {
+                        if (mode == null) {
+                            continue;
+                        }
+
+                        int modeWidth = mode.getPhysicalWidth();
+                        int modeHeight = mode.getPhysicalHeight();
+
+                        if (modeWidth <= 0 || modeHeight <= 0) {
+                            continue;
+                        }
+
+                        long area = (long) modeWidth * (long) modeHeight;
+
+                        if (area > bestArea) {
+                            bestArea = area;
+                            size[0] = modeWidth;
+                            size[1] = modeHeight;
+                        }
+                    }
+                }
             }
 
-            size[0] = realMetrics.widthPixels;
-            size[1] = realMetrics.heightPixels;
+            /*
+             * Fall back to the current real metrics when no physical display
+             * mode was available.
+             */
+            if (size[0] <= 0 || size[1] <= 0) {
+                DisplayMetrics realMetrics = new DisplayMetrics();
+
+                if (Build.VERSION.SDK_INT >= 17) {
+                    mDisplay.getRealMetrics(realMetrics);
+                } else {
+                    mDisplay.getMetrics(realMetrics);
+                }
+
+                size[0] = realMetrics.widthPixels;
+                size[1] = realMetrics.heightPixels;
+            }
         } catch (Exception ignored) {
         }
 
@@ -603,22 +655,18 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
     }
 
     private int sanitizeSHARTargetRenderHeight(int value) {
-        final int maxTargetHeight = getDeviceMaxTargetRenderHeight();
-
-      /*
-      *    Si es menor que el minimo, se establece al minimo
-       */
-        final int safeMinTargetHeight = Math.min(
-                SHAR_MIN_TARGET_RENDER_HEIGHT,
-                maxTargetHeight
-        );
-
+        /*
+         * Do not clamp explicit render modes to the screen's native resolution.
+         * Values such as 1440 and 2160 are deliberate supersampling targets.
+         * The special "max" config value is resolved separately by
+         * getDeviceMaxTargetRenderHeight(), so it still means native maximum.
+         */
         if (value < SHAR_MIN_TARGET_RENDER_HEIGHT) {
-            return safeMinTargetHeight;
+            return SHAR_MIN_TARGET_RENDER_HEIGHT;
         }
 
-        if (value > maxTargetHeight) {
-            return maxTargetHeight;
+        if (value > SHAR_MAX_TARGET_RENDER_HEIGHT) {
+            return SHAR_MAX_TARGET_RENDER_HEIGHT;
         }
 
         return value;
@@ -687,79 +735,46 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
             mLastNativeSentRenderWidth = width;
             mLastNativeSentRenderHeight = height;
 
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v(
-                        "SDL",
-                        "SHAR native render resolution sent [" + reason + "]: " +
-                                width + "x" + height
-                );
-            }
         } catch (UnsatisfiedLinkError e) {
             /*
-             * Temporary safety while the native side is being added.
-             * Once gldisplay.cpp implements nativeSetSHARRenderResolution(),
-             * this warning should disappear.
+             * The SurfaceView constructor can run before native libraries are
+             * ready. Later surface lifecycle callbacks retry this same target.
              */
-            if (!mNativeResolutionHookWarned) {
-                mNativeResolutionHookWarned = true;
-
-                Log.v(
-                        "SDL",
-                        "SHAR native render resolution hook not available yet: " +
-                                e.getMessage()
-                );
-            }
         }
     }
 
-    private void applySurfaceViewUpscale(int renderWidth, int renderHeight) {
-        if (!SHAR_USE_ADAPTIVE_RENDER_RESOLUTION) {
-            setScaleX(1.0f);
-            setScaleY(1.0f);
-            return;
-        }
-
-        if (renderWidth <= 0 || renderHeight <= 0) {
-            return;
-        }
-
-        int[] size = getPhysicalDisplaySize();
-
-        int deviceWidth = size[0];
-        int deviceHeight = size[1];
-
-        if (deviceWidth <= 0 || deviceHeight <= 0) {
-            return;
-        }
-
-        /*
-         * Simpsons Android runs in landscape.
-         * Upscale the fixed internal render buffer to the physical landscape size.
-         */
-        int targetViewWidth = Math.max(deviceWidth, deviceHeight);
-        int targetViewHeight = Math.min(deviceWidth, deviceHeight);
-
-        final float scaleX = targetViewWidth / (float) renderWidth;
-        final float scaleY = targetViewHeight / (float) renderHeight;
-
-        /*
-         * Apply after layout traversal, because SurfaceView/Android can override
-         * transforms during surfaceChanged/onConfigurationChanged/resume.
-         */
-        post(new Runnable() {
+    /**
+     * Request a new internal render height while leaving Android's output Surface
+     * at its platform-provided full-screen size. The native renderer applies the
+     * request at the start of a GL frame.
+     */
+    public boolean requestSHARRenderResolutionHeight(final int requestedHeight) {
+        return post(new Runnable() {
             @Override
             public void run() {
-                setPivotX(0.0f);
-                setPivotY(0.0f);
-                setTranslationX(0.0f);
-                setTranslationY(0.0f);
-                setScaleX(scaleX);
-                setScaleY(scaleY);
+                mSHARPendingRenderHeight =
+                        sanitizeSHARTargetRenderHeight(requestedHeight);
+                processPendingSHARRenderResolutionRequest();
             }
         });
     }
 
-    private void applyAdaptiveFixedSurfaceSize(String reason, boolean force) {
+    /*
+     * Runs on the Android UI thread. The selected size is an offscreen render target
+     * only; this method deliberately does not resize the Android Surface.
+     */
+    private void processPendingSHARRenderResolutionRequest() {
+        if (mSHARPendingRenderHeight <= 0) {
+            return;
+        }
+
+        mSHARTargetRenderHeight =
+                sanitizeSHARTargetRenderHeight(mSHARPendingRenderHeight);
+        mSHARPendingRenderHeight = 0;
+        applyAdaptiveRenderResolution("live-selection", true);
+    }
+
+    private void applyAdaptiveRenderResolution(String reason, boolean force) {
         if (!SHAR_USE_ADAPTIVE_RENDER_RESOLUTION) {
             setScaleX(1.0f);
             setScaleY(1.0f);
@@ -767,178 +782,48 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
         }
 
         int[] size = getPhysicalDisplaySize();
-
         int deviceWidth = size[0];
         int deviceHeight = size[1];
 
         if (deviceWidth <= 0 || deviceHeight <= 0) {
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v("SDL", "SHAR adaptive resolution skipped [" + reason + "]: invalid device size");
-            }
             return;
         }
 
-        /*
-         * Calculate the render resolution in landscape terms:
-         *
-         * physical screen: longSide x shortSide
-         * render target: adaptiveWidth x SHAR_TARGET_RENDER_HEIGHT
-         *
-         * Example:
-         * 2772x1280
-         * targetHeight = 720
-         * targetWidth = 720 * 2772 / 1280 = 1559.25 -> 1560
-         */
         int longSide = Math.max(deviceWidth, deviceHeight);
         int shortSide = Math.min(deviceWidth, deviceHeight);
-
         int targetHeight = sanitizeSHARTargetRenderHeight(mSHARTargetRenderHeight);
         mSHARTargetRenderHeight = targetHeight;
-        int targetWidth = (int) Math.round(targetHeight * (longSide / (double) shortSide));
-
+        int targetWidth = (int) Math.round(
+                targetHeight * (longSide / (double) shortSide));
         targetWidth = roundToMultiple(targetWidth, SHAR_RENDER_WIDTH_ALIGNMENT);
 
         if (targetWidth <= 0 || targetHeight <= 0) {
-            if (SHAR_LOG_RESOLUTION) {
-                Log.v("SDL", "SHAR adaptive resolution skipped [" + reason + "]: invalid target size");
-            }
             return;
         }
 
         final boolean changed =
-                targetWidth != mLastFixedSurfaceWidth ||
-                        targetHeight != mLastFixedSurfaceHeight;
-
+                targetWidth != mRenderWidth || targetHeight != mRenderHeight;
         if (!changed && !force) {
             return;
         }
 
+        // These values describe the offscreen world-render target, not the Surface.
         mRenderWidth = targetWidth;
         mRenderHeight = targetHeight;
-
-        mLastFixedSurfaceWidth = targetWidth;
-        mLastFixedSurfaceHeight = targetHeight;
-
-        /*
-         * Send the selected adaptive render resolution to the native game layer.
-         * gldisplay.cpp will later use this as pglDisplay winWidth/winHeight.
-         */
         sendSHARRenderResolutionToNative(mRenderWidth, mRenderHeight, reason);
 
-        /*
-         * This is the key Android-side performance change:
-         * reduce the real Surface buffer size.
-         */
-        getHolder().setFixedSize(mRenderWidth, mRenderHeight);
+        // Keep the View full-screen; the native renderer scales its FBO to output.
+        RelativeLayout.LayoutParams surfaceParams =
+                new RelativeLayout.LayoutParams(
+                        RelativeLayout.LayoutParams.MATCH_PARENT,
+                        RelativeLayout.LayoutParams.MATCH_PARENT
+                );
+        setLayoutParams(surfaceParams);
+        setScaleX(1.0f);
+        setScaleY(1.0f);
 
-        /*
-         * Some Android devices do not visually upscale the SurfaceView automatically
-         * after setFixedSize(), so we explicitly scale it to fullscreen.
-         */
-        applySurfaceViewUpscale(mRenderWidth, mRenderHeight);
-
-        logAdaptiveResolutionIfNeeded(
-                reason,
-                longSide,
-                shortSide,
-                mRenderWidth,
-                mRenderHeight,
-                changed
-        );
     }
 
-
-    private void logAdaptiveResolutionIfNeeded(
-            String reason,
-            int deviceLandscapeWidth,
-            int deviceLandscapeHeight,
-            int renderWidth,
-            int renderHeight,
-            boolean changed
-    ) {
-        if (!SHAR_LOG_RESOLUTION) {
-            return;
-        }
-
-        /*
-         * Log only when:
-         * - resolution changed,
-         * - first startup,
-         * - app resumes.
-         *
-         * Avoid logging repeatedly from surfaceCreated if values are unchanged.
-         */
-        boolean firstLog =
-                mLastLoggedRenderWidth <= 0 ||
-                        mLastLoggedRenderHeight <= 0;
-
-        boolean shouldLog =
-                changed ||
-                        firstLog ||
-                        "handleResume".equals(reason);
-
-        if (!shouldLog) {
-            return;
-        }
-
-        mLastLoggedRenderWidth = renderWidth;
-        mLastLoggedRenderHeight = renderHeight;
-        mLastLoggedDeviceWidth = deviceLandscapeWidth;
-        mLastLoggedDeviceHeight = deviceLandscapeHeight;
-
-        float scaleX = deviceLandscapeWidth / (float) renderWidth;
-        float scaleY = deviceLandscapeHeight / (float) renderHeight;
-
-        Log.v(
-                "SDL",
-                "SHAR adaptive resolution [" + reason + "]: " +
-                        "device=" + deviceLandscapeWidth + "x" + deviceLandscapeHeight +
-                        " render=" + renderWidth + "x" + renderHeight +
-                        " targetHeight=" + mSHARTargetRenderHeight +
-                        " scale=" + scaleX + "x" + scaleY
-        );
-    }
-
-    private void logSurfaceSizesIfChanged(
-            String reason,
-            int surfaceWidth,
-            int surfaceHeight,
-            int touchWidth,
-            int touchHeight,
-            int deviceWidth,
-            int deviceHeight
-    ) {
-        if (!SHAR_LOG_RESOLUTION) {
-            return;
-        }
-
-        boolean changed =
-                surfaceWidth != mLastLoggedSurfaceWidth ||
-                        surfaceHeight != mLastLoggedSurfaceHeight ||
-                        touchWidth != mLastLoggedTouchWidth ||
-                        touchHeight != mLastLoggedTouchHeight ||
-                        deviceWidth != mLastLoggedDeviceWidth ||
-                        deviceHeight != mLastLoggedDeviceHeight;
-
-        if (!changed) {
-            return;
-        }
-
-        mLastLoggedSurfaceWidth = surfaceWidth;
-        mLastLoggedSurfaceHeight = surfaceHeight;
-        mLastLoggedTouchWidth = touchWidth;
-        mLastLoggedTouchHeight = touchHeight;
-        mLastLoggedDeviceWidth = deviceWidth;
-        mLastLoggedDeviceHeight = deviceHeight;
-
-        Log.v(
-                "SDL",
-                "SHAR surface sizes [" + reason + "]: " +
-                        "surface=" + surfaceWidth + "x" + surfaceHeight +
-                        " touch=" + touchWidth + "x" + touchHeight +
-                        " device=" + deviceWidth + "x" + deviceHeight
-        );
-    }
 
     public void handlePause() {
         enableSensor(Sensor.TYPE_ACCELEROMETER, false);
@@ -952,15 +837,15 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
     setOnTouchListener(this);
 
     /*
-     * Re-apply the fixed Surface size after resume in case Android recreated
-     * the Surface or display metrics changed.
+     * Recalculate the internal render target after resume in case Android
+     * recreated the Surface or display metrics changed.
      */
-    applyAdaptiveFixedSurfaceSize("handleResume", true);
+    applyAdaptiveRenderResolution("handleResume", true);
 
     /*
      * Re-read touch mode on resume so users can change:
      *
-     *     touch_controls/Simpson_touch_mode.txt
+     *     Touch/Simpsons_touch_mode.txt
      *
      * without reinstalling the app. Usually restarting the app is still the
      * cleanest option, but this makes the setting more forgiving.
@@ -1027,28 +912,6 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
     mWidth = touchWidth;
     mHeight = touchHeight;
 
-    logSurfaceSizesIfChanged(
-            reason,
-            surfaceWidth,
-            surfaceHeight,
-            touchWidth,
-            touchHeight,
-            deviceWidth,
-            deviceHeight
-    );
-
-    if (SHAR_LOG_RESOLUTION) {
-        Log.v(
-                "SDL",
-                "SHAR touch base [" + reason + "]: " +
-                        "mode=" + mSHARTouchMode +
-                        " touch=" + touchWidth + "x" + touchHeight +
-                        " view=" + getWidth() + "x" + getHeight() +
-                        " surface=" + surfaceWidth + "x" + surfaceHeight +
-                        " device=" + deviceWidth + "x" + deviceHeight +
-                        " render=" + mRenderWidth + "x" + mRenderHeight
-        );
-    }
 }
 
 
@@ -1056,14 +919,72 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
         return getHolder().getSurface();
     }
 
+    private int sanitizeSHARFrameRate(int frameRate) {
+        switch (frameRate) {
+            case 30:
+            case 60:
+            case 90:
+            case 120:
+            case 144:
+                return frameRate;
+            default:
+                return -1;
+        }
+    }
+
+    /**
+     * Request a preferred display refresh rate. This is a best-effort request;
+     * the software frame cap continues to work when the device cannot switch modes.
+     */
+    public boolean requestSHARDisplayFrameRate(final int frameRate) {
+        final int sanitizedFrameRate = sanitizeSHARFrameRate(frameRate);
+        if (sanitizedFrameRate <= 0) {
+            return false;
+        }
+
+        SDLActivity activity = SDLActivity.mSingleton;
+        if (activity == null) {
+            return false;
+        }
+
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                mSHARRequestedFrameRate = sanitizedFrameRate;
+                applySHARRequestedFrameRate();
+            }
+        });
+        return true;
+    }
+
+    private void applySHARRequestedFrameRate() {
+        if (Build.VERSION.SDK_INT < 30 /* Android 11 */) {
+            return;
+        }
+
+        Surface surface = getHolder().getSurface();
+        if (surface == null || !surface.isValid()) {
+            return;
+        }
+
+        try {
+            surface.setFrameRate(
+                    (float)mSHARRequestedFrameRate,
+                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT
+            );
+        } catch (Exception e) {
+            Log.w("SDL", "Could not request SHAR display refresh rate: "
+                    + mSHARRequestedFrameRate, e);
+        }
+    }
+
     // Called when we have a valid drawing surface
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         Log.v("SDL", "surfaceCreated()");
-        /*
-         * Ensure the Surface buffer size is applied before notifying native code.
-         */
-        applyAdaptiveFixedSurfaceSize("surfaceCreated", true);
+        // Keep Android's platform-sized output Surface and refresh only the render target.
+        applyAdaptiveRenderResolution("surfaceCreated", true);
+        applySHARRequestedFrameRate();
 
         SDLActivity.onNativeSurfaceCreated();
     }
@@ -1104,26 +1025,24 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
         } catch(Exception ignored) {
         }
 
-        /*
-         * width/height are the actual Surface buffer size.
-         * With getHolder().setFixedSize(), these should normally match the adaptive
-         * render resolution, for example 1560x720.
-         */
-        mRenderWidth = width;
-        mRenderHeight = height;
-
-        /*
-         * Send the confirmed Surface buffer size to the native display layer.
-         * This call is cheap because sendSHARRenderResolutionToNative() ignores
-         * duplicated width/height values.
-         */
+        // width/height describe the output Surface, not the selected internal render target.
+        // Preserve mRenderWidth/mRenderHeight and re-send that target if native startup
+        // happened after the constructor's first attempt.
         sendSHARRenderResolutionToNative(mRenderWidth, mRenderHeight, "surfaceChanged");
+        applySHARRequestedFrameRate();
 
         /*
-         * Apply visual fullscreen scaling after Android reports the final Surface size.
-         * This keeps the reduced internal buffer stretched to the physical display.
+         * The SurfaceView remains fullscreen. Its output buffer is controlled by
+         * Android's platform layout, independently of the internal render target.
          */
-        applySurfaceViewUpscale(mRenderWidth, mRenderHeight);
+        RelativeLayout.LayoutParams surfaceParams =
+                new RelativeLayout.LayoutParams(
+                        RelativeLayout.LayoutParams.MATCH_PARENT,
+                        RelativeLayout.LayoutParams.MATCH_PARENT
+                );
+        setLayoutParams(surfaceParams);
+        setScaleX(1.0f);
+        setScaleY(1.0f);
 
         
         applyTouchNormalizationBase(
@@ -1142,7 +1061,7 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
         /*
          * Keep the standard SDL path informed.
          *
-         * surfaceWidth/surfaceHeight = internal Surface buffer size.
+         * surfaceWidth/surfaceHeight = Android output Surface size.
          * deviceWidth/deviceHeight   = physical device size.
          */
         SDLActivity.nativeSetScreenResolution(
@@ -1196,6 +1115,7 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
         if (skip) {
             Log.v("SDL", "Skip .. Surface is not ready.");
             mIsSurfaceReady = false;
+            processPendingSHARRenderResolutionRequest();
             return;
         }
 
@@ -1207,6 +1127,10 @@ private void createDefaultSHARTouchModeConfigIfNeeded(File configFile) {
 
         SDLActivity.mNextNativeState = SDLActivity.NativeState.RESUMED;
         SDLActivity.handleNativeState();
+
+        // A confirmed resize releases the in-flight slot. Start only the
+        // latest queued selection, never every intermediate picker step.
+        processPendingSHARRenderResolutionRequest();
     }
 
     // Key events

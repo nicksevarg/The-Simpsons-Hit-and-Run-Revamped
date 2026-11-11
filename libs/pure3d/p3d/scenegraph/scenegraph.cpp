@@ -16,10 +16,84 @@
 
 #include <string.h>
 
+#ifdef RAD_ANDROID
+// These renderer controls are implemented in the global namespace by the
+// Android GLES backend. Declare them before entering Scenegraph so calls from
+// this namespace resolve to the global symbols at link time.
+bool IsCelShadingEnabled();
+bool IsSHARFrontendMenuCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+#endif
+
 namespace Scenegraph 
 {
 static rmt::Matrix identity(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
 static rmt::Matrix tmp;
+
+#ifdef RAD_ANDROID
+static bool IsSHARFrontendMenuDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL || !IsSHARFrontendMenuCelPassActive())
+        return false;
+
+    const char* name = drawable->GetName();
+    if (name == NULL)
+        return false;
+
+    // All seasonal camsets share the FE_ namespace; the Christmas version
+    // additionally uses three unprefixed tree drawables.
+    return strncmp(name, "FE_", 3) == 0 ||
+           strcmp(name, "tree1Shape") == 0 ||
+           strcmp(name, "tree2Shape") == 0 ||
+           strcmp(name, "tree3Shape") == 0;
+}
+
+static bool IsSHARFrontendMenuFoliageDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return false;
+
+    const char* name = drawable->GetName();
+    if (name == NULL)
+        return false;
+
+    static const char plantPrefix[] = "FE_plantShape";
+    return strncmp(name, plantPrefix, sizeof(plantPrefix) - 1) == 0 ||
+           strcmp(name, "tree1Shape") == 0 ||
+           strcmp(name, "tree2Shape") == 0 ||
+           strcmp(name, "tree3Shape") == 0;
+}
+
+static void DisplaySHARFrontendMenuDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+
+    const bool foliageDrawable = IsSHARFrontendMenuFoliageDrawable(drawable);
+    SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentFoliageMeshPassActive(foliageDrawable);
+    SetCelShadingObjectEnabled(true);
+
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+
+    SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentFoliageMeshPassActive(false);
+    drawable->Display();
+
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
 
 // Scenegraph  -----------------------------------------------
 Scenegraph::Scenegraph() : root(NULL)
@@ -616,7 +690,12 @@ void Drawable::Display(const rmt::Matrix&, DisplayList& list)
         }
         else
         {
-            draw->Display();
+#ifdef RAD_ANDROID
+            if (IsSHARFrontendMenuDrawable(draw))
+                DisplaySHARFrontendMenuDrawable(draw);
+            else
+#endif
+                draw->Display();
         }
     }
 }

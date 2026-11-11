@@ -119,6 +119,15 @@ public:
     
     unsigned int GetNumTargets() const;
 
+#if defined(RAD_ANDROID)
+    void SetDrivingExtraZoomEnabled( bool enabled )
+    {
+        mDrivingExtraZoomEnabled = enabled;
+        mDrivingZoomMultiplier = 1.0f;
+        mDrivingZoomDelayLeft = 0;
+    }
+#endif
+
     void SetDirty();
 
     void EnableShake();
@@ -165,6 +174,17 @@ private:
 
     //Quick turn time counter
     int mQuickTurnTimeLeft;
+
+#if defined(RAD_ANDROID)
+    // Horizontal camera orbit offset and release-to-recenter delay for driving.
+    float mManualOrbitOffset;
+    unsigned int mManualOrbitDelayLeft;
+
+    // Driving zoom-out multiplier (1x to 2x) and post-release delay.
+    float mDrivingZoomMultiplier;
+    unsigned int mDrivingZoomDelayLeft;
+    bool mDrivingExtraZoomEnabled;
+#endif
 
     const rmt::Vector* mCollisionOffset;
     unsigned int mNumCollisions;

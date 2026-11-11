@@ -58,6 +58,11 @@ bool IEntityDSG::msDeletionsSafe = false;
 IEntityDSG::IEntityDSG() :
     mTranslucent(0),
     mpSpatialNode(NULL)
+#ifdef RAD_ANDROID
+    , mSHAREnvironmentFoliageMesh(false)
+    , mSHAREnvironmentRoadCandidate(false)
+    , mSHAREnvironmentSourceAssetUID(0)
+#endif
 {
     CLASSTRACKER_CREATE( IEntityDSG );
 #ifndef WORLD_BUILDER

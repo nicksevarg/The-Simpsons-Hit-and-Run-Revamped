@@ -59,6 +59,7 @@
 #include <contexts/pausecontext.h>
 #include <contexts/gameplay/gameplaycontext.h>
 #include <data/memcard/memorycardmanager.h>
+#include <cheats/cheatinputsystem.h>
 #include <events/eventmanager.h>
 #include <gameflow/gameflow.h>
 #include <input/inputmanager.h>
@@ -69,6 +70,9 @@
 #include <mission/objectives/missionobjective.h>
 #include <mission/gameplaymanager.h>
 #include <mission/charactersheet/charactersheetmanager.h>
+#if defined(RAD_ANDROID)
+#include <worldsim/character/character.h>
+#endif
 #include <presentation/presentation.h>
 #include <render/RenderManager/RenderManager.h>
 #include <render/RenderManager/RenderLayer.h>
@@ -635,6 +639,13 @@ void CGuiManagerInGame::HandleMessage
                 else
 #endif
                 {
+                    if( !m_quitAndReload )
+                    {
+                        GetCheatInputSystem()->DisableAllCheats();
+#if defined(RAD_ANDROID)
+                        SetSHARNoclipEnabled( false );
+#endif
+                    }
                     m_state = GUI_FE_SHUTTING_DOWN;
 
                     // if paused in sunday drive mode, unload memory card info
@@ -681,6 +692,7 @@ void CGuiManagerInGame::HandleMessage
                     }
                     else
                     {
+                        GetCheatInputSystem()->DisableAllCheats();
                         m_state = GUI_FE_SHUTTING_DOWN;
 
                         // if paused in sunday drive mode, unload memory card info
@@ -1468,6 +1480,10 @@ CGuiManagerInGame::QuitGame()
         {
             if( GetGameplayManager()->GetGameComplete() ) // game finished
             {
+                GetCheatInputSystem()->DisableAllCheats();
+#if defined(RAD_ANDROID)
+                SetSHARNoclipEnabled( false );
+#endif
                 GetGameFlow()->SetContext( CONTEXT_FRONTEND );
             }
             else
@@ -1484,7 +1500,12 @@ CGuiManagerInGame::QuitGame()
     }
     else
     {
-        // switch to frontend context
+        // Reset gameplay cheats before returning to the front end, so a new or
+        // loaded game starts with every toggle OFF.
+        GetCheatInputSystem()->DisableAllCheats();
+#if defined(RAD_ANDROID)
+        SetSHARNoclipEnabled( false );
+#endif
         GetGameFlow()->SetContext( CONTEXT_FRONTEND );
     }
 }

@@ -20,7 +20,118 @@
 #endif
 
 #include <string.h>
+#include <vector>
 
+#ifdef RAD_ANDROID
+bool IsSHAREnvironmentFoliageMeshPassActive();
+bool IsCelShadingOutlinePass();
+
+namespace
+{
+static unsigned long long gSHARSkinnedGeometryReuseNextPairID = 0;
+static unsigned long long gSHARSkinnedGeometryReuseCurrentPairID = 0;
+static bool gSHARSkinnedGeometryReusePass = false;
+}
+
+tSHARSkinnedGeometryReuseScope::tSHARSkinnedGeometryReuseScope()
+    : mPreviousPairID(gSHARSkinnedGeometryReuseCurrentPairID),
+      mPreviousReusePass(gSHARSkinnedGeometryReusePass)
+{
+    ++gSHARSkinnedGeometryReuseNextPairID;
+    // Reserve zero to mean that no silhouette/normal pair is active.
+    if (gSHARSkinnedGeometryReuseNextPairID == 0)
+        ++gSHARSkinnedGeometryReuseNextPairID;
+
+    gSHARSkinnedGeometryReuseCurrentPairID =
+        gSHARSkinnedGeometryReuseNextPairID;
+    gSHARSkinnedGeometryReusePass = false;
+}
+
+tSHARSkinnedGeometryReuseScope::~tSHARSkinnedGeometryReuseScope()
+{
+    gSHARSkinnedGeometryReuseCurrentPairID = mPreviousPairID;
+    gSHARSkinnedGeometryReusePass = mPreviousReusePass;
+}
+
+void tSHARSkinnedGeometryReuseScope::BeginReusePass()
+{
+    if (gSHARSkinnedGeometryReuseCurrentPairID != 0)
+        gSHARSkinnedGeometryReusePass = true;
+}
+
+unsigned long long GetSHARSkinnedGeometryReusePairID()
+{
+    return gSHARSkinnedGeometryReuseCurrentPairID;
+}
+
+bool IsSHARSkinnedGeometryReusePass()
+{
+    return gSHARSkinnedGeometryReuseCurrentPairID != 0 &&
+           gSHARSkinnedGeometryReusePass;
+}
+#endif
+
+#ifdef RAD_ANDROID
+extern bool IsSHAREnvironmentCelPassActive();
+extern bool IsCelShadingOutlinePass();
+extern void SetSHAREnvironmentCelMaterialEligible(bool eligible);
+extern bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
+extern void SetSHAREnvironmentFoliageCardOutlineNormalMode(bool enabled);
+
+// Experimental alpha-cutout outline exception, restricted to the four
+// foliage textures identified in the Level 3/6 diagnostics.
+static bool IsSHARExperimentalFoliageBlendCutoutTarget(const tShader* shader)
+{
+    if (shader == NULL ||
+        !shader->mEnvironmentCelHasAlphaTest ||
+        !shader->mEnvironmentCelHasAlphaBlend ||
+        shader->mEnvironmentCelBlendMode == PDDI_BLEND_NONE)
+        return false;
+
+    // Exact house-interior leaf material UID from int_sh_leaf_m.
+    if (static_cast<unsigned long long>(shader->GetUID()) == 0x396C6BB87163F912ULL)
+        return true;
+
+    switch (shader->mEnvironmentCelBaseTextureUID)
+    {
+        case 0x2d6bcef01ba0c272ULL: // Large green/red oak leaves
+        case 0x0c85d79b35f85dbdULL: // Large evergreen leaves
+        case 0x34390eaf4e3bfa98ULL: // Palm fronds
+        case 0xb101faa4375fb8a2ULL: // Willow foliage
+        case 0x2049f045f8179e61ULL: // Small oak leaves (OakS.bmp)
+        case 0x9dcfdb55f768fa6cULL: // Small evergreen leaves (EverS.BMP)
+        case 0x2687e3f726e18356ULL: // Small orange oak leaves (OakSOrnge.BMP)
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Flat-card outline normals are restricted to palm/willow and small-tree leaves
+// whose source P3D material and texture definitions were checked explicitly.
+static bool IsSHARExperimentalFoliageCardOutlineTarget(const tShader* shader)
+{
+    if (shader == NULL || !shader->mEnvironmentCelHasAlphaTest)
+        return false;
+
+    // Keep the house leaf-card outline path keyed to the exact material UID.
+    if (static_cast<unsigned long long>(shader->GetUID()) == 0x396C6BB87163F912ULL)
+        return true;
+
+    switch (shader->mEnvironmentCelBaseTextureUID)
+    {
+        case 0x34390eaf4e3bfa98ULL: // Palmtrees.bmp
+        case 0xb101faa4375fb8a2ULL: // Treewillow.BMP1
+        case 0x2b330f712dc9f2adULL: // Treewillow.BMP
+        case 0x2049f045f8179e61ULL: // OakS.bmp
+        case 0x9dcfdb55f768fa6cULL: // EverS.bmp
+        case 0x2687e3f726e18356ULL: // OakSOrnge.BMP
+            return true;
+        default:
+            return false;
+    }
+}
+#endif
 
 #define INDEXED_STREAM_COLOUR_WITH_OFFSET(  i, color, offset )  \
                     int r, g, b, a; \
@@ -130,6 +241,53 @@ void tPrimGroupOptimised::Display()
 {
     P3DASSERT(mBuffer);
     pddiShader* shader = mShader->GetShader();
+#ifdef RAD_ANDROID
+    const bool foliageAlphaTestEligible =
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL &&
+        mShader->mEnvironmentCelAlphaTestEligible;
+    const bool foliageCutoutEligible =
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL &&
+        mShader->mEnvironmentCelFoliageCutoutEligible;
+    const bool foliageBlendedCutoutEligible =
+        IsCelShadingOutlinePass() &&
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        IsSHARExperimentalFoliageBlendCutoutTarget(mShader);
+    const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
+        (mShader == NULL ||
+         (!mShader->mEnvironmentCelEligible &&
+          !foliageAlphaTestEligible && !foliageCutoutEligible &&
+          !foliageBlendedCutoutEligible));
+    if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
+        mShader != NULL)
+    {    }
+    if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL)
+    {        if (!mShader->mEnvironmentCelEligible &&
+            !mShader->mEnvironmentCelAlphaTestEligible &&
+            !foliageBlendedCutoutEligible)
+        {        }
+    }
+    if (environmentMaterialIneligible && IsCelShadingOutlinePass())
+        return;
+    if (environmentMaterialIneligible)
+        SetSHAREnvironmentCelMaterialEligible(false);
+    const bool useFoliageBlendCutoutOverride = foliageBlendedCutoutEligible;
+    const int originalFoliageBlendMode =
+        mShader != NULL ? mShader->mEnvironmentCelBlendMode : PDDI_BLEND_NONE;
+    if (useFoliageBlendCutoutOverride)
+        mShader->SetInt(PDDI_SP_BLENDMODE, PDDI_BLEND_NONE);
+
+    const bool originalFoliageCardOutlineNormalMode =
+        IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
+    const bool useFoliageCardOutlineNormalMode =
+        IsCelShadingOutlinePass() &&
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        IsSHARExperimentalFoliageCardOutlineTarget(mShader);
+    SetSHAREnvironmentFoliageCardOutlineNormalMode(
+        useFoliageCardOutlineNormalMode);
+#endif
 
 #ifdef RAD_PS2
     bool refractionShadersInUse = ps2RefractionShader::RefractionShadersLoaded();
@@ -151,6 +309,14 @@ void tPrimGroupOptimised::Display()
     }
 #else
     p3d::pddi->DrawPrimBuffer( shader, mBuffer );
+#endif
+#ifdef RAD_ANDROID
+    SetSHAREnvironmentFoliageCardOutlineNormalMode(
+        originalFoliageCardOutlineNormalMode);
+    if (useFoliageBlendCutoutOverride)
+        mShader->SetInt(PDDI_SP_BLENDMODE, originalFoliageBlendMode);
+    if (environmentMaterialIneligible)
+        SetSHAREnvironmentCelMaterialEligible(true);
 #endif
 }
 
@@ -252,12 +418,52 @@ tPrimGroupStreamed::~tPrimGroupStreamed()
 
 void tPrimGroupStreamed::Display()
 {
+#ifdef RAD_ANDROID
+    const bool foliageAlphaTestEligible =
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL &&
+        mShader->mEnvironmentCelAlphaTestEligible;
+    const bool foliageCutoutEligible =
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL &&
+        mShader->mEnvironmentCelFoliageCutoutEligible;
+    const bool foliageBlendedCutoutEligible =
+        IsCelShadingOutlinePass() &&
+        IsSHAREnvironmentFoliageMeshPassActive() &&
+        IsSHARExperimentalFoliageBlendCutoutTarget(mShader);
+    const bool environmentMaterialIneligible = IsSHAREnvironmentCelPassActive() &&
+        (mShader == NULL ||
+         (!mShader->mEnvironmentCelEligible &&
+          !foliageAlphaTestEligible && !foliageCutoutEligible &&
+          !foliageBlendedCutoutEligible));
+    if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
+        mShader != NULL)
+    {    }
+    if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
+        mShader != NULL)
+    {        if (!mShader->mEnvironmentCelEligible &&
+            !mShader->mEnvironmentCelAlphaTestEligible &&
+            !foliageBlendedCutoutEligible)
+        {        }
+    }
+    if (environmentMaterialIneligible && IsCelShadingOutlinePass())
+        return;
+    if (environmentMaterialIneligible)
+        SetSHAREnvironmentCelMaterialEligible(false);
+#endif
     P3DASSERT(mVertexList);
 
     // don't send indices and weights to the stream renderer
     // the skinning is done by tPrimGroupStreamed::Display();
     unsigned vertexFormat = mVertexList->GetFormat();
     vertexFormat &= ~(PDDI_V_INDICES | PDDI_V_WEIGHTS);
+#ifdef RAD_ANDROID
+    // This streaming path has no retained interleaved buffer in which to
+    // cache generated normals. Don't draw an unexpanded inverted hull.
+    if (IsSHAREnvironmentCelPassActive() && IsCelShadingOutlinePass() &&
+        !(vertexFormat & PDDI_V_NORMAL))
+        return;
+#endif
 
 #ifdef RAD_XBOX
     if(vertexProgram)
@@ -265,6 +471,14 @@ void tPrimGroupStreamed::Display()
         pddiExtVertexProgram* vp = (pddiExtVertexProgram*)p3d::pddi->GetExtension(PDDI_EXT_VERTEX_PROGRAM);
         vp->SetStreamProgram(vertexProgram);
     }
+#endif
+
+#ifdef RAD_ANDROID
+    const bool useFoliageBlendCutoutOverride = foliageBlendedCutoutEligible;
+    const int originalFoliageBlendMode =
+        mShader != NULL ? mShader->mEnvironmentCelBlendMode : PDDI_BLEND_NONE;
+    if (useFoliageBlendCutoutOverride)
+        mShader->SetInt(PDDI_SP_BLENDMODE, PDDI_BLEND_NONE);
 #endif
 
     pddiBaseShader* pShader = (pddiBaseShader *) mShader->GetShader( );
@@ -284,6 +498,10 @@ void tPrimGroupStreamed::Display()
 
     }
 
+#ifdef RAD_ANDROID
+    if (useFoliageBlendCutoutOverride)
+        mShader->SetInt(PDDI_SP_BLENDMODE, originalFoliageBlendMode);
+#endif
 
 #ifdef RAD_XBOX
     if(vertexProgram)
@@ -291,6 +509,10 @@ void tPrimGroupStreamed::Display()
         pddiExtVertexProgram* vp = (pddiExtVertexProgram*)p3d::pddi->GetExtension(PDDI_EXT_VERTEX_PROGRAM);
         vp->SetStreamProgram(0);
     }
+#endif
+#ifdef RAD_ANDROID
+    if (environmentMaterialIneligible)
+        SetSHAREnvironmentCelMaterialEligible(true);
 #endif
     
 }
@@ -475,6 +697,10 @@ bool tPrimGroupSkinnedStreamed::SetVertices(unsigned start, unsigned count, rmt:
 #ifndef RAD_PS2
 tPrimGroupSkinnedPC::tPrimGroupSkinnedPC(int nVertex, unsigned format, int nIndex, bool allocate)  :
     tPrimGroupSkinnedOptimised(nVertex), mVertices( NULL )
+#ifdef RAD_ANDROID
+    , mSHARSkinnedGeometryPairID(0),
+      mSHARSkinnedGeometryPairCacheValid(false)
+#endif
 {
     if (mVertexCount > 0)
     {
@@ -488,6 +714,14 @@ tPrimGroupSkinnedPC::~tPrimGroupSkinnedPC()
 		delete[ ] mVertices;
 }
 
+#ifdef RAD_ANDROID
+bool tPrimGroupSkinnedPC::CanReuseSHARSkinnedGeometry(unsigned long long pairID) const
+{
+    return pairID != 0 && mSHARSkinnedGeometryPairCacheValid &&
+           mSHARSkinnedGeometryPairID == pairID;
+}
+#endif
+
 bool tPrimGroupSkinnedPC::GetVertices(unsigned start, unsigned count, rmt::Vector* v)
 {
     for(unsigned i = start; i < start + count; i++)
@@ -499,6 +733,10 @@ bool tPrimGroupSkinnedPC::GetVertices(unsigned start, unsigned count, rmt::Vecto
 
 bool tPrimGroupSkinnedPC::SetVertices(unsigned start, unsigned count, rmt::Vector* v)
 {
+#ifdef RAD_ANDROID
+    // Source geometry edits invalidate any in-flight silhouette cache.
+    mSHARSkinnedGeometryPairCacheValid = false;
+#endif
     for(unsigned i = start; i < start + count; i++)
     {
         mVertices[i].position = *v++;
@@ -508,6 +746,19 @@ bool tPrimGroupSkinnedPC::SetVertices(unsigned start, unsigned count, rmt::Vecto
 
 void tPrimGroupSkinnedPC::Display(void)
 {
+#ifdef RAD_ANDROID
+    const unsigned long long reusePairID = GetSHARSkinnedGeometryReusePairID();
+    const bool reusePass = IsSHARSkinnedGeometryReusePass();
+    const bool reuseSkinnedVertices =
+        reusePass && reusePairID != 0 &&
+        mSHARSkinnedGeometryPairCacheValid &&
+        mSHARSkinnedGeometryPairID == reusePairID;
+#else
+    const bool reuseSkinnedVertices = false;
+#endif
+
+    if (!reuseSkinnedVertices)
+    {
 	pddiPrimBufferStream *stream;
 	
     int count = mVertexCount;
@@ -612,6 +863,30 @@ void tPrimGroupSkinnedPC::Display(void)
 		}
 
 	}
+
+#ifdef RAD_ANDROID
+        // Cache only the silhouette output. The normal pass consumes it once;
+        // an unmatched or later draw always falls back to fresh CPU skinning.
+        if (reusePairID != 0 && !reusePass)
+        {
+            mSHARSkinnedGeometryPairID = reusePairID;
+            mSHARSkinnedGeometryPairCacheValid = true;
+        }
+        else
+        {
+            mSHARSkinnedGeometryPairCacheValid = false;
+        }
+#endif
+    }
+#ifdef RAD_ANDROID
+    else
+    {
+        // One-shot consumption prevents accidental reuse by a second normal
+        // draw of the same primitive group inside the same scope.
+        mSHARSkinnedGeometryPairCacheValid = false;
+    }
+#endif
+
 	//buffer rendering
 	p3d::pddi->DrawPrimBuffer(mShader->GetShader(), mBuffer);
 
@@ -1090,7 +1365,7 @@ bool tPrimGroupLoader::ParseHeader(tChunkFile *f, tEntityStore *store)
 
 
 #ifndef RAD_PS2
-tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones)
+tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt::Matrix* bones, bool fixHomerRightArm, int sourceIndexCount)
 {
 	//don't create a primBuffer whose vertex contains weights and matrices indices 
 	//for PC, since PC skin is software blended, the weights and matrices indices
@@ -1123,7 +1398,8 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
 	bool primBufferInitialized = false;
     
     int nUVChannel = mVertexFormat & 0xf;
-    int count;    
+    int count;
+    std::vector<unsigned short> homerSourceIndices;    
 
     while (f->ChunksRemaining())
     {
@@ -1268,14 +1544,25 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
             {
                 P3DASSERT(primBufferInitialized);
                 int count = f->GetLong();
-                P3DASSERT(count == mIndexCount);
-                unsigned short* tempIndexList = (unsigned short *)p3d::MallocTemp(sizeof(unsigned short) * count);
-                for (int a = 0; a < count; a++) 
+                P3DASSERT(count == (fixHomerRightArm ? sourceIndexCount : mIndexCount));
+                if (fixHomerRightArm)
                 {
-                    tempIndexList[a] = (unsigned short)f->GetLong();
+                    homerSourceIndices.resize(count);
+                    for (int a = 0; a < count; a++)
+                    {
+                        homerSourceIndices[a] = (unsigned short)f->GetLong();
+                    }
                 }
-                primBuffer->SetIndices(tempIndexList, count);
-                p3d::FreeTemp(tempIndexList);
+                else
+                {
+                    unsigned short* tempIndexList = (unsigned short *)p3d::MallocTemp(sizeof(unsigned short) * count);
+                    for (int a = 0; a < count; a++)
+                    {
+                        tempIndexList[a] = (unsigned short)f->GetLong();
+                    }
+                    primBuffer->SetIndices(tempIndexList, count);
+                    p3d::FreeTemp(tempIndexList);
+                }
             }
             break;
 
@@ -1345,6 +1632,163 @@ tPrimGroup* tPrimGroupLoader::LoadPCSkin(tChunkFile* f, tEntityStore* store, rmt
         }
 
         f->EndChunk();
+    }
+
+    if (fixHomerRightArm && primBuffer != NULL && skinPrimGroup != NULL &&
+        static_cast<int>(homerSourceIndices.size()) == sourceIndexCount &&
+        mPrimType == PDDI_PRIM_TRIANGLES && mVertexCount == 99 &&
+        sourceIndexCount == 522 && mIndexCount == sourceIndexCount)
+    {
+        // The default, Halloween, and Thanksgiving frontend Homers share this
+        // verified 99-vertex / 174-triangle right-arm mesh. Its triangle winding
+        // opposes every stored normal, so reverse the three indices per face.
+        std::vector<unsigned short> correctedIndices;
+        correctedIndices.reserve(static_cast<size_t>(sourceIndexCount));
+        for (int triangle = 0; triangle + 2 < sourceIndexCount; triangle += 3)
+        {
+            correctedIndices.push_back(homerSourceIndices[triangle]);
+            correctedIndices.push_back(homerSourceIndices[triangle + 2]);
+            correctedIndices.push_back(homerSourceIndices[triangle + 1]);
+        }
+
+        P3DASSERT(correctedIndices.size() == static_cast<size_t>(mIndexCount));
+        primBuffer->SetIndices(&correctedIndices[0],
+                               static_cast<int>(correctedIndices.size()));
+    }
+
+    if (fixHomerRightArm && primBuffer != NULL && skinPrimGroup != NULL &&
+        bones != NULL && skinPrimGroup->matrixPalette != NULL &&
+        static_cast<int>(homerSourceIndices.size()) == sourceIndexCount &&
+        sourceIndexCount >= 3 &&
+        !(mPrimType == PDDI_PRIM_TRIANGLES && mVertexCount == 99 &&
+          sourceIndexCount == 522 && mIndexCount == sourceIndexCount))
+    {
+        // Expand the strip into a triangle list, allowing only Homer's affected
+        // right-arm faces to be reversed without changing adjacent strip faces.
+        std::vector<unsigned char> rightArmVertices(mVertexCount, 0);
+        for (int vertexIndex = 0; vertexIndex < mVertexCount; ++vertexIndex)
+        {
+            const tPrimGroupSkinnedPC::SkinVertex& vertex =
+                skinPrimGroup->mVertices[vertexIndex];
+            const float weights[4] =
+            {
+                vertex.weights[0],
+                vertex.weights[1],
+                vertex.weights[2],
+                1.0f - (vertex.weights[0] + vertex.weights[1] + vertex.weights[2])
+            };
+
+            bool hasActiveInfluence = false;
+            bool allInfluencesOnRightArm = true;
+            for (int influence = 0; influence < 4; ++influence)
+            {
+                if (weights[influence] <= 0.0001f)
+                    continue;
+
+                hasActiveInfluence = true;
+                const unsigned paletteIndex = vertex.indices[influence];
+                if (paletteIndex >= skinPrimGroup->nMatrices)
+                {
+                    allInfluencesOnRightArm = false;
+                    break;
+                }
+
+                Matrix* influenceMatrix = skinPrimGroup->matrixPalette[paletteIndex];
+                bool isRightArmBone = false;
+                if (influenceMatrix != NULL)
+                {
+                    // Match the verified shoulder-to-hand joints, rather than
+                    // palette-local indices stored in the vertex stream.
+                    for (int jointIndex = 26; jointIndex <= 32; ++jointIndex)
+                    {
+                        if (influenceMatrix == &bones[jointIndex])
+                        {
+                            isRightArmBone = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!isRightArmBone)
+                {
+                    allInfluencesOnRightArm = false;
+                    break;
+                }
+            }
+
+            rightArmVertices[vertexIndex] =
+                (hasActiveInfluence && allInfluencesOnRightArm) ? 1 : 0;
+        }
+
+        std::vector<unsigned short> correctedIndices;
+        correctedIndices.reserve(static_cast<size_t>(sourceIndexCount - 2) * 3);
+        for (int stripIndex = 2; stripIndex < sourceIndexCount; ++stripIndex)
+        {
+            unsigned short index0;
+            unsigned short index1;
+            unsigned short index2 = homerSourceIndices[stripIndex];
+
+            // Triangle-strip winding alternates with every source index.
+            if ((stripIndex & 1) == 0)
+            {
+                index0 = homerSourceIndices[stripIndex - 2];
+                index1 = homerSourceIndices[stripIndex - 1];
+            }
+            else
+            {
+                index0 = homerSourceIndices[stripIndex - 1];
+                index1 = homerSourceIndices[stripIndex - 2];
+            }
+
+            // Omit degenerate connector triangles, preserving the strip parity.
+            if (index0 == index1 || index1 == index2 || index2 == index0)
+                continue;
+            if (index0 >= mVertexCount || index1 >= mVertexCount || index2 >= mVertexCount)
+                continue;
+
+            if (rightArmVertices[index0] &&
+                rightArmVertices[index1] &&
+                rightArmVertices[index2])
+            {
+                const tPrimGroupSkinnedPC::SkinVertex& v0 = skinPrimGroup->mVertices[index0];
+                const tPrimGroupSkinnedPC::SkinVertex& v1 = skinPrimGroup->mVertices[index1];
+                const tPrimGroupSkinnedPC::SkinVertex& v2 = skinPrimGroup->mVertices[index2];
+
+                const float edge1X = v1.position.x - v0.position.x;
+                const float edge1Y = v1.position.y - v0.position.y;
+                const float edge1Z = v1.position.z - v0.position.z;
+                const float edge2X = v2.position.x - v0.position.x;
+                const float edge2Y = v2.position.y - v0.position.y;
+                const float edge2Z = v2.position.z - v0.position.z;
+
+                const float faceNormalX = edge1Y * edge2Z - edge1Z * edge2Y;
+                const float faceNormalY = edge1Z * edge2X - edge1X * edge2Z;
+                const float faceNormalZ = edge1X * edge2Y - edge1Y * edge2X;
+                const float averagedNormalX = v0.normal.x + v1.normal.x + v2.normal.x;
+                const float averagedNormalY = v0.normal.y + v1.normal.y + v2.normal.y;
+                const float averagedNormalZ = v0.normal.z + v1.normal.z + v2.normal.z;
+                const float normalAlignment =
+                    faceNormalX * averagedNormalX +
+                    faceNormalY * averagedNormalY +
+                    faceNormalZ * averagedNormalZ;
+
+                if (normalAlignment < 0.0f)
+                {
+                    const unsigned short swapIndex = index1;
+                    index1 = index2;
+                    index2 = swapIndex;
+                }
+            }
+
+            correctedIndices.push_back(index0);
+            correctedIndices.push_back(index1);
+            correctedIndices.push_back(index2);
+        }
+
+        P3DASSERT(correctedIndices.size() <= static_cast<size_t>(mIndexCount));
+        primBuffer->SetIndices(
+            correctedIndices.empty() ? NULL : &correctedIndices[0],
+            static_cast<int>(correctedIndices.size()));
     }
 
     return primGroup;
@@ -1559,7 +2003,7 @@ tPrimGroup* tPrimGroupLoader::LoadStreamed(tChunkFile* f, tEntityStore* store, r
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Matrix* bones, bool optimise, bool deform)
+tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Matrix* bones, bool optimise, bool deform, bool fixHomerRightArm)
 {
     pddiExtHardwareSkinning* hwSkin = p3d::context->GetHardwareSkinning();
 
@@ -1567,19 +2011,40 @@ tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Mat
     {
         return NULL;
     }
+
+    const int sourceIndexCount = mIndexCount;
+    bool expandHomerRightArmStrip = false;
+    bool fixHomerRightArmTriangleList = false;
+#ifdef RAD_ANDROID
+    expandHomerRightArmStrip =
+        fixHomerRightArm && (mPrimType == PDDI_PRIM_TRISTRIP) && (sourceIndexCount >= 3);
+    fixHomerRightArmTriangleList =
+        fixHomerRightArm && (mPrimType == PDDI_PRIM_TRIANGLES) &&
+        (mVertexCount == 99) && (sourceIndexCount == 522);
+    if (expandHomerRightArmStrip)
+    {
+        // Allocate maximum triangle-list index storage; the GLES buffer records
+        // the smaller final draw count once SetIndices receives the expansion.
+        mPrimType = PDDI_PRIM_TRIANGLES;
+        mIndexCount = (sourceIndexCount - 2) * 3;
+    }
+#endif
 /*    
     if((bones && !hwSkin) || !optimise)
     {
         return LoadStreamed(f, store, bones);
     }
 */
-    if( bones && !hwSkin )
+    if( bones && (!hwSkin || expandHomerRightArmStrip || fixHomerRightArmTriangleList) )
     {
         #ifdef RAD_PS2
             rAssert( false );
             return NULL;
         #else
-            return LoadPCSkin(f, store, bones);
+            return LoadPCSkin(
+                f, store, bones,
+                expandHomerRightArmStrip || fixHomerRightArmTriangleList,
+                sourceIndexCount);
         #endif
     }
 	else if( !optimise )

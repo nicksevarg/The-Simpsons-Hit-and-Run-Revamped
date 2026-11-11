@@ -15,6 +15,7 @@
 #include <memory/classsizetracker.h>
 #include <radtime.hpp>
 #include <render/DSG/StatePropDSG.h>
+
 #include <console/console.h>
 #include <stateprop/statepropdata.hpp>
 #include <render/RenderManager/RenderManager.h>

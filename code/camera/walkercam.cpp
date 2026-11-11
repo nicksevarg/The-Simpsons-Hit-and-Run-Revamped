@@ -29,6 +29,9 @@
 #include <camera/supercamcentral.h>
 #include <camera/supercamcontroller.h>
 #include <camera/supercammanager.h>
+#if defined(RAD_ANDROID)
+#include <data/config/androidconfigurationmanager.h>
+#endif
 
 #include <memory/srrmemory.h>
 
@@ -118,6 +121,11 @@ WalkerCam::WalkerCam() :
     mXAxis( 0.0f ),
     mOldMagnitude( 0.0f ),
     mCollectible( NULL )
+#if defined(RAD_ANDROID)
+    , mOnFootZoomCycleStep( -1 )
+    , mPreviousCameraCyclePressed( false )
+    , mCenterCameraHeld( false )
+#endif
 {
     mTarget = NULL;
 
@@ -159,6 +167,23 @@ void WalkerCam::Update( unsigned int milliseconds )
     {
         return;
     }
+
+#if defined(RAD_ANDROID)
+    // L1 cycles max-in -> default -> max-out. Read the existing driving camera
+    // button here; SuperCamCentral deliberately does not cycle cameras on foot.
+    const bool cameraCyclePressed =
+        mController->GetValue( SuperCamController::cameraToggle ) >= 0.5f;
+    if( cameraCyclePressed && !mPreviousCameraCyclePressed )
+    {
+        mOnFootZoomCycleStep = (mOnFootZoomCycleStep + 1) % 3;
+    }
+    mPreviousCameraCyclePressed = cameraCyclePressed;
+
+    // R1 is a hold-to-center control. Keep driving the camera toward the
+    // character's rear-facing heading for as long as the shoulder is held.
+    mCenterCameraHeld =
+        mController->GetValue( SuperCamController::centerCamera ) >= 0.5f;
+#endif
 
     //This is to adjust interpolation when we're running substeps.
     float timeMod = 1.0f;
@@ -255,7 +280,34 @@ void WalkerCam::Update( unsigned int milliseconds )
 
     if ( !mTarget->IsCar() )
     {
-        float zoom = mController->GetValue( SuperCamController::zToggle );
+        // Treat R2 as the exact inverse of L2: L2 increases the zoom value,
+        // while R2 makes it negative and widens the view by the same amount.
+        // Releasing R2 restores a zero zoom input, so the camera eases back to
+        // its regular maximum FOV through FilterFov's existing lag handling.
+        float zoom = mController->GetValue( SuperCamController::zToggle ) -
+                     mController->GetValue( SuperCamController::zToggleOut );
+#if defined(RAD_ANDROID)
+        // Trigger holds always take precedence. Otherwise the shoulder-selected
+        // preset behaves exactly like holding L2 (+1), releasing it (0), or
+        // holding R2 (-1), with the same existing FOV smoothing.
+        if( mOnFootZoomCycleStep >= 0 && rmt::Fabs( zoom ) < 0.05f )
+        {
+            if( mOnFootZoomCycleStep == 0 )
+            {
+                zoom = 1.0f;
+            }
+            else if( mOnFootZoomCycleStep == 1 )
+            {
+                zoom = 0.0f;
+            }
+            else
+            {
+                zoom = -1.0f;
+            }
+        }
+#endif
+        float minFOV = mData.GetMinFOV();
+        float maxFOV = mData.GetMaxFOV();
 
         float FOV = GetFOV();
         float pedPCT = IsTargetNearPed( milliseconds );
@@ -263,11 +315,11 @@ void WalkerCam::Update( unsigned int milliseconds )
 
         if ( GetFlag((Flag)CUT ) )
         {
-            FilterFov( zoom, mData.GetMinFOV(), mData.GetMaxFOV(), FOV, mFOVDelta, 1.0f, timeMod, offset );
+            FilterFov( zoom, minFOV, maxFOV, FOV, mFOVDelta, 1.0f, timeMod, offset );
         }
         else
         {
-            FilterFov( zoom, mData.GetMinFOV(), mData.GetMaxFOV(), FOV, mFOVDelta, mData.GetFOVLag(), timeMod, offset );
+            FilterFov( zoom, minFOV, maxFOV, FOV, mFOVDelta, mData.GetFOVLag(), timeMod, offset );
         }
 
         SetFOV( FOV );
@@ -437,6 +489,15 @@ void WalkerCam::SetTarget( ISuperCamTarget* target )
 {
     rAssert( target );
 
+#if defined(RAD_ANDROID)
+    if( mTarget != target )
+    {
+        // Reset the per-character zoom cycle when the camera target changes.
+        mOnFootZoomCycleStep = -1;
+        mPreviousCameraCyclePressed = false;
+        mCenterCameraHeld = false;
+    }
+#endif
     mTarget = target;
 
     //Load the camera data for this guy since he is the primary
@@ -603,6 +664,9 @@ void WalkerCam::OnDisplay() const
 //=============================================================================
 void WalkerCam::UpdatePositionNormal( unsigned int milliseconds, float timeMod )
 {
+#if defined(RAD_ANDROID)
+    const bool modernCameraEnabled = GetAndroidConfigurationManager()->IsModernCameraEnabled();
+#endif
     rmt::Vector targetPos, camPos;
     rmt::Vector desiredPosition;
     rmt::Vector desiredTargetPos;
@@ -693,6 +757,47 @@ void WalkerCam::UpdatePositionNormal( unsigned int milliseconds, float timeMod )
 
         float magWaste;
         rmt::CartesianToSpherical( rod.x, rod.z, rod.y, &magWaste, &rotation, &elevation );
+
+#if defined(RAD_ANDROID)
+        if( mCenterCameraHeld )
+        {
+            // Center the camera behind the character, looking in the direction
+            // of the character's heading. The extra half-turn is essential:
+            // the original direction placed the camera in front of the face.
+            // Keep the current distance and let angle interpolation ease it in.
+            rmt::Vector heading, vup, centeredRod;
+            mTarget->GetHeading( &heading );
+            vup.Set( 0.0f, 1.0f, 0.0f );
+
+            rmt::Matrix headingMatrix;
+            headingMatrix.Identity();
+            headingMatrix.FillHeading( heading, vup );
+
+            rmt::SphericalToCartesian(
+                mMagnitude,
+                mData.GetRotation(),
+                mData.GetElevation(),
+                &centeredRod.x,
+                &centeredRod.z,
+                &centeredRod.y );
+            centeredRod.Transform( headingMatrix );
+
+            rmt::CartesianToSpherical(
+                centeredRod.x,
+                centeredRod.z,
+                centeredRod.y,
+                &magWaste,
+                &rotation,
+                &elevation );
+
+            // Reverse horizontal placement by 180 degrees, so the camera
+            // settles behind the head rather than in front of the character.
+            rotation += rmt::PI;
+
+            // The later input pass suppresses right-stick/obstacle offsets
+            // while this target direction is active.
+        }
+#endif
 
         if ( GetFlag( (Flag)FIRST_TIME ) )
         {
@@ -823,6 +928,14 @@ void WalkerCam::UpdatePositionNormal( unsigned int milliseconds, float timeMod )
             bottomRayNotBlocked = iList.LineOfSight( lookFrom, lookTo, 0.1f );
         }
 
+#if defined(RAD_ANDROID)
+        // While R1 is held, prioritize the target heading over manual orbit
+        // and automatic horizontal obstacle correction.
+        if( mCenterCameraHeld )
+        {
+            xAxis = 0.0f;
+        }
+#endif
         rmt::Clamp( xAxis, -1.0f, 1.0f );
 
         rotation += ( xAxis * mData.GetRotationIncrement() * timeMod );
@@ -900,6 +1013,15 @@ void WalkerCam::UpdatePositionNormal( unsigned int milliseconds, float timeMod )
             elevation -= 0.2f;
         }
 
+#if defined(RAD_ANDROID)
+        // A smaller polar angle places the camera above the character. Smoothly
+        // adopt this angle during Modern Camera jumps instead of looking up from below.
+        if( mIsAirborn && modernCameraEnabled )
+        {
+            elevation = rmt::PI_BY2 - 0.45f;
+        }
+#endif
+
         float elevlag = SLIDE_INTERVAL * timeMod;
         CLAMP_TO_ONE(elevlag);
 
@@ -932,7 +1054,11 @@ void WalkerCam::UpdatePositionNormal( unsigned int milliseconds, float timeMod )
 
             desiredPosition.Add( rod );
 
-            if ( mIsAirborn )
+            bool holdAirborneCameraHeight = mIsAirborn;
+#if defined(RAD_ANDROID)
+            holdAirborneCameraHeight = holdAirborneCameraHeight && !modernCameraEnabled;
+#endif
+            if ( holdAirborneCameraHeight )
             {
                 desiredPosition.y = mCameraHeight;
             }

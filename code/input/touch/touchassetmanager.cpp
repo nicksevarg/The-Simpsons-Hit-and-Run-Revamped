@@ -10,6 +10,7 @@
 #if defined(RAD_ANDROID)
 #include <SDL.h>
 #include <SDL_system.h>
+#include <sys/stat.h>
 #include <android/log.h>
 
 #define TOUCH_ASSET_MANAGER_LOG_TAG "SimpsonsHitAndRun"
@@ -33,6 +34,18 @@ TouchAssetManager& TouchAssetManager::GetInstance()
 //=============================================================================
 // Construction
 //=============================================================================
+
+#if defined(RAD_ANDROID)
+static void MigrateLegacyTouchDirectory(const char* storagePath)
+{
+    char oldPath[512], newPath[512];
+    snprintf(oldPath, sizeof(oldPath), "%s/touch_controls", storagePath);
+    snprintf(newPath, sizeof(newPath), "%s/Touch", storagePath);
+    struct stat oldInfo, newInfo;
+    if (stat(newPath, &newInfo) != 0 && stat(oldPath, &oldInfo) == 0)
+        rename(oldPath, newPath);
+}
+#endif
 
 TouchAssetManager::TouchAssetManager()
 :
@@ -648,18 +661,20 @@ bool TouchAssetManager::BuildAssetRoot()
 #if !defined(RAD_ANDROID)
     return true;
 #else
-    const char* storagePath = SDL_AndroidGetExternalStoragePath();
+    const char* storagePath = SDL_AndroidGetApplicationExternalFilesPath();
 
     if ( storagePath == 0 || storagePath[ 0 ] == '\0' )
     {
-        SetLastError( "SDL_AndroidGetExternalStoragePath returned null/empty." );
+        SetLastError( "SDL_AndroidGetApplicationExternalFilesPath returned null/empty." );
         return false;
     }
+
+    MigrateLegacyTouchDirectory( storagePath );
 
     snprintf(
         mAssetRoot,
         sizeof( mAssetRoot ),
-        "%s/touch_controls",
+        "%s/Touch",
         storagePath
     );
 

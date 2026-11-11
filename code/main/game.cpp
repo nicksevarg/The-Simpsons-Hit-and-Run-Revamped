@@ -58,6 +58,7 @@
 #ifdef RAD_ANDROID
 #include <input/touch/touchcontextresolver.h>
 #include <input/touch/touchhudsystem.h>
+#include <input/touch/touchinputmodemanager.h>
 #include <input/touch/touchinputadapter.h>
 #include <worldsim/avatarmanager.h>
 #include <input/touch/touchassetextractor.h>
@@ -67,11 +68,9 @@
 #include <input/touch/touchcontrolsconfigurationmanager.h>
 #endif
 
-#if defined(RAD_ANDROID)
-  #include <android/log.h>
-  #define LOG_TAG "SimpsonsHitAndRun"
-  #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
-  #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#ifdef RAD_ANDROID
+void InitializeSHARAndroidFrameRateSelection();
+void InitializeSHARGraphicsEffectConfigurations();
 #endif
 //******************************************************************************
 //
@@ -143,6 +142,13 @@ static void UpdateTouchHudSystemFromSDLEvent( const SDL_Event& msg )
     {
         case SDL_FINGERDOWN:
         {
+            // A screen touch explicitly reselects the touchscreen mode and
+            // restores the in-game HUD before the touch is routed.
+            TouchInputModeManager::GetInstance().NotifyTouchInput();
+            TouchInputModeManager::GetInstance().SetTouchHudEnabled( true );
+            TouchHudSystem::GetInstance().SetEnabled( true );
+            UpdateTouchContextResolverFromGame();
+
             TouchInputAdapter::GetInstance().SetEnabled( true );
             TouchInputAdapter::GetInstance().SetTargetControllerIndex( 0 );
 
@@ -192,6 +198,13 @@ static void UpdateTouchHudSystemFromSDLEvent( const SDL_Event& msg )
     {
         case SDL_EVENT_FINGER_DOWN:
         {
+            // A screen touch explicitly reselects the touchscreen mode and
+            // restores the in-game HUD before the touch is routed.
+            TouchInputModeManager::GetInstance().NotifyTouchInput();
+            TouchInputModeManager::GetInstance().SetTouchHudEnabled( true );
+            TouchHudSystem::GetInstance().SetEnabled( true );
+            UpdateTouchContextResolverFromGame();
+
             TouchInputAdapter::GetInstance().SetEnabled( true );
             TouchInputAdapter::GetInstance().SetTargetControllerIndex( 0 );
 
@@ -258,7 +271,8 @@ static void UpdateTouchInputModeFromSDLEvent( const SDL_Event& msg )
 
         case SDL_CONTROLLERDEVICEADDED:
         {
-            TouchInputModeManager::GetInstance().NotifyGamepadConnected();
+            // Device enumeration alone must not hide touchscreen controls.
+            TouchInputModeManager::GetInstance().NotifyGamepadCandidateConnected();
             break;
         }
 
@@ -285,7 +299,8 @@ static void UpdateTouchInputModeFromSDLEvent( const SDL_Event& msg )
 
         case SDL_JOYDEVICEADDED:
         {
-            TouchInputModeManager::GetInstance().NotifyGamepadConnected();
+            // Device enumeration alone must not hide touchscreen controls.
+            TouchInputModeManager::GetInstance().NotifyGamepadCandidateConnected();
             break;
         }
 
@@ -330,7 +345,8 @@ static void UpdateTouchInputModeFromSDLEvent( const SDL_Event& msg )
 
         case SDL_EVENT_GAMEPAD_ADDED:
         {
-            TouchInputModeManager::GetInstance().NotifyGamepadConnected();
+            // Device enumeration alone must not hide touchscreen controls.
+            TouchInputModeManager::GetInstance().NotifyGamepadCandidateConnected();
             break;
         }
 
@@ -357,7 +373,8 @@ static void UpdateTouchInputModeFromSDLEvent( const SDL_Event& msg )
 
         case SDL_EVENT_JOYSTICK_ADDED:
         {
-            TouchInputModeManager::GetInstance().NotifyGamepadConnected();
+            // Device enumeration alone must not hide touchscreen controls.
+            TouchInputModeManager::GetInstance().NotifyGamepadCandidateConnected();
             break;
         }
 
@@ -713,6 +730,9 @@ void Game::Initialize()
     // hacemos que se utilice en el ciclo del juego al arrancar la configuración del archivo Simpsons_configuration.txt
     GetAndroidConfigurationManager()->Initialize();
 
+    // Load the persisted FPS cap and request a matching Android display mode where supported.
+    InitializeSHARAndroidFrameRateSelection();
+    InitializeSHARGraphicsEffectConfigurations();
 
     #endif
 
@@ -929,7 +949,6 @@ void Game::Run()
             GCManager::GetInstance()->OnTimerDone( elapsed, NULL );
 #endif
         }
-
         //
         // Service FTech subsystems.
         //
@@ -941,7 +960,6 @@ void Game::Run()
         {
             ::radMemoryMonitorService();
         }
-
         //
         // Service the sound renderer.
         //
@@ -956,7 +974,6 @@ void Game::Run()
             //
             SoundManager::GetInstance()->UpdateOncePerFrame( 0, NUM_CONTEXTS, false, true );
         }
-
         //
         // Spin Pure3D async loading.
         //
@@ -1003,6 +1020,7 @@ void Game::Run()
         END_PROFILE( "GameLoop" )
 
         END_PROFILER_FRAME();
+
     }
 }
 

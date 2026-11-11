@@ -31,6 +31,23 @@ public:
     void  SetMatrix(unsigned paramName, const pddiMatrix& v) {shader->SetMatrix(paramName, v);}
 
     bool mTranslucent;
+    bool mEnvironmentCelEligible;
+    // Legacy alpha-test exception; keep its original translucency requirement.
+    bool mEnvironmentCelAlphaTestEligible;
+    // Foliage-only exception: alpha test enabled and no alpha blending.
+    // This deliberately ignores the coarse HasTranslucency header flag.
+    bool mEnvironmentCelFoliageCutoutEligible;
+
+    // Loaded shader-definition values used by Mode 10 foliage diagnostics.
+    bool mEnvironmentCelHasAlphaTest;
+    bool mEnvironmentCelHasAlphaBlend;
+    // Preserve the source blend mode for temporary outline-only overrides.
+    int mEnvironmentCelBlendMode;
+    bool mEnvironmentCelHasTranslucency;
+    float mEnvironmentCelAlphaRef;
+    int mEnvironmentCelAlphaCompare;
+    bool mEnvironmentCelTwoSided;
+    unsigned long long mEnvironmentCelBaseTextureUID;
 protected:
     ~tShader();
     pddiShader* shader;

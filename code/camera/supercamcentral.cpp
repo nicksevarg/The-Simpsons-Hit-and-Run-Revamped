@@ -226,6 +226,9 @@ SuperCamCentral::SuperCamCentral() :
     mNumRegisteredSuperCams( 0 ),
     mCamera( NULL ),
     mTarget( NULL ),
+#if defined(RAD_ANDROID)
+    mDrivingCameraCycleStep( -1 ),
+#endif
 #ifdef SUPERCAM_DEBUG
     mDebugXZAngle( 0.0f ),
     mDebugYAngle( rmt::PI ),
@@ -1192,8 +1195,148 @@ SuperCam* SuperCamCentral::GetSuperCam( SuperCam::Type type ) const
 // Return:      bool 
 //
 //=============================================================================
+#if defined(RAD_ANDROID)
+void SuperCamCentral::SetDrivingCameraModeFromSettings( int mode )
+{
+    if ( mode < 0 || mode > 3 || mTarget == NULL || !mTarget->IsCar() )
+    {
+        return;
+    }
+
+    mDrivingCameraCycleStep = mode;
+
+    FollowCam* farFollowCam = NULL;
+    unsigned int cameraIndex;
+    for ( cameraIndex = 0; cameraIndex < MAX_CAMERAS; ++cameraIndex )
+    {
+        if ( mSuperCameras[ cameraIndex ] != NULL &&
+             mSuperCameras[ cameraIndex ]->GetType() == SuperCam::FAR_FOLLOW_CAM )
+        {
+            farFollowCam = static_cast<FollowCam*>( mSuperCameras[ cameraIndex ] );
+            break;
+        }
+    }
+
+    if ( farFollowCam != NULL )
+    {
+        // Extra-far is the existing far-follow camera with its 2x distance mode.
+        // This setter also clears right-stick zoom so the effects cannot stack.
+        farFollowCam->SetDrivingExtraZoomEnabled( mode == 3 );
+    }
+
+    SuperCam::Type nextCameraType = SuperCam::BUMPER_CAM;
+    if ( mode == 1 )
+    {
+        nextCameraType = SuperCam::NEAR_FOLLOW_CAM;
+    }
+    else if ( mode == 2 || mode == 3 )
+    {
+        nextCameraType = SuperCam::FAR_FOLLOW_CAM;
+    }
+
+    // If only the far camera distance changes, leave the active camera in place.
+    if ( mActiveSuperCam == NULL || mActiveSuperCam->GetType() != nextCameraType )
+    {
+        SelectSuperCam( nextCameraType, SuperCamCentral::CUT, 0 );
+    }
+}
+
+void SuperCamCentral::ResetDrivingCameraModeFromSettings()
+{
+    mDrivingCameraCycleStep = -1;
+
+    unsigned int cameraIndex;
+    for ( cameraIndex = 0; cameraIndex < MAX_CAMERAS; ++cameraIndex )
+    {
+        if ( mSuperCameras[ cameraIndex ] != NULL &&
+             mSuperCameras[ cameraIndex ]->GetType() == SuperCam::FAR_FOLLOW_CAM )
+        {
+            static_cast<FollowCam*>( mSuperCameras[ cameraIndex ] )->SetDrivingExtraZoomEnabled( false );
+            break;
+        }
+    }
+}
+
+int SuperCamCentral::GetDrivingCameraModeForSettings() const
+{
+    return mDrivingCameraCycleStep;
+}
+#endif
+
 bool SuperCamCentral::ToggleSuperCam( bool forwards, bool quickTransition )
 {
+#if defined(RAD_ANDROID)
+    // Standard driving cycle: front/bumper -> close follow -> normal far follow
+    // -> extra-far (2x distance). The fourth state reuses the far-follow camera.
+    // Cheat-camera and supersprint cycles retain their original behavior.
+    if ( mTarget != NULL &&
+         mTarget->IsCar() &&
+         !GetGameplayManager()->IsSuperSprint() &&
+         !GetCheatInputSystem()->IsCheatEnabled( CHEAT_ID_UNLOCK_CAMERAS ) )
+    {
+        int nextStep;
+        if ( mDrivingCameraCycleStep < 0 )
+        {
+            nextStep = forwards ? 0 : 3;
+        }
+        else
+        {
+            nextStep = ( mDrivingCameraCycleStep + ( forwards ? 1 : 3 ) ) % 4;
+        }
+        mDrivingCameraCycleStep = nextStep;
+
+        FollowCam* farFollowCam = NULL;
+        unsigned int cameraIndex;
+        for ( cameraIndex = 0; cameraIndex < MAX_CAMERAS; ++cameraIndex )
+        {
+            if ( mSuperCameras[ cameraIndex ] != NULL &&
+                 mSuperCameras[ cameraIndex ]->GetType() == SuperCam::FAR_FOLLOW_CAM )
+            {
+                farFollowCam = static_cast<FollowCam*>( mSuperCameras[ cameraIndex ] );
+                break;
+            }
+        }
+
+        if ( farFollowCam != NULL )
+        {
+            farFollowCam->SetDrivingExtraZoomEnabled( nextStep == 3 );
+        }
+
+        SuperCam::Type nextCameraType = SuperCam::BUMPER_CAM;
+        if ( nextStep == 1 )
+        {
+            nextCameraType = SuperCam::NEAR_FOLLOW_CAM;
+        }
+        else if ( nextStep == 2 || nextStep == 3 )
+        {
+            nextCameraType = SuperCam::FAR_FOLLOW_CAM;
+        }
+
+        // Step 3 is the same far-follow camera with extra zoom. If it is already
+        // active, changing its target distance is sufficient and stays smooth.
+        if ( mActiveSuperCam == NULL || mActiveSuperCam->GetType() != nextCameraType )
+        {
+            SelectSuperCam( nextCameraType, SuperCamCentral::CUT | SuperCamCentral::QUICK, 0 );
+        }
+        return true;
+    }
+    else if ( mTarget != NULL && mTarget->IsCar() )
+    {
+        // Never leave the special 2x mode enabled in cheat or supersprint views.
+        mDrivingCameraCycleStep = -1;
+        unsigned int cameraIndex;
+        for ( cameraIndex = 0; cameraIndex < MAX_CAMERAS; ++cameraIndex )
+        {
+            if ( mSuperCameras[ cameraIndex ] != NULL &&
+                 mSuperCameras[ cameraIndex ]->GetType() == SuperCam::FAR_FOLLOW_CAM )
+            {
+                static_cast<FollowCam*>( mSuperCameras[ cameraIndex ] )->SetDrivingExtraZoomEnabled( false );
+                break;
+            }
+        }
+    }
+#endif
+
     SuperCam::Type* cameras = NULL;
     unsigned int numCameras = 0;
     if ( mTarget->IsCar() )
@@ -1531,6 +1674,11 @@ void SuperCamCentral::SetTarget( ISuperCamTarget* target )
 {
     if ( mTarget != target )
     {
+#if defined(RAD_ANDROID)
+        // Entering another target/vehicle starts at its ordinary default camera.
+        // The first shoulder press follows the existing front -> close -> far order.
+        mDrivingCameraCycleStep = -1;
+#endif
         unsigned int i;
         for ( i = 0; i < MAX_CAMERAS; ++i )
         {

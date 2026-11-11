@@ -39,6 +39,7 @@ class NISPlayer : public SimpleAnimationPlayer
         virtual void ClearData();
 
         bool GetBoundingBox( rmt::Box3D* box );
+        void SetSHARCatapultOutlineGag(bool enabled) { mSHARCatapultOutlineGag = enabled; }
         tDrawable* GetDrawable() { return mpSceneGraph; }
 
     protected:
@@ -52,6 +53,7 @@ class NISPlayer : public SimpleAnimationPlayer
         NISPlayer& operator=( const NISPlayer& nisPlayer );
 
         tDrawable* mpSceneGraph;
+        bool mSHARCatapultOutlineGag;
 };
 
 

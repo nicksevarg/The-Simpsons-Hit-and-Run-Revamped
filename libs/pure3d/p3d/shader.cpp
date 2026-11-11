@@ -12,12 +12,36 @@
 #include <string.h>
 
 tShader::tShader()
+    : mTranslucent(false),
+      mEnvironmentCelEligible(true),
+      mEnvironmentCelAlphaTestEligible(false),
+      mEnvironmentCelFoliageCutoutEligible(false),
+      mEnvironmentCelHasAlphaTest(false),
+      mEnvironmentCelHasAlphaBlend(false),
+      mEnvironmentCelBlendMode(PDDI_BLEND_NONE),
+      mEnvironmentCelHasTranslucency(false),
+      mEnvironmentCelAlphaRef(0.5f),
+      mEnvironmentCelAlphaCompare(PDDI_COMPARE_GREATEREQUAL),
+      mEnvironmentCelTwoSided(false),
+      mEnvironmentCelBaseTextureUID(0)
 {
     shader = p3d::device->NewShader("simple");
     shader->AddRef();
 }
 
 tShader::tShader(const char* shaderName, char* definition)
+    : mTranslucent(false),
+      mEnvironmentCelEligible(true),
+      mEnvironmentCelAlphaTestEligible(false),
+      mEnvironmentCelFoliageCutoutEligible(false),
+      mEnvironmentCelHasAlphaTest(false),
+      mEnvironmentCelHasAlphaBlend(false),
+      mEnvironmentCelBlendMode(PDDI_BLEND_NONE),
+      mEnvironmentCelHasTranslucency(false),
+      mEnvironmentCelAlphaRef(0.5f),
+      mEnvironmentCelAlphaCompare(PDDI_COMPARE_GREATEREQUAL),
+      mEnvironmentCelTwoSided(false),
+      mEnvironmentCelBaseTextureUID(0)
 {
     shader = p3d::device->NewShader(shaderName, definition);
     shader->AddRef();
@@ -129,6 +153,13 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
 
     tShader* shader = NULL;
+    bool hasAlphaTest = false;
+    bool hasAlphaBlend = false;
+    int blendMode = PDDI_BLEND_NONE;
+    float alphaRef = 0.5f;
+    int alphaCompare = PDDI_COMPARE_GREATEREQUAL;
+    bool twoSided = false;
+    unsigned long long baseTextureUID = 0;
 
     while(f->ChunksRemaining())
     {
@@ -174,6 +205,10 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                     }
 
                     shader->SetTexture(param, tex);
+                    if (param == PDDI_SP_BASETEX && tex != NULL && baseTextureUID == 0)
+                    {
+                        baseTextureUID = static_cast<unsigned long long>(tex->GetUID());
+                    }
                 }
                 break;
 
@@ -186,6 +221,22 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                     unsigned val = f->GetInt();
 
                     shader->SetInt(param, val);
+                    if (param == PDDI_SP_BLENDMODE)
+                    {
+                        blendMode = static_cast<int>(val);
+                        hasAlphaBlend = (val != PDDI_BLEND_NONE);
+                    }
+                    if (param == PDDI_SP_ALPHATEST)
+                        hasAlphaTest = (val != 0);
+                    if (param == PDDI_SP_ALPHACOMPARE)
+                        alphaCompare = static_cast<int>(val);
+                    if (param == PDDI_SP_TWOSIDED)
+                        twoSided = (val != 0);
+                    if ((param == PDDI_SP_BLENDMODE && val != PDDI_BLEND_NONE) ||
+                        (param == PDDI_SP_ALPHATEST && val != 0))
+                    {
+                        shader->mEnvironmentCelEligible = false;
+                    }
                 }
                 break;
 
@@ -207,6 +258,8 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 #endif
 
                     shader->SetFloat(param, val);
+                    if (param == PDDI_SP_ALPHACOMPARE_THRESHOLD)
+                        alphaRef = val;
                 }
                 break;
 
@@ -273,6 +326,20 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         shader->SetFloat( PDDI_SP_MIPMAP_SHARPNESS, 0.0f );
     }
     shader->mTranslucent = HasTranslucency;
+    shader->mEnvironmentCelAlphaTestEligible =
+        hasAlphaTest && !hasAlphaBlend && !HasTranslucency;
+    shader->mEnvironmentCelFoliageCutoutEligible =
+        hasAlphaTest && !hasAlphaBlend;
+    shader->mEnvironmentCelHasAlphaTest = hasAlphaTest;
+    shader->mEnvironmentCelHasAlphaBlend = hasAlphaBlend;
+    shader->mEnvironmentCelBlendMode = blendMode;
+    shader->mEnvironmentCelHasTranslucency = HasTranslucency;
+    shader->mEnvironmentCelAlphaRef = alphaRef;
+    shader->mEnvironmentCelAlphaCompare = alphaCompare;
+    shader->mEnvironmentCelTwoSided = twoSided;
+    shader->mEnvironmentCelBaseTextureUID = baseTextureUID;
+    if (HasTranslucency)
+        shader->mEnvironmentCelEligible = false;
     shader->SetName(name);
     return shader;
 }

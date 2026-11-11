@@ -23,6 +23,41 @@
 #include <render/DSG/InstStatPhysDSG.h>
 #include <memory/srrmemory.h>
 
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHARCelShadingLite();
+bool IsSHARGagCharacterCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh)
+{
+    if (drawable == NULL)
+        return;
+    if (!IsCelShadingEnabled() ||
+        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+    {
+        drawable->Display();
+        return;
+    }
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
+
 //************************************************************************
 //
 // Global Data, Local Data, Local Classes
@@ -96,7 +131,12 @@ void InstStatPhysDSG::Display()
         BillboardQuadManager::Enable();
     }
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mMatrix);
-        mpGeo->Display();
+#ifdef RAD_ANDROID
+    const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
+    DisplaySHAREnvironmentCelDrawable(mpGeo, foliageMesh);
+#else
+    mpGeo->Display();
+#endif
     p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
     if(CastsShadow())
     {
@@ -361,6 +401,11 @@ InstStatPhysDSG* InstStatPhysDSG::Clone(const char* Name, const rmt::Matrix& iMa
     InstStatPhysDSG* c = new InstStatPhysDSG();
     rAssert(c);
     c->SetName(Name);
+#ifdef RAD_ANDROID
+    c->SetSHAREnvironmentFoliageMesh(this->IsSHAREnvironmentFoliageMesh());
+    c->SetSHAREnvironmentRoadCandidate(this->IsSHAREnvironmentRoadCandidate());
+    c->SetSHAREnvironmentSourceAssetUID(this->GetSHAREnvironmentSourceAssetUID());
+#endif
     c->mMatrix = iMatrix;
     c->mpGeo = this->mpGeo;
     c->mpGeo->AddRef();

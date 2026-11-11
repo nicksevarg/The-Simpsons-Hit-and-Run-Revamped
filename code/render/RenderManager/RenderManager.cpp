@@ -33,6 +33,10 @@
 #include <render/RenderManager/RenderLayer.h>
 #include <render/Culling/WorldScene.h>
 #include <render/RenderManager/RenderManager.h>
+
+#ifdef RAD_ANDROID
+void SetSHARMoodTint(float red, float green, float blue);
+#endif
 #include <render/RenderManager/WorldRenderLayer.h>
 #include <render/RenderManager/FrontEndRenderLayer.h>
 #include <render/IntersectManager/IntersectManager.h>
@@ -77,6 +81,10 @@
 
 #include <sound/soundmanager.h>
 
+#ifdef RAD_ANDROID
+extern void SHARMarkFrameRenderedForPresentation(void);
+#endif
+
 #include <presentation/presentation.h>
 #include <presentation/fmvplayer/fmvplayer.h>
 
@@ -84,30 +92,22 @@
 #include <p3d/light.hpp>
 #include <p3d/view.hpp>
 
+#ifdef RAD_ANDROID
+#include <pddi/gles/gldisplay.hpp>
+#endif
+
 #ifdef DEBUGWATCH
 #include <radmemorymonitor.hpp>
 #include <worldsim/worldphysicsmanager.h>
 #endif
 
 
-#if defined(RAD_ANDROID)
-#include <android/log.h>
+#ifdef RAD_ANDROID
 #include <input/touch/touchhudrenderer.h>
-#define LOG_TAG "SimpsonsHitAndRun"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
-#elif defined(RAD_VITA)
-#include <psp2/kernel/clib.h>
-  #define LOGI(...) do { sceClibPrintf(__VA_ARGS__); sceClibPrintf("\n"); } while(0)
-  #define LOGE(...) do { sceClibPrintf(__VA_ARGS__); sceClibPrintf("\n"); } while(0)
-
-#else
-  #include <cstdio>
-  #define LOGI(...) do { std::printf(__VA_ARGS__); std::printf("\n"); std::fflush(stdout); } while(0)
-  #define LOGE(...) do { std::printf(__VA_ARGS__); std::printf("\n"); std::fflush(stdout); } while(0)
 #endif
-//******************************************************************************
+
+
+//****************************************************************************** 
 //
 // Global Data, Local Data, Local Classes
 //
@@ -731,6 +731,7 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
     p3d::context->SwapBuffers();
     END_PROFILE("Swap Buffers");
 
+
 #if defined( RAD_XBOX ) || defined ( RAD_GAMECUBE ) || defined( RAD_WIN32 )
     LoadingManager *lm = GetLoadingManager();
     PresentationManager *pm = GetPresentationManager();
@@ -777,6 +778,21 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
 
     for (int i = RenderEnums::numLayers - 1; i > -1; i--)
     {
+#ifdef RAD_ANDROID
+        /*
+         * Apply the screen-space cel pass after all non-GUI layers have
+         * rendered, but immediately before the dedicated GUI layer.
+         * This keeps Scrooby GUI and touch controls out of the post-process.
+         */
+        if (i == RenderEnums::GUI)
+        {
+            ApplyCelPostProcessBeforeGui(
+                p3d::display->GetWidth(),
+                p3d::display->GetHeight()
+            );
+        }
+#endif
+
 #ifdef DEBUGINFO_ENABLED
         if (i == RenderEnums::GUI)
         {
@@ -878,6 +894,9 @@ void RenderManager::ContextUpdate( unsigned int iElapsedTime )
         TouchHudRenderer::GetInstance().RenderCinematicSkip();
     #endif
     p3d::context->EndFrame(false);
+#ifdef RAD_ANDROID
+    SHARMarkFrameRenderedForPresentation();
+#endif
 
 #ifdef DEBUGWATCH
     mDebugRenderTime = radTimeGetMicroseconds() - t0;
@@ -2002,6 +2021,9 @@ void RenderManager::SetLevelLayerLights( tLightGroup* SunGroup )
         mMood.mOriginals = 0;
     }
     mMood.mSunGroup = SunGroup;
+#ifdef RAD_ANDROID
+    SetSHARMoodTint(1.0f, 1.0f, 1.0f);
+#endif
     if ( SunGroup != NULL )
     {
         // Mood lighting is enabled, set the new parameters
@@ -2035,6 +2057,9 @@ void RenderManager::ClearLevelLayerLights()
     delete [] mMood.mOriginals;
     mMood.mOriginals = 0;
     mMood.mSunGroup = 0;
+#ifdef RAD_ANDROID
+    SetSHARMoodTint(1.0f, 1.0f, 1.0f);
+#endif
 }
 
 
@@ -2161,6 +2186,12 @@ void RenderManager::TransitionMoodLighting( unsigned int ElapsedTime )
     }
 
     tColour curMod = mMood.CalculateModulus();
+#ifdef RAD_ANDROID
+    SetSHARMoodTint(
+        static_cast<float>(curMod.Red()) / 255.0f,
+        static_cast<float>(curMod.Green()) / 255.0f,
+        static_cast<float>(curMod.Blue()) / 255.0f);
+#endif
 
     for( int i = 0; i < mMood.mSunGroup->GetNumLights(); ++i )
     {
@@ -2202,6 +2233,9 @@ void RenderManager::ResetMoodLighting( bool Immediate )
             tLight* l = mMood.mSunGroup->GetLight( i );
             l->SetColour( mMood.mOriginals[ i ] );
         }
+#ifdef RAD_ANDROID
+        SetSHARMoodTint(1.0f, 1.0f, 1.0f);
+#endif
     }
     else
     {

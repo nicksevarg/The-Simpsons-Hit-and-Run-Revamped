@@ -29,6 +29,11 @@
 #include <radmath/radmath.hpp>
 #include "ResourceManager/FeResourceManager.h"
 
+#ifdef RAD_ANDROID
+void SetSHARPreviewCharacterCelPassActive( bool enabled );
+bool IsSHARPreviewCharacterCelPassActive();
+#endif
+
 // TC [HACK]: Override camera settings.
 //
 //#define OVERRIDE_CAMERA_SETTINGS
@@ -74,6 +79,9 @@ FePure3dObject::FePure3dObject
     m_clearDepthBufferEnabled( false ),
     m_zbufferEnabled( true ),
     m_isWideScreenCorrectionEnabled( false )
+#ifdef RAD_ANDROID
+    , m_sharPreviewCharacterCelShadingEnabled( false )
+#endif
 {
     NormalizeCoord( x, y, mPosX, mPosY );
 /*
@@ -506,7 +514,20 @@ void FePure3dObject::Render()
     // draw the damn thing!
     //
     rAssert( m_RuntimeDrawable != NULL );
+#ifdef RAD_ANDROID
+    const bool previousPreviewCelPass = IsSHARPreviewCharacterCelPassActive();
+    if( m_sharPreviewCharacterCelShadingEnabled )
+    {
+        SetSHARPreviewCharacterCelPassActive( true );
+    }
+#endif
     m_RuntimeDrawable->Display();
+#ifdef RAD_ANDROID
+    if( m_sharPreviewCharacterCelShadingEnabled )
+    {
+        SetSHARPreviewCharacterCelPassActive( previousPreviewCelPass );
+    }
+#endif
 
     // restore everything we changed
     //

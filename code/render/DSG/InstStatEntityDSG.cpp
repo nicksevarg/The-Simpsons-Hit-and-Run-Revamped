@@ -23,6 +23,41 @@
 #include <p3d/view.hpp>
 #include <p3d/camera.hpp>
 #include <p3d/billboardobject.hpp>
+
+#ifdef RAD_ANDROID
+bool IsCelShadingEnabled();
+bool IsSHARCelShadingLite();
+bool IsSHARGagCharacterCelPassActive();
+void SetCelShadingObjectEnabled(bool enabled);
+void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
+
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh)
+{
+    if (drawable == NULL)
+        return;
+    if (!IsCelShadingEnabled() ||
+        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+    {
+        drawable->Display();
+        return;
+    }
+    SetSHAREnvironmentCelPassActive(true);
+    SetCelShadingObjectEnabled(true);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    if (foliageMesh)
+        SetSHAREnvironmentFoliageMeshPassActive(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHAREnvironmentCelPassActive(false);
+}
+#endif
+
 //************************************************************************
 //
 // Global Data, Local Data, Local Classes
@@ -111,7 +146,12 @@ void InstStatEntityDSG::Display()
         BillboardQuadManager::Enable();
     }
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, mpMatrix);
-        mpDrawstuff->Display();
+#ifdef RAD_ANDROID
+    const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
+    DisplaySHAREnvironmentCelDrawable(mpDrawstuff, foliageMesh);
+#else
+    mpDrawstuff->Display();
+#endif
     p3d::pddi->PopMatrix(PDDI_MATRIX_MODELVIEW);
 
     if(CastsShadow())
