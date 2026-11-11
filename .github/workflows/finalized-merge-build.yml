@@ -9,6 +9,7 @@ on:
       - '.github/workflows/**'
       - 'icon-source/**'
       - 'tools/generate_adaptive_icon.py'
+      - 'README*.md'
   workflow_dispatch:
 
 permissions:
