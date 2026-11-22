@@ -13,6 +13,10 @@
 #include <p3d/anim/pose.hpp>
 #include <p3d/anim/skeleton.hpp>
 #include <p3d/utility.hpp>
+#include <p3d/geometry.hpp>
+#include <p3d/entity.hpp>
+#include <p3d/shader.hpp>
+#include <p3d/sharrendercontext.hpp>
 #include <p3d/matrixstack.hpp>
 #include <p3d/view.hpp>
 #include <p3d/camera.hpp>
@@ -22,15 +26,98 @@
 #include <radmath/util.hpp>
 #include <float.h>
 #include <string.h>
+#include <vector>
 
 #ifdef RAD_ANDROID
 bool IsSHAREnvironmentCelPassActive();
 bool IsCelShadingOutlinePass();
 bool IsCelShadingEnabled();
 bool IsSHARGagCatapultCelPassActive();
+bool IsSHARGagCharacterCelPassActive();
+bool IsSHARKwikATMDrawActive();
+void SetSHARKwikATMDrawActive(bool enabled);
+bool IsSHARVerifiedOpaqueGagDrawActive();
+void SetSHARVerifiedOpaqueGagDrawActive(bool enabled);
+void SetSHARCharacterMaskModelPass(bool enabled);
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
+
+// gag_atm.p3d's ATM is a PROP child in a composite drawable. Match its
+// authored material instead of changing the generic ENTITY_DSG alpha flag.
+static bool IsSHARKwikATMProp(tDrawable* drawable)
+{
+    tGeometry* geometry = dynamic_cast<tGeometry*>(drawable);
+    if (geometry == NULL)
+        return false;
+
+    static const unsigned long long atmShaderUID = 0x5EF5DDB59CE85995ULL;
+    for (int shaderIndex = 0; shaderIndex < geometry->GetNumShader(); ++shaderIndex)
+    {
+        tShader* shader = geometry->GetShader(shaderIndex);
+        if (shader != NULL &&
+            static_cast<unsigned long long>(shader->GetUID()) == atmShaderUID)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+ 
+static bool IsSHARVerifiedOpaqueGagProp(tDrawable* drawable)
+{
+    if (IsSHARKwikATMProp(drawable))
+        return true;
+
+    tGeometry* geometry = dynamic_cast<tGeometry*>(drawable);
+    if (geometry == NULL || geometry->GetNumShader() <= 0)
+        return false;
+
+    static const unsigned long long charSwatchesTextureUID =
+        static_cast<unsigned long long>(tName::MakeUID("char_swatches.bmp"));
+    static const unsigned long long lampShadeTextureUID =
+        static_cast<unsigned long long>(tName::MakeUID("lamp_shade.bmp"));
+    static const unsigned long long monkeyTextureUID =
+        static_cast<unsigned long long>(tName::MakeUID("monekey.bmp"));
+    static const unsigned long long monkeyJacketTextureUID =
+        static_cast<unsigned long long>(tName::MakeUID("monkey_jacket.bmp"));
+    static const unsigned long long monkeyCheeksTextureUID =
+        static_cast<unsigned long long>(tName::MakeUID("monkey_cheeks.tga"));
+
+    bool hasVerifiedOpaqueSourceMaterial = false;
+    for (int shaderIndex = 0; shaderIndex < geometry->GetNumShader(); ++shaderIndex)
+    {
+        tShader* shader = geometry->GetShader(shaderIndex);
+        if (shader == NULL ||
+            !shader->mEnvironmentCelHasTranslucency ||
+            !shader->mEnvironmentCelHasAlphaBlend ||
+            shader->mEnvironmentCelBlendMode != PDDI_BLEND_ALPHA ||
+            shader->mEnvironmentCelHasAlphaTest)
+            return false;
+
+        const unsigned long long textureUID =
+            shader->mEnvironmentCelBaseTextureUID;
+        if (textureUID == charSwatchesTextureUID ||
+            textureUID == lampShadeTextureUID ||
+            textureUID == monkeyTextureUID ||
+            textureUID == monkeyJacketTextureUID)
+        {
+            hasVerifiedOpaqueSourceMaterial = true;
+        }
+        else if (textureUID != monkeyCheeksTextureUID)
+        {
+            // Do not admit the observatory teleporter glass or alarm/effect
+            // materials into the monkey's verified gag draw path.
+            return false;
+        }
+    }
+
+    // gag_matt.p3d's head is a mixed-material mesh: the cheeks TGA has real
+    // alpha and is allowed only as an overlay beside an opaque monkey BMP.
+    // glmat.cpp checks each material's source alpha depth separately, so the
+    // cheeks keep blending while the two alpha-free monkey BMPs do not.
+    return hasVerifiedOpaqueSourceMaterial;
+}
 
 static bool IsSHARCatapultStaticProp(tDrawable* drawable)
 {
@@ -61,6 +148,86 @@ static bool IsSHARCatapultStaticProp(tDrawable* drawable)
             return true;
     }
     return false;
+}
+
+// gag_duff.p3d is a 22-surface animated poster assembly. Its 21 duffsShape
+// meshes and billboard_rotatorShape1 are flat four-vertex surfaces with no
+// authored normals; the radial no-normal outline fallback expands across the
+// artwork and produces internal black patches as the image changes. Exclude
+// only these image surfaces, keeping the separate picture_frameShape outlined.
+static bool IsSHARDuffPosterSurface(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return false;
+
+    static const unsigned long long posterSurfaceUIDs[] =
+    {
+        0xDA30C7F2D7981799ULL, // duffsShape4
+        0xDA30C7F2D7981798ULL, // duffsShape5
+        0xDA30C7F2D798179BULL, // duffsShape6
+        0xDA30C7F2D798179AULL, // duffsShape7
+        0xDA30C7F2D7981795ULL, // duffsShape8
+        0xDA30C7F2D7981794ULL, // duffsShape9
+        0x79F40C5B2609CF54ULL, // duffsShape10
+        0x79F40C5B2609CF55ULL, // duffsShape11
+        0x79F40C5B2609CF56ULL, // duffsShape12
+        0x79F40C5B2609CF57ULL, // duffsShape13
+        0x79F40C5B2609CF50ULL, // duffsShape14
+        0x79F40C5B2609CF51ULL, // duffsShape15
+        0x79F40C5B2609CF52ULL, // duffsShape16
+        0x79F40C5B2609CF53ULL, // duffsShape17
+        0x79F40C5B2609CF5CULL, // duffsShape18
+        0x79F40C5B2609CF5DULL, // duffsShape19
+        0x79F40C5B260CD011ULL, // duffsShape20
+        0x79F40C5B260CD010ULL, // duffsShape21
+        0x79F40C5B260CD013ULL, // duffsShape22
+        0x79F40C5B260CD012ULL, // duffsShape23
+        0x79F40C5B260CD015ULL, // duffsShape24
+        0x345B4AFEC40725E7ULL  // billboard_rotatorShape1
+    };
+
+    const unsigned long long drawableUID =
+        static_cast<unsigned long long>(drawable->GetUID());
+    for (unsigned i = 0; i < sizeof(posterSurfaceUIDs) / sizeof(posterSurfaceUIDs[0]); ++i)
+    {
+        if (drawableUID == posterSurfaceUIDs[i])
+            return true;
+    }
+    return false;
+}
+
+static void DisplaySHARGagStaticProp(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return;
+
+    if (!IsCelShadingEnabled())
+    {
+        drawable->Display();
+        return;
+    }
+
+    if (IsSHARDuffPosterSurface(drawable))
+    {
+        // Retain normal cel shading and character-mask/depth state, but draw
+        // the animated poster image only once with its outline pass disabled.
+        SetSHARCharacterMaskModelPass(true);
+        SetCelShadingObjectEnabled(true);
+        SetCelShadingOutlinePass(false);
+        drawable->Display();
+        SetCelShadingObjectEnabled(false);
+        SetSHARCharacterMaskModelPass(false);
+        return;
+    }
+
+    SetSHARCharacterMaskModelPass(true);
+    SetCelShadingObjectEnabled(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+    SetSHARCharacterMaskModelPass(false);
 }
 
 static void DisplaySHARCatapultStaticProp(tDrawable* drawable)
@@ -230,7 +397,7 @@ void tCompositeDrawable::Display(tPose* p)
     // Transform the pose joints into world space
     //
     p->Evaluate();
-    
+
     //
     // Display elements
     //
@@ -241,7 +408,31 @@ void tCompositeDrawable::Display(tPose* p)
             elements[i]->SetPose(p);
             if (elements[i]->IsVisible())
             {
+#ifdef RAD_ANDROID
+                // l1_phonestop_Shape is marked translucent by its composite
+                // chunk, although phone_booth_m1 is opaque (no blending, alpha
+                // test or translucency flag). Keep this one PROP child in the
+                // opaque path while cel shading is active, so it writes depth
+                // and participates in the environment silhouette pass. Other
+                // translucent children retain their original sorting.
+                const bool opaquePhoneBoothForCel =
+                    IsCelShadingEnabled() &&
+                    elements[i]->GetType() == DrawableElement::PROP_ELEMENT &&
+                    elements[i]->GetDrawable() != NULL &&
+                    static_cast<unsigned long long>(
+                        elements[i]->GetDrawable()->GetUID()) == 0xBE61135C399573F6ULL;
+                // Some static gag props carry a coarse translucent flag despite
+                // using alpha-free source images and fully opaque material colours.
+                const bool opaqueVerifiedGagProp =
+                    IsCelShadingEnabled() &&
+                    IsSHARGagCharacterCelPassActive() &&
+                    elements[i]->GetType() == DrawableElement::PROP_ELEMENT &&
+                    elements[i]->GetDrawable() != NULL &&
+                    IsSHARVerifiedOpaqueGagProp(elements[i]->GetDrawable());
+                if (elements[i]->IsTranslucent() && !opaquePhoneBoothForCel && !opaqueVerifiedGagProp)
+#else
                 if (elements[i]->IsTranslucent())
+#endif
                 {
 #ifdef RAD_ANDROID
                     // Keep translucent effects out of the environment silhouette
@@ -419,11 +610,29 @@ void tCompositeDrawable::DrawablePropElement::Draw(tPose* pose)
 
     p3d::stack->PushMultiply( (pose->GetJoint(poseIndex))->worldMatrix );
 #ifdef RAD_ANDROID
+    const unsigned long long childUID =
+        static_cast<unsigned long long>(prop->GetUID());
+    const bool gagPass = IsSHARGagCharacterCelPassActive();
+    const bool verifiedOpaqueGagOutlineOverride =
+        gagPass && IsCelShadingEnabled() && IsSHARVerifiedOpaqueGagProp(prop);
+    SetSHARCurrentDrawableUID(childUID);
     if (IsSHARCatapultStaticProp(prop))
         DisplaySHARCatapultStaticProp(prop);
+    else if (gagPass && (!IsTranslucent() || verifiedOpaqueGagOutlineOverride))
+    {
+        const bool previousVerifiedGagDrawActive =
+            IsSHARVerifiedOpaqueGagDrawActive();
+        if (verifiedOpaqueGagOutlineOverride)
+            SetSHARVerifiedOpaqueGagDrawActive(true);
+        DisplaySHARGagStaticProp(prop);
+        SetSHARVerifiedOpaqueGagDrawActive(previousVerifiedGagDrawActive);
+    }
     else
-#endif
         prop->Display();
+    ClearSHARCurrentDrawableUID();
+#else
+    prop->Display();
+#endif
     p3d::stack->Pop();
 }
 
@@ -451,7 +660,15 @@ void tCompositeDrawable::DrawablePoseElement::Draw(tPose* pose)
 {
     P3DASSERTMSG(skin, "No skin attached", "tCompositeDrawable::DrawPoseElement()");
 
+#ifdef RAD_ANDROID
+    const unsigned long long childUID =
+        static_cast<unsigned long long>(skin->GetUID());
+    SetSHARCurrentDrawableUID(childUID);
+#endif
     skin->Display(pose);
+#ifdef RAD_ANDROID
+    ClearSHARCurrentDrawableUID();
+#endif
 }
 
 //-------------------------------------------------------
@@ -474,7 +691,15 @@ void tCompositeDrawable::DrawableEffectElement::Draw(tPose* pose)
     P3DASSERTMSG(effect, "No effect attached", "tCompositeDrawable::DrawEffectElement()");
 
     p3d::stack->PushMultiply( (pose->GetJoint(poseIndex))->worldMatrix );
+#ifdef RAD_ANDROID
+    const unsigned long long childUID =
+        static_cast<unsigned long long>(effect->GetUID());
+    SetSHARCurrentDrawableUID(childUID);
+#endif
     effect->Display();
+#ifdef RAD_ANDROID
+    ClearSHARCurrentDrawableUID();
+#endif
     p3d::stack->Pop();
 }
 

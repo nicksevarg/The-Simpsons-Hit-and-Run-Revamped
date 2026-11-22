@@ -9,6 +9,7 @@
 ===========================================================================*/
 
 #include <p3d/displaylist.hpp>
+#include <p3d/SHARFrontendMenuCel.h>
 #include <p3d/matrixstack.hpp>
 
 #include <p3d/utility.hpp>
@@ -24,22 +25,6 @@ void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
-
-static bool IsSHARFrontendMenuFoliageDrawable(tDrawable* drawable)
-{
-    if (drawable == NULL)
-        return false;
-
-    const char* name = drawable->GetName();
-    if (name == NULL)
-        return false;
-
-    static const char plantPrefix[] = "FE_plantShape";
-    return strncmp(name, plantPrefix, sizeof(plantPrefix) - 1) == 0 ||
-           strcmp(name, "tree1Shape") == 0 ||
-           strcmp(name, "tree2Shape") == 0 ||
-           strcmp(name, "tree3Shape") == 0;
-}
 #endif
 
 DisplayList::DisplayList() 
@@ -73,39 +58,45 @@ void DisplayList::Display(void)
         SetSHAREnvironmentCelPassActive(true);
         SetCelShadingObjectEnabled(true);
         SetCelShadingOutlinePass(true);
-    }
-#endif
 
-    for(unsigned i = 0; i < nDrawablesEndPos; i++)
-    {
-        P3DASSERT(toSort[i]);
-        p3d::stack->Load(toSort[i]->objectToView);
-#ifdef RAD_ANDROID
-        if (sharFrontendCelPass)
-            SetSHAREnvironmentFoliageMeshPassActive(
-                IsSHARFrontendMenuFoliageDrawable(toSort[i]->draw));
-#endif
-        toSort[i]->draw->Display();
-    }
-
-#ifdef RAD_ANDROID
-    if (sharFrontendCelPass)
-    {
-        SetCelShadingOutlinePass(false);
+        // Only approved camset assets receive the silhouette pass. Transparent
+        // shadows and overlays otherwise retain their normal base-only draw.
         for(unsigned i = 0; i < nDrawablesEndPos; i++)
         {
             P3DASSERT(toSort[i]);
+            if (!IsSHARFrontendMenuOutlineDrawable(toSort[i]->draw))
+                continue;
+
             p3d::stack->Load(toSort[i]->objectToView);
             SetSHAREnvironmentFoliageMeshPassActive(
                 IsSHARFrontendMenuFoliageDrawable(toSort[i]->draw));
             toSort[i]->draw->Display();
         }
 
+        SetCelShadingOutlinePass(false);
         SetSHAREnvironmentFoliageMeshPassActive(false);
+
+        // Every translucent drawable still receives its original base pass.
+        for(unsigned i = 0; i < nDrawablesEndPos; i++)
+        {
+            P3DASSERT(toSort[i]);
+            p3d::stack->Load(toSort[i]->objectToView);
+            toSort[i]->draw->Display();
+        }
+
         SetSHAREnvironmentCelPassActive(false);
         SetCelShadingObjectEnabled(false);
     }
+    else
 #endif
+    {
+        for(unsigned i = 0; i < nDrawablesEndPos; i++)
+        {
+            P3DASSERT(toSort[i]);
+            p3d::stack->Load(toSort[i]->objectToView);
+            toSort[i]->draw->Display();
+        }
+    }
 
     Purge();
     p3d::stack->Pop();

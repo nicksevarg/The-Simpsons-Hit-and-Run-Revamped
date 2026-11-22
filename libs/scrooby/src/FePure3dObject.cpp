@@ -30,8 +30,19 @@
 #include "ResourceManager/FeResourceManager.h"
 
 #ifdef RAD_ANDROID
+#include <p3d/sharrendercontext.hpp>
 void SetSHARPreviewCharacterCelPassActive( bool enabled );
 bool IsSHARPreviewCharacterCelPassActive();
+bool IsCelShadingEnabled();
+bool IsCelShadingObjectEnabled();
+void SetCelShadingObjectEnabled( bool enabled );
+bool IsCelShadingOutlinePass();
+void SetCelShadingOutlinePass( bool enabled );
+bool IsSHARFrontendMenuCelPassActive();
+bool IsSHAREnvironmentCelPassActive();
+bool IsSHAREnvironmentCelMaterialEligible();
+void SetSHAREnvironmentCelPassActive( bool enabled );
+void SetSHAREnvironmentCelMaterialEligible( bool eligible );
 #endif
 
 // TC [HACK]: Override camera settings.
@@ -520,8 +531,43 @@ void FePure3dObject::Render()
     {
         SetSHARPreviewCharacterCelPassActive( true );
     }
-#endif
+
+    const unsigned long long frontendDrawableUID =
+        static_cast<unsigned long long>(m_RuntimeDrawable->GetUID());
+    const bool frontendPictureTarget =
+        IsSHARFrontendMenuCelPassActive() &&
+        frontendDrawableUID == 0x1887D98DC6BDAE69ULL;
+
+    if (frontendPictureTarget)
+    {
+        // Preserve the existing dedicated picture-surface outline path.
+        SetSHARCurrentDrawableUID(frontendDrawableUID);
+        if (IsCelShadingEnabled())
+        {
+            const bool previousObjectEnabled = IsCelShadingObjectEnabled();
+            const bool previousOutlinePass = IsCelShadingOutlinePass();
+
+            SetCelShadingObjectEnabled(true);
+            SetCelShadingOutlinePass(true);
+            m_RuntimeDrawable->Display();
+
+            SetCelShadingOutlinePass(previousOutlinePass);
+            m_RuntimeDrawable->Display();
+            SetCelShadingObjectEnabled(previousObjectEnabled);
+        }
+        else
+        {
+            m_RuntimeDrawable->Display();
+        }
+        ClearSHARCurrentDrawableUID();
+    }
+    else
+    {
+        m_RuntimeDrawable->Display();
+    }
+#else
     m_RuntimeDrawable->Display();
+#endif
 #ifdef RAD_ANDROID
     if( m_sharPreviewCharacterCelShadingEnabled )
     {

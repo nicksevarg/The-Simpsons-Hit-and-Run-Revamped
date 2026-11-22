@@ -14,6 +14,7 @@
 //===========================================================================
 #include <memory/classsizetracker.h>
 #include <render/DSG/InstAnimDynaPhysDSG.h>
+#include <render/DSG/SHAREnvironmentCel.h>
 #include <p3d/anim/compositedrawable.hpp>
 #include <render/animentitydsgmanager/animentitydsgmanager.h>
 #include <p3d/anim/pose.hpp>
@@ -45,21 +46,24 @@ void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh, const rmt::Vector& worldCentre, float boundingRadius)
 {
     if (drawable == NULL)
         return;
-    if (!IsCelShadingEnabled() ||
-        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+
+    float outlineWidth = 1.33f;
+    if (!SHARShouldDrawEnvironmentCelOutline(foliageMesh, worldCentre, boundingRadius, &outlineWidth))
     {
         drawable->Display();
         return;
     }
     SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentOutlineWidth(outlineWidth);
     SetCelShadingObjectEnabled(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentOutlineWidth(1.33f);
     drawable->Display();
     SetCelShadingObjectEnabled(false);
     SetSHAREnvironmentCelPassActive(false);
@@ -174,8 +178,18 @@ void InstAnimDynaPhysDSG::Display()
 
 	p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mMatrix);
 #ifdef RAD_ANDROID
-    if (!mTranslucent)
-        DisplaySHAREnvironmentCelDrawable(mpCompDraw);
+    // Lard Lad's composite mixes opaque body geometry with separate translucent
+    // glow elements. Let only this verified composite use the two-pass wrapper;
+    // tCompositeDrawable skips its translucent elements during the outline pass.
+    const bool isLardLadComposite =
+        mpCompDraw != NULL &&
+        static_cast<unsigned long long>(mpCompDraw->GetUID()) == 0xFA121AE8C4FDA479ULL;
+    if (!mTranslucent || isLardLadComposite)
+    {
+        rmt::Sphere outlineBounds;
+        GetBoundingSphere(&outlineBounds);
+        DisplaySHAREnvironmentCelDrawable(mpCompDraw, IsSHAREnvironmentFoliageMesh(), outlineBounds.centre, outlineBounds.radius);
+    }
     else
         mpCompDraw->Display();
 #else

@@ -22,6 +22,7 @@
 //========================================
 #include <render/DSG/InstStatPhysDSG.h>
 #include <memory/srrmemory.h>
+#include <render/DSG/SHAREnvironmentCel.h>
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
@@ -32,23 +33,26 @@ void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh, const rmt::Vector& worldCentre, float boundingRadius)
 {
     if (drawable == NULL)
         return;
-    if (!IsCelShadingEnabled() ||
-        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+
+    float outlineWidth = 1.33f;
+    if (!SHARShouldDrawEnvironmentCelOutline(foliageMesh, worldCentre, boundingRadius, &outlineWidth))
     {
         drawable->Display();
         return;
     }
     SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentOutlineWidth(outlineWidth);
     SetCelShadingObjectEnabled(true);
     if (foliageMesh)
         SetSHAREnvironmentFoliageMeshPassActive(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentOutlineWidth(1.33f);
     if (foliageMesh)
         SetSHAREnvironmentFoliageMeshPassActive(false);
     drawable->Display();
@@ -133,7 +137,9 @@ void InstStatPhysDSG::Display()
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mMatrix);
 #ifdef RAD_ANDROID
     const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
-    DisplaySHAREnvironmentCelDrawable(mpGeo, foliageMesh);
+    rmt::Sphere outlineBounds;
+    GetBoundingSphere(&outlineBounds);
+    DisplaySHAREnvironmentCelDrawable(mpGeo, foliageMesh, outlineBounds.centre, outlineBounds.radius);
 #else
     mpGeo->Display();
 #endif

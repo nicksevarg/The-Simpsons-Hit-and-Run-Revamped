@@ -65,6 +65,10 @@
 #include <render/Loaders/AnimDynaPhysLoader.h>
 #include <pedpaths/pathmanager.h>
 
+#ifdef RAD_ANDROID
+void SetSHARExteriorTransparencyDepthWriteFixActive(bool enabled);
+#endif
+
 #include <input/inputmanager.h>
 
 #include <data/gamedatamanager.h>
@@ -205,6 +209,11 @@ extern void OutputHandler (const char * pString );
 //=============================================================================
 void PauseContext::OnStop( ContextEnum nextContext )
 {
+#ifdef RAD_ANDROID
+    // Keep exterior blended materials writing depth when returning to gameplay.
+    if (nextContext != CONTEXT_GAMEPLAY)
+        SetSHARExteriorTransparencyDepthWriteFixActive(false);
+#endif
     // do gameplay terminations only if next context is frontend context or exit.
     if( nextContext == CONTEXT_FRONTEND ||
         nextContext == CONTEXT_LOADING_GAMEPLAY ||

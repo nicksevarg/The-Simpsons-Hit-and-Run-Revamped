@@ -22,8 +22,12 @@ class pglExtGamma;
 #ifdef RAD_ANDROID
 void InvalidateSHARRenderStateCache();
 bool IsCelShadingEnabled();
-bool IsSHARCelShadingLite();
 int GetSHARCelShadingMode();
+void SetSHARMirrorPassActive(bool enabled);
+bool IsSHARMirrorPassActive();
+void SetSHARPauseContextActive(bool enabled);
+bool IsSHARPauseContextActive();
+bool IsSHARCelShadingLite();
 void SetSHARCelShadingMode(int mode);
 void SetCelShadingEnabled(bool enabled);
 bool IsCRTFilterEnabled();
@@ -35,6 +39,7 @@ bool IsCelShadingObjectEnabled();
 void SetCelShadingObjectEnabled(bool enabled);
 bool IsCelShadingOutlinePass();
 void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHARLevelOneOutsideVertexGrayscaleActive(bool enabled);
 bool IsSHAREnvironmentCelPassActive();
 bool IsSHAREnvironmentBillboardFoliagePassActive();
 void SetSHAREnvironmentFoliageCardOutlineNormalMode(bool enabled);
@@ -42,12 +47,15 @@ bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
 void SetSHAREnvironmentCelMaterialEligible(bool eligible);
 bool IsSHAREnvironmentCelMaterialEligible();
 void SetCelShadingOutlinePass(bool enabled);
+void SetSHAREnvironmentOutlineWidth(float width);
 void SetSHARCharacterMaskModelPass(bool enabled);
 void SetSHARGagCharacterCelPassActive(bool enabled);
 bool IsSHARGagCharacterCelPassActive();
 void SetSHARFrontendMenuCelPassActive(bool enabled);
 void SetSHARFrontendMenuLightingActive(bool enabled);
 bool IsSHARFrontendMenuCelPassActive();
+// Temporarily select the flat FE_Pic3_m surface's radial screen-space outline.
+void SetSHARFrontendPictureSurfaceOutlineActive(bool enabled);
 void SetSHARExteriorTransparencyDepthWriteFixActive(bool enabled);
 bool IsSHARExteriorTransparencyDepthWriteFixActive();
 #endif
@@ -251,10 +259,12 @@ protected:
     bool environmentOutlineNormalsAvailable;
     bool environmentOutlineNormalsUploaded;
     bool environmentOutlineNormalsRadialMode;
+    bool environmentOutlineNormalsWeldedMode;
     float* environmentOutlineNormals;
     GLuint environmentOutlineNormalBuffer;
     bool GenerateEnvironmentNormals();
     bool GenerateEnvironmentOutlineNormals();
+    bool GenerateWeldedOutlineNormalsFromAuthoredNormals();
 #endif
     GLuint vertexBuffer;
     GLuint indexBuffer;

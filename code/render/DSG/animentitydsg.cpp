@@ -16,6 +16,7 @@
 
 #include <render/DSG/animentitydsg.h>
 #include <p3d/anim/compositedrawable.hpp>
+#include <p3d/utility.hpp>
 #include <p3d/anim/animate.hpp>
 #include <p3d/anim/animatedobject.hpp>
 #include <p3d/anim/multicontroller.hpp>
@@ -27,7 +28,10 @@
 #include <main/game.h>
 #include <mission/gameplaymanager.h>
 
+#include <vector>
+
 #include <radtime.hpp>
+#include <render/DSG/SHAREnvironmentCel.h>
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
@@ -35,20 +39,25 @@ void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh, const rmt::Vector& worldCentre, float boundingRadius)
 {
     if (drawable == NULL)
         return;
-    if (!IsCelShadingEnabled())
+
+    float outlineWidth = 1.33f;
+    if (!SHARShouldDrawEnvironmentCelOutline(foliageMesh, worldCentre, boundingRadius, &outlineWidth))
     {
         drawable->Display();
         return;
     }
+
     SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentOutlineWidth(outlineWidth);
     SetCelShadingObjectEnabled(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentOutlineWidth(1.33f);
     drawable->Display();
     SetCelShadingObjectEnabled(false);
     SetSHAREnvironmentCelPassActive(false);
@@ -178,7 +187,11 @@ void AnimEntityDSG::Display()
         p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, &mTransformOffset);
 #ifdef RAD_ANDROID
                 if (!mTranslucent)
-            DisplaySHAREnvironmentCelDrawable(mpDrawable);
+                {
+                    rmt::Sphere outlineBounds;
+                    GetBoundingSphere(&outlineBounds);
+                    DisplaySHAREnvironmentCelDrawable(mpDrawable, IsSHAREnvironmentFoliageMesh(), outlineBounds.centre, outlineBounds.radius);
+                }
         else
             mpDrawable->Display();
 #else

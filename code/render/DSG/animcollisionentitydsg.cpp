@@ -37,6 +37,7 @@
 #include <worldsim/worldobject.h>
 
 #include <ai/actionbuttonhandler.h>
+#include <render/DSG/SHAREnvironmentCel.h>
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
@@ -44,20 +45,25 @@ void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh, const rmt::Vector& worldCentre, float boundingRadius)
 {
     if (drawable == NULL)
         return;
-    if (!IsCelShadingEnabled())
+
+    float outlineWidth = 1.33f;
+    if (!SHARShouldDrawEnvironmentCelOutline(foliageMesh, worldCentre, boundingRadius, &outlineWidth))
     {
         drawable->Display();
         return;
     }
+
     SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentOutlineWidth(outlineWidth);
     SetCelShadingObjectEnabled(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentOutlineWidth(1.33f);
     drawable->Display();
     SetCelShadingObjectEnabled(false);
     SetSHAREnvironmentCelPassActive(false);
@@ -324,7 +330,11 @@ void AnimCollisionEntityDSG::Display()
     DSG_BEGIN_PROFILE(profileName)
 #ifdef RAD_ANDROID
         if (!mTranslucent)
-        DisplaySHAREnvironmentCelDrawable(mpDrawable);
+        {
+            rmt::Sphere outlineBounds;
+            GetBoundingSphere(&outlineBounds);
+            DisplaySHAREnvironmentCelDrawable(mpDrawable, IsSHAREnvironmentFoliageMesh(), outlineBounds.centre, outlineBounds.radius);
+        }
     else
         mpDrawable->Display();
 #else

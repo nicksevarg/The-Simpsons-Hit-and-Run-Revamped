@@ -160,6 +160,17 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     int alphaCompare = PDDI_COMPARE_GREATEREQUAL;
     bool twoSided = false;
     unsigned long long baseTextureUID = 0;
+#ifdef RAD_ANDROID
+    // The main Zombie Burger sign in l7r2 uses the same krust_sign_m
+    // material as the working l7r7 sign, but its authored ATST flag is off.
+    // Match only this file/material pair; do not change the smaller
+    // L7krust_sign_m secondary component or any other Level 7 asset.
+    const char* sourceFilename = f->GetFilename();
+    const bool isL7r2ZombieBurgerSignMaterial =
+        sourceFilename != NULL &&
+        strcmp(sourceFilename, "l7r2.p3d") == 0 &&
+        strcmp(name, "krust_sign_m") == 0;
+#endif
 
     while(f->ChunksRemaining())
     {
@@ -219,7 +230,16 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
                     unsigned param = f->GetInt();
                     unsigned val = f->GetInt();
-
+#ifdef RAD_ANDROID
+                    // l7r7.p3d's matching krust_sign_m has alpha testing
+                    // enabled (ATST=1). l7r2's main Zombie Burger sign is
+                    // identical for ACMP/ACTH/BLMD; copy only ATST.
+                    if (isL7r2ZombieBurgerSignMaterial &&
+                        param == PDDI_SP_ALPHATEST && val == 0)
+                    {
+                        val = 1;
+                    }
+#endif
                     shader->SetInt(param, val);
                     if (param == PDDI_SP_BLENDMODE)
                     {
@@ -340,6 +360,20 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     shader->mEnvironmentCelBaseTextureUID = baseTextureUID;
     if (HasTranslucency)
         shader->mEnvironmentCelEligible = false;
+#ifdef RAD_ANDROID
+    // int_kwik_atm_m is tagged alpha-blended in art data despite using a
+    // verified fully-opaque 128x64 source texture and fully-opaque material
+    // colours. glmat.cpp already bypasses GL blending only when that complete
+    // runtime opacity check passes. Keep that exception aligned with the
+    // load-time environment-outline eligibility gate, without admitting other
+    // blended or alpha-tested materials.
+    if (strcmp(name, "int_kwik_atm_m") == 0 &&
+        blendMode == PDDI_BLEND_ALPHA &&
+        hasAlphaBlend && !hasAlphaTest && !HasTranslucency)
+    {
+        shader->mEnvironmentCelEligible = true;
+    }
+#endif
     shader->SetName(name);
     return shader;
 }

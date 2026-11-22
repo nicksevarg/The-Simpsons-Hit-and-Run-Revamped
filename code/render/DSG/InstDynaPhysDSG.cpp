@@ -37,6 +37,7 @@
 
 #include <p3d/billboardobject.hpp>
 #include <p3d/anim/compositedrawable.hpp>
+#include <render/DSG/SHAREnvironmentCel.h>
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
@@ -47,23 +48,26 @@ void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMeshPass = false)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMeshPass, const rmt::Vector& worldCentre, float boundingRadius)
 {
     if (drawable == NULL)
         return;
-    if (!IsCelShadingEnabled() ||
-        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+
+    float outlineWidth = 1.33f;
+    if (!SHARShouldDrawEnvironmentCelOutline(foliageMeshPass, worldCentre, boundingRadius, &outlineWidth))
     {
         drawable->Display();
         return;
     }
     SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentOutlineWidth(outlineWidth);
     SetCelShadingObjectEnabled(true);
     if (foliageMeshPass)
         SetSHAREnvironmentFoliageMeshPassActive(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentOutlineWidth(1.33f);
     if (foliageMeshPass)
         SetSHAREnvironmentFoliageMeshPassActive(false);
     drawable->Display();
@@ -169,7 +173,11 @@ void InstDynaPhysDSG::Display()
     }
 #ifdef RAD_ANDROID
     if (mSHAREnvironmentCelEligible)
-        DisplaySHAREnvironmentCelDrawable(mpGeo, mSHAREnvironmentFoliageMeshEligible);
+    {
+        rmt::Sphere outlineBounds;
+        GetBoundingSphere(&outlineBounds);
+        DisplaySHAREnvironmentCelDrawable(mpGeo, mSHAREnvironmentFoliageMeshEligible, outlineBounds.centre, outlineBounds.radius);
+    }
     else
         mpGeo->Display();
 #else

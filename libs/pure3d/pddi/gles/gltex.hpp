@@ -24,8 +24,13 @@ public:
     int GetDepth();
     int GetNumMipMaps();
     int GetAlphaDepth();
-    // True only when the original asset explicitly had no alpha channel.
-    bool IsOpaqueSourceTexture() const { return type == PDDI_TEXTYPE_RGB && sourceAlphaDepth == 0; }
+    // True when the source had no alpha channel, or the known 128x64 ATM
+    // texture was inspected and every source alpha value was fully opaque.
+    bool IsOpaqueSourceTexture() const
+    {
+        return (type == PDDI_TEXTYPE_RGB && sourceAlphaDepth == 0) || sourceAlphaIsOpaque;
+    }
+    int GetSourceAlphaDepth() const { return sourceAlphaDepth; }
 
     // palette managment
     int GetNumPaletteEntries(void);
@@ -56,6 +61,7 @@ protected:
     pddiTextureType type;
     int nMipMap;
     int sourceAlphaDepth;
+    bool sourceAlphaIsOpaque;
 
     bool valid;
     unsigned int gltexture;

@@ -11,6 +11,7 @@
 #include <pddi/gles/glprog.hpp>
 #ifdef RAD_ANDROID
 bool GetSHARMotionBlurCameraBasis(float* output);
+void UpdateSelectedShadowAlphaForCelState();
 #endif
 
 #ifdef RAD_ANDROID
@@ -27,6 +28,7 @@ bool GetSHARMotionBlurCameraBasis(float* output);
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <p3d/sharrendercontext.hpp>
 
 
 static bool gCelShadingEnabled = true;
@@ -34,6 +36,10 @@ static bool gCelShadingObjectEnabled = false;
 static bool gCelShadingOutlinePass = false;
 static bool gSHAREnvironmentCelPassActive = false;
 static bool gSHAREnvironmentCelMaterialEligible = true;
+// Active only around a Level 1 outdoor static-environment drawable.
+static bool gSHARLevelOneOutsideVertexGrayscaleActive = false;
+// Active only during Level 1 outdoor world-scene draws.
+static bool gSHARWorldSceneSaturationActive = false;
 static bool gSHAREnvironmentBillboardFoliagePassActive = false;
 static bool gSHAREnvironmentFoliageMeshPassActive = false;
 // Enabled only around draws using one of the verified flat leaf-card materials.
@@ -42,8 +48,10 @@ static bool gSHAREnvironmentFoliageCardOutlineNormalModeActive = false;
 // can be specified in pixels instead of world/view-space units.
 static float gSHARCelOutlineViewportWidth = 1.0f;
 static float gSHARCelOutlineViewportHeight = 1.0f;
+static float gSHAREnvironmentOutlineWidth = 1.33f;
 static bool gSHARExteriorTransparencyDepthWriteFixActive = false;
 static pglContext* gCelShadingContext = nullptr;
+static bool gSHARMirrorPassActive = false;
 
 // The scene texture alpha channel is a per-frame character-coverage mask during
 // Android world rendering. Keep the game's requested alpha-write state and gate
@@ -57,13 +65,93 @@ static bool gSHARCharacterMaskAlphaWriteRequested = true;
 // silhouette treatment as CharacterRenderable; static gag props are untouched.
 static bool gSHARGagCharacterCelPassActive = false;
 static bool gSHARGagCatapultCelPassActive = false;
+// Scoped to a gag prop whose opaque source texture and material alpha are verified.
+static bool gSHARVerifiedOpaqueGagDrawActive = false;
 // Enabled while Scrooby displays the main-menu camera set. This is separate
 // from the NIS gag flag because the front-end scene is not rendered by NISPlayer.
 static bool gSHARFrontendMenuCelPassActive = false;
+#ifdef RAD_ANDROID
+// Active only while the FE_Pic3_m image-surface primitive group is outlined.
+static bool gSHARFrontendPictureSurfaceOutlineActive = false;
+#endif
 static bool gSHARFrontendMenuLightingActive = false;
+
+// The frontend environment draw is the camset path. Keep its outline width
+// separate from the world-space setting so every camset P3D variant receives
+// the thicker outline without changing outdoor or interior environments.
+static const float SHAR_FRONTEND_CAMSET_OUTLINE_WIDTH = 3.0f;
+
+static float GetSHARCurrentEnvironmentOutlineWidth()
+{
+    return (gSHARFrontendMenuCelPassActive && gSHAREnvironmentCelPassActive)
+        ? SHAR_FRONTEND_CAMSET_OUTLINE_WIDTH
+        : gSHAREnvironmentOutlineWidth;
+}
+
+// Use the shared picture drawable UID so both its image surface and frame receive
+// the small depth displacement, while only the flat image surface uses radial expansion.
+static bool IsSHARFrontendPictureDepthOffsetActive()
+{
+    return gSHARFrontendMenuCelPassActive &&
+        gSHAREnvironmentCelPassActive &&
+        gSHAREnvironmentCelMaterialEligible &&
+        gCelShadingEnabled &&
+        gCelShadingObjectEnabled &&
+        gCelShadingOutlinePass &&
+        GetSHARCurrentDrawableUID() == 0x1887D98DC6BDAE69ULL;
+}
 #ifdef RAD_ANDROID
 // Scoped by FePure3dObject to cel-shade only the live clothing preview model.
 static bool gSHARPreviewCharacterCelPassActive = false;
+#endif
+
+#ifdef RAD_ANDROID
+// These opaque static props have no authored PDDI_V_NORMAL stream. Their
+// gag outline pass uses toonEnvironmentPass=0, which extrudes along the
+// ordinary normal attribute. Generate that attribute only for these verified
+// Squishee/Jasper meshes; translucent Squishee cup/liquid parts are excluded.
+static bool IsSHARGagOutlineNormalTarget(unsigned long long drawableUID)
+{
+    switch (drawableUID)
+    {
+        // Kwik-E-Mart Squishee machine: opaque body, fittings and wheels.
+        case 0x4336BF6A11E1582DULL: // gag_squisheeShape25
+        case 0x125EBDE603CF21EEULL: // gag_squisheeShape4
+        case 0x125EBDE603CF21EDULL: // gag_squisheeShape7
+        case 0x125EBDE603CF21ECULL: // gag_squisheeShape6
+        case 0x125EBDE603CF21EBULL: // gag_squisheeShape1
+        case 0x125EBDE603CF21E9ULL: // gag_squisheeShape3
+        case 0x4336BF6A11E1582FULL: // gag_squisheeShape27
+        case 0x4336BF6A11E1582EULL: // gag_squisheeShape26
+        case 0x125EBDE603CF21EFULL: // gag_squisheeShape5
+        case 0x125EBDE603CF21E8ULL: // gag_squisheeShape2
+        case 0x125EBDE603CF21E3ULL: // gag_squisheeShape9
+        case 0x125EBDE603CF21E2ULL: // gag_squisheeShape8
+        case 0x4336BF6A11E15821ULL: // gag_squisheeShape29
+        case 0x4336BF6A11E458E5ULL: // gag_squisheeShape10
+
+        // Jasper and the four separately assembled icicle meshes.
+        case 0x663985E50358F5E1ULL: // gag_jasper1Shape
+        case 0x3A15191204595DBCULL: // gag_jasperShape (body and eyeball groups)
+        case 0x4AE214723118B420ULL: // gag_jasper2Shape
+        case 0x142EF36E8098BB7FULL: // gag_jasper3Shape
+        case 0x242708D6E0D415E4ULL: // int_kwik_icicleShape01
+        case 0x242708D6E0D415E7ULL: // int_kwik_icicleShape02
+        case 0x242708D6E0D415E6ULL: // int_kwik_icicleShape03
+        case 0x242708D6E0D415E1ULL: // int_kwik_icicleShape04
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool IsSHARFrontendPianoOutlineTarget(unsigned long long drawableUID)
+{
+    // new_windowShape is the piano drawable used by the frontend camsets.
+    // Its authored normals are valid, but unsuitable for the screen-space
+    // silhouette direction on several broad flat surfaces.
+    return drawableUID == 0xF525F3485B73D054ULL;
+}
 #endif
 
 // Mirror the colour-write mask set through the Android GLES backend. Character
@@ -107,6 +195,23 @@ void InvalidateSHARTrackedColorWriteMaskCache()
     gSHARTrackedColorWriteMaskKnown = false;
 }
 
+// Return the backend's current write mask. The real GL query is reserved for
+// startup or an explicit cache invalidation after GL state/context recreation.
+void GetSHARTrackedColorWriteMask(GLboolean mask[4])
+{
+    if (!mask)
+        return;
+
+    if (!gSHARTrackedColorWriteMaskKnown)
+    {
+        glGetBooleanv(GL_COLOR_WRITEMASK, gSHARTrackedColorWriteMask);
+        gSHARTrackedColorWriteMaskKnown = true;
+    }
+
+    for (int i = 0; i < 4; ++i)
+        mask[i] = gSHARTrackedColorWriteMask[i];
+}
+
 static void ApplySHARCharacterMaskAlphaPolicy()
 {
     // Query only when the tracked state is unknown (startup/context reset), not
@@ -141,6 +246,25 @@ void SetSHARCharacterMaskModelPass(bool enabled)
     ApplySHARCharacterMaskAlphaPolicy();
 }
 
+void SetSHARMirrorPassActive(bool enabled)
+{
+    gSHARMirrorPassActive = enabled;
+
+    // Ordinary material draws also need reversed face culling while the
+    // reflected camera is active. Reapply the current PDDI mode so the
+    // transition takes effect immediately, including with cel shading OFF.
+    if (gCelShadingContext != nullptr)
+    {
+        const pddiCullMode mode = gCelShadingContext->GetCullMode();
+        gCelShadingContext->SetCullMode(mode);
+    }
+}
+
+bool IsSHARMirrorPassActive()
+{
+    return gSHARMirrorPassActive;
+}
+
 void SetSHARGagCharacterCelPassActive(bool enabled)
 {
     gSHARGagCharacterCelPassActive = enabled;
@@ -161,9 +285,42 @@ bool IsSHARGagCatapultCelPassActive()
     return gSHARGagCatapultCelPassActive;
 }
 
+void SetSHARVerifiedOpaqueGagDrawActive(bool enabled)
+{
+    gSHARVerifiedOpaqueGagDrawActive = enabled;
+}
+
+bool IsSHARVerifiedOpaqueGagDrawActive()
+{
+    return gSHARVerifiedOpaqueGagDrawActive;
+}
+
+void SetSHARKwikATMDrawActive(bool enabled)
+{
+    SetSHARVerifiedOpaqueGagDrawActive(enabled);
+}
+
+bool IsSHARKwikATMDrawActive()
+{
+    return IsSHARVerifiedOpaqueGagDrawActive();
+}
+
 void SetSHARFrontendMenuCelPassActive(bool enabled)
 {
+    if (gSHARFrontendMenuCelPassActive == enabled)
+        return;
     gSHARFrontendMenuCelPassActive = enabled;
+    if (gCelShadingContext)
+        gCelShadingContext->ApplyCelShadingState();
+}
+
+void SetSHARLevelOneOutsideVertexGrayscaleActive(bool enabled)
+{
+    if (gSHARLevelOneOutsideVertexGrayscaleActive == enabled)
+        return;
+    gSHARLevelOneOutsideVertexGrayscaleActive = enabled;
+    if (gCelShadingContext)
+        gCelShadingContext->ApplyCelShadingState();
 }
 
 void SetSHARFrontendMenuLightingActive(bool enabled)
@@ -173,10 +330,28 @@ void SetSHARFrontendMenuLightingActive(bool enabled)
         gCelShadingContext->ApplyCelShadingState();
 }
 
+void SetSHARWorldSceneSaturationActive(bool enabled)
+{
+    if (gSHARWorldSceneSaturationActive == enabled)
+        return;
+    gSHARWorldSceneSaturationActive = enabled;
+    if (gCelShadingContext)
+        gCelShadingContext->ApplyCelShadingState();
+}
+
 bool IsSHARFrontendMenuCelPassActive()
 {
     return gSHARFrontendMenuCelPassActive;
 }
+
+#ifdef RAD_ANDROID
+void SetSHARFrontendPictureSurfaceOutlineActive(bool enabled)
+{
+    gSHARFrontendPictureSurfaceOutlineActive = enabled;
+    if (gCelShadingContext)
+        gCelShadingContext->ApplyCelShadingState();
+}
+#endif
 
 #ifdef RAD_ANDROID
 void SetSHARPreviewCharacterCelPassActive( bool enabled )
@@ -1057,6 +1232,10 @@ bool IsSHARExteriorTransparencyDepthWriteFixActive()
 
 static void ApplyCelShadingState()
 {
+#ifdef RAD_ANDROID
+    // Keep load-time texture overrides synchronized with Full/Lite/Off changes.
+    UpdateSelectedShadowAlphaForCelState();
+#endif
     if (gCelShadingContext)
         gCelShadingContext->ApplyCelShadingState();
 }
@@ -1173,7 +1352,10 @@ void SetCelShadingOutlinePass(bool enabled)
             else
             {
                 gCelShadingContext->SetGLCullEnabled(true);
-                gCelShadingContext->SetGLCullFace(GL_BACK);
+                // Only reverse the silhouette culling while the reflected
+                // camera is active. Normal scene culling remains unchanged.
+                gCelShadingContext->SetGLCullFace(
+                    gSHARMirrorPassActive ? GL_FRONT : GL_BACK);
             }
             // Eligible environment shells and CharacterRenderable silhouette
             // shells write depth so later-rendered objects behind them cannot
@@ -1182,7 +1364,8 @@ void SetCelShadingOutlinePass(bool enabled)
             const bool writeCelOutlineDepth =
                 (gSHAREnvironmentCelPassActive &&
                  gSHAREnvironmentCelMaterialEligible) ||
-                gSHARCharacterMaskModelPass;
+                gSHARCharacterMaskModelPass ||
+                gSHARGagCharacterCelPassActive;
             gCelShadingContext->SetGLDepthMask(writeCelOutlineDepth ? GL_TRUE : GL_FALSE);
         }
         else
@@ -1196,14 +1379,15 @@ void SetCelShadingOutlinePass(bool enabled)
             else
             {
                 glEnable(GL_CULL_FACE);
-                glCullFace(GL_BACK);
+                glCullFace(gSHARMirrorPassActive ? GL_FRONT : GL_BACK);
             }
             // Match the context-backed path: environment and character
             // silhouette shells write depth, but vehicle shells do not.
             const bool writeCelOutlineDepth =
                 (gSHAREnvironmentCelPassActive &&
                  gSHAREnvironmentCelMaterialEligible) ||
-                gSHARCharacterMaskModelPass;
+                gSHARCharacterMaskModelPass ||
+                gSHARGagCharacterCelPassActive;
             glDepthMask(writeCelOutlineDepth ? GL_TRUE : GL_FALSE);
         }
     }
@@ -1221,7 +1405,9 @@ void SetCelShadingOutlinePass(bool enabled)
             else
             {
                 gCelShadingContext->SetGLCullEnabled(true);
-                gCelShadingContext->SetGLCullFace(mode == PDDI_CULL_INVERTED ? GL_BACK : GL_FRONT);
+                const bool baseCullBack =
+                    (mode == PDDI_CULL_INVERTED) != gSHARMirrorPassActive;
+                gCelShadingContext->SetGLCullFace(baseCullBack ? GL_BACK : GL_FRONT);
             }
             gCelShadingContext->SetGLDepthMask(GL_TRUE);
         }
@@ -1231,6 +1417,16 @@ void SetCelShadingOutlinePass(bool enabled)
         }
     }
 
+    ApplyCelShadingState();
+}
+
+void SetSHAREnvironmentOutlineWidth(float width)
+{
+    if (width < 0.5f) width = 0.5f;
+    if (width > 2.0f) width = 2.0f;
+    if (fabsf(gSHAREnvironmentOutlineWidth - width) < 0.0001f)
+        return;
+    gSHAREnvironmentOutlineWidth = width;
     ApplyCelShadingState();
 }
 
@@ -1567,6 +1763,9 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform int toonObjectEnabled;\n"
         "uniform int toonOutlinePass;\n"
         "uniform int toonEnvironmentPass;\n"
+        "uniform int toonGrayscaleLevelOneOutsideVertexRGB;\n"
+        "uniform int toonFrontendPictureRadialFallback;\n"
+        "uniform int toonFrontendPictureDepthOffset;\n"
         "uniform float toonOutlineWidth;\n"
         "uniform vec2 toonViewportSize;\n"
 #endif
@@ -1574,7 +1773,17 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec4 V = modelview * vec4(position, 1.0);\n"
 #ifdef RAD_ANDROID
         "    vec3 vertexNormal = (toonOutlinePass != 0 && toonEnvironmentPass != 0) ? outlineNormal : normal;\n"
-        "    toonNormal = normalize(mat3(normalmatrix) * vertexNormal);\n"
+        "    vec3 transformedNormal = mat3(normalmatrix) * vertexNormal;\n"
+        "    if (toonOutlinePass != 0 && toonEnvironmentPass == 0 && dot(transformedNormal, transformedNormal) < 0.00000001) {\n"
+        "        // Some opaque gag meshes have no authored normals. For this\n"
+        "        // object-outline path only, use a view-space radial direction\n"
+        "        // from the drawable origin so the shell can still expand.\n"
+        "        vec3 radialNormal = V.xyz - modelview[3].xyz;\n"
+        "        float radialNormalLength = length(radialNormal);\n"
+        "        toonNormal = radialNormalLength > 0.00001 ? radialNormal / radialNormalLength : vec3(0.0, 0.0, 1.0);\n"
+        "    } else {\n"
+        "        toonNormal = normalize(transformedNormal);\n"
+        "    }\n"
 #else
         "    toonNormal = normalize(mat3(normalmatrix) * normal);\n"
 #endif
@@ -1588,7 +1797,23 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "                vec4 clipNormal = projection * vec4(toonNormal, 0.0);\n"
         "                vec2 projectedNormalPixels = (clipNormal.xy * clipPosition.w - clipPosition.xy * clipNormal.w) * toonViewportSize;\n"
         "                float projectedNormalLength = length(projectedNormalPixels);\n"
-        "                if (projectedNormalLength > 0.00001) {\n"
+        "                if (toonFrontendPictureRadialFallback != 0) {\n"
+        "                    // FE_Pic3_m is a four-vertex picture surface whose authored\n"
+        "                    // normal points along local +X. Expand each corner away from\n"
+        "                    // the actual quad centre, not the FE_pCubeShape23 drawable\n"
+        "                    // origin (which is offset from the picture plane).\n"
+        "                    vec3 pictureCenterView = (modelview * vec4(-1.6631913, 2.2734370, -7.1179657, 1.0)).xyz;\n"
+        "                    vec3 radialNormal = V.xyz - pictureCenterView;\n"
+        "                    vec4 clipRadial = projection * vec4(radialNormal, 0.0);\n"
+        "                    vec2 projectedRadialPixels = (clipRadial.xy * clipPosition.w - clipPosition.xy * clipRadial.w) * toonViewportSize;\n"
+        "                    float projectedRadialLength = length(projectedRadialPixels);\n"
+        "                    if (projectedRadialLength > 0.00001) {\n"
+        "                        toonOutlineProjectionState = 1.0;\n"
+        "                        vec2 pixelDirection = projectedRadialPixels / projectedRadialLength;\n"
+        "                        vec2 ndcOffset = pixelDirection * (2.0 * toonOutlineWidth / toonViewportSize);\n"
+        "                        clipPosition.xy += ndcOffset * clipPosition.w;\n"
+        "                    }\n"
+        "                } else if (projectedNormalLength > 0.00001) {\n"
         "                    toonOutlineProjectionState = 1.0;\n"
         "                    vec2 pixelDirection = projectedNormalPixels / projectedNormalLength;\n"
         "                    vec2 ndcOffset = pixelDirection * (2.0 * toonOutlineWidth / toonViewportSize);\n"
@@ -1596,8 +1821,20 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "                }\n"
         "            }\n"
         "            if (clipPosition.w > 0.00001) {\n"
-        "                // Move the expanded shell slightly farther away so the original mesh wins.\n"
-        "                clipPosition.z += 0.00025 * clipPosition.w;\n"
+        "                if (toonFrontendPictureDepthOffset != 0) {\n"
+        "                    // Move this thin, wall-flush picture shell back by about 0.01 view-space units.\n"
+        "                    // Keep the original screen position; replace only projected depth.\n"
+        "                    float pictureViewDistance = length(V.xyz);\n"
+        "                    if (pictureViewDistance > 0.00001) {\n"
+        "                        vec4 pictureDepthClip = projection * vec4(V.xyz * (1.0 + 0.01 / pictureViewDistance), 1.0);\n"
+        "                        if (pictureDepthClip.w > 0.00001) {\n"
+        "                            clipPosition.z = (pictureDepthClip.z / pictureDepthClip.w) * clipPosition.w;\n"
+        "                        }\n"
+        "                    }\n"
+        "                } else {\n"
+        "                    // Existing displacement for all other environment shells.\n"
+        "                    clipPosition.z += 0.00025 * clipPosition.w;\n"
+        "                }\n"
         "            }\n"
         "        } else {\n"
         "            V.xyz += toonNormal * 0.009;\n"
@@ -1607,7 +1844,18 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
 #endif
         "    toonViewPos = V.xyz;\n"
         "    tc = texcoord;\n"
+#ifdef RAD_ANDROID
+        // Remove vertex-colour chroma while retaining its original luminance.
+        // Authored alpha is kept so transparency and cutouts remain unchanged.
+        "    vec3 vertexRGB = color.rgb;\n"
+        "    if (toonEnabled != 0 && toonGrayscaleLevelOneOutsideVertexRGB != 0) {\n"
+        "        float vertexLuminance = dot(color.rgb, vec3(0.299, 0.587, 0.114));\n"
+        "        vertexRGB = vec3(vertexLuminance);\n"
+        "    }\n"
+        "    cpri = vec4(vertexRGB, color.a);\n"
+#else
         "    cpri = color;\n"
+#endif
         "    gl_Position = clipPosition;\n"
         "}\n"
     );
@@ -1643,6 +1891,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "uniform int toonOutlinePass;\n"
         "uniform int toonEnvironmentPass;\n"
         "uniform int toonFrontendMenuLighting;\n"
+        "uniform int toonWorldSceneSaturation;\n"
 
         "uniform float toonOutlineWidth;\n"
         "uniform float nightObjectBrightness;\n"
@@ -1732,6 +1981,11 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    }\n"
         "    return colour;\n"
         "}\n"
+        "vec3 applySHARSceneSaturation(vec3 colour) {\n"
+        "    if (toonEnabled == 0 || toonWorldSceneSaturation == 0) return colour;\n"
+        "    float luma = dot(colour, vec3(0.299, 0.587, 0.114));\n"
+        "    return mix(vec3(luma), colour, 1.05);\n"
+        "}\n"
 #endif
         ;
 
@@ -1746,6 +2000,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec4 finalColour = cpri * vec4(toonLightingColor(), dcm.a);\n"
         "    finalColour.rgb = applySHARMoodTint(finalColour.rgb);\n"
         "    finalColour.rgb = applySHARObjectDimming(finalColour.rgb);\n"
+        "    finalColour.rgb = applySHARSceneSaturation(finalColour.rgb);\n"
         "    gl_FragColor = finalColour;\n"
 #else
         "    gl_FragColor = cpri * vec4(toonLightingColor(), dcm.a);\n"
@@ -1775,6 +2030,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    vec4 finalColour = base * vec4(toonLightingColor(), dcm.a);\n"
         "    finalColour.rgb = applySHARMoodTint(finalColour.rgb);\n"
         "    finalColour.rgb = applySHARObjectDimming(finalColour.rgb);\n"
+        "    finalColour.rgb = applySHARSceneSaturation(finalColour.rgb);\n"
         "    gl_FragColor = finalColour;\n"
 #else
         "    gl_FragColor = base * vec4(toonLightingColor(), dcm.a);\n"
@@ -1798,6 +2054,7 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
 #ifdef RAD_ANDROID
         "    c.rgb = applySHARMoodTint(c.rgb);\n"
         "    c.rgb = applySHARObjectDimming(c.rgb);\n"
+        "    c.rgb = applySHARSceneSaturation(c.rgb);\n"
 #endif
         "    gl_FragColor = c;\n"
         "}\n"
@@ -2453,6 +2710,7 @@ pglPrimBuffer::pglPrimBuffer(pglContext* c, pddiPrimType type, unsigned vertexFo
     environmentOutlineNormalsAvailable = false;
     environmentOutlineNormalsUploaded = false;
     environmentOutlineNormalsRadialMode = false;
+    environmentOutlineNormalsWeldedMode = false;
     environmentOutlineNormals = NULL;
     environmentOutlineNormalBuffer = 0;
 #endif
@@ -2556,6 +2814,7 @@ void pglPrimBuffer::Unlock(pddiPrimBufferStream* stream)
     environmentOutlineNormalsAvailable = false;
     environmentOutlineNormalsUploaded = false;
     environmentOutlineNormalsRadialMode = false;
+    environmentOutlineNormalsWeldedMode = false;
     delete [] environmentOutlineNormals;
     environmentOutlineNormals = NULL;
 #endif
@@ -2585,6 +2844,7 @@ void pglPrimBuffer::SetIndices(unsigned short* i, int count)
     environmentOutlineNormalsAttempted = false;
     environmentOutlineNormalsAvailable = false;
     environmentOutlineNormalsUploaded = false;
+    environmentOutlineNormalsWeldedMode = false;
     delete [] environmentOutlineNormals;
     environmentOutlineNormals = NULL;
 #endif
@@ -2700,10 +2960,11 @@ bool pglPrimBuffer::GenerateEnvironmentNormals()
 
 bool pglPrimBuffer::GenerateEnvironmentOutlineNormals()
 {
-    const bool radialCardMode =
+    const bool radialOutlineMode =
         IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
     if (environmentOutlineNormalsAttempted &&
-        environmentOutlineNormalsRadialMode == radialCardMode)
+        !environmentOutlineNormalsWeldedMode &&
+        environmentOutlineNormalsRadialMode == radialOutlineMode)
         return environmentOutlineNormalsAvailable;
 
     // A retained buffer can be drawn by different materials. If its outline
@@ -2717,21 +2978,26 @@ bool pglPrimBuffer::GenerateEnvironmentOutlineNormals()
     }
 
     environmentOutlineNormalsAttempted = true;
-    environmentOutlineNormalsRadialMode = radialCardMode;
+    environmentOutlineNormalsRadialMode = radialOutlineMode;
+    environmentOutlineNormalsWeldedMode = false;
     environmentOutlineNormalsAvailable = false;
 
+    // Ordinarily this buffer is built only from generated normals. The piano
+    // has authored normals, so allow its radial mode to build a separate
+    // outline-only stream from the same source positions without replacing
+    // or modifying those authored normals.
+    const bool hasAuthoredNormals = (vertexType & PDDI_V_NORMAL) != 0;
     if (normal == NULL || coord == NULL || allocated < 3 ||
-        (vertexType & PDDI_V_NORMAL) ||
-        !environmentNormalsAvailable)
+        (!hasAuthoredNormals && !environmentNormalsAvailable))
         return false;
 
     float* outlineData = new float[static_cast<size_t>(allocated) * 3];
     if (outlineData == NULL)
         return false;
 
-    // Start with the exact generated normals used by the existing environment
-    // outline. Only the separate outline copy is modified below; the original
-    // interleaved vertex normal data remains untouched for ordinary rendering.
+    // Start with the source normals (authored or generated). Only this
+    // separate outline copy is modified below; the original interleaved vertex
+    // normal data remains untouched for ordinary rendering.
     for (unsigned i = 0; i < allocated; ++i)
     {
         const float* source = (const float*)((const unsigned char*)normal + i * stride);
@@ -2771,7 +3037,7 @@ bool pglPrimBuffer::GenerateEnvironmentOutlineNormals()
     // normals move the whole card sideways, leaving a one-sided outline fringe.
     // Group connected, nearly-coplanar triangles and expand each patch around
     // its own centroid. Only the separate outline normal stream is modified.
-    if (radialCardMode &&
+    if (radialOutlineMode &&
         (primType == PDDI_PRIM_TRIANGLES || primType == PDDI_PRIM_TRISTRIP))
     {
         struct OutlineTriangle
@@ -3213,6 +3479,245 @@ bool pglPrimBuffer::GenerateEnvironmentOutlineNormals()
     return true;
 }
 
+
+// The frontend piano stores hard-edged authored normals on face-split vertices.
+// Those normals are correct for lighting but give the screen-space outline shader
+// discontinuous per-face expansion. Weld coincident positions and accumulate
+// area-weighted triangle normals into a separate outline-only stream.
+bool pglPrimBuffer::GenerateWeldedOutlineNormalsFromAuthoredNormals()
+{
+    if (environmentOutlineNormalsAttempted &&
+        environmentOutlineNormalsWeldedMode)
+        return environmentOutlineNormalsAvailable;
+
+    // A retained buffer may be reused under a different drawable/mode. Replace
+    // the previous outline stream rather than reusing incompatible directions.
+    if (environmentOutlineNormalsAttempted)
+    {
+        delete [] environmentOutlineNormals;
+        environmentOutlineNormals = NULL;
+        environmentOutlineNormalsAvailable = false;
+        environmentOutlineNormalsUploaded = false;
+    }
+
+    environmentOutlineNormalsAttempted = true;
+    environmentOutlineNormalsRadialMode = false;
+    environmentOutlineNormalsWeldedMode = true;
+    environmentOutlineNormalsAvailable = false;
+
+    if (normal == NULL || coord == NULL || allocated < 3 ||
+        !(vertexType & PDDI_V_NORMAL) ||
+        (primType != PDDI_PRIM_TRIANGLES && primType != PDDI_PRIM_TRISTRIP))
+        return false;
+
+    const bool useIndices = indexCount > 0 && indices != NULL;
+    const int elementCount = useIndices
+        ? static_cast<int>(indexCount) : static_cast<int>(total);
+    if (elementCount < 3)
+        return false;
+
+    struct WeldKey
+    {
+        int64_t x, y, z;
+        bool operator==(const WeldKey& other) const
+        {
+            return x == other.x && y == other.y && z == other.z;
+        }
+    };
+    struct WeldKeyHash
+    {
+        size_t operator()(const WeldKey& key) const
+        {
+            uint64_t hash = 1469598103934665603ULL;
+            const int64_t values[3] = { key.x, key.y, key.z };
+            for (int axis = 0; axis < 3; ++axis)
+            {
+                const uint64_t value = static_cast<uint64_t>(values[axis]);
+                for (unsigned byte = 0; byte < 8; ++byte)
+                {
+                    hash ^= (value >> (byte * 8)) & 0xffULL;
+                    hash *= 1099511628211ULL;
+                }
+            }
+            return static_cast<size_t>(hash ^ (hash >> 32));
+        }
+    };
+    struct WeldSum
+    {
+        double x, y, z;
+    };
+
+    std::vector<WeldKey> keys(allocated);
+    std::vector<unsigned char> keyValid(allocated, 0);
+    std::unordered_map<WeldKey, WeldSum, WeldKeyHash> sums;
+    sums.reserve(allocated);
+
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        const float* position =
+            (const float*)((const unsigned char*)coord + i * stride);
+        if (!isfinite(position[0]) || !isfinite(position[1]) ||
+            !isfinite(position[2]))
+            continue;
+
+        WeldKey key;
+        key.x = static_cast<int64_t>(llround(static_cast<double>(position[0]) * 10000.0));
+        key.y = static_cast<int64_t>(llround(static_cast<double>(position[1]) * 10000.0));
+        key.z = static_cast<int64_t>(llround(static_cast<double>(position[2]) * 10000.0));
+        keys[i] = key;
+        keyValid[i] = 1;
+        sums[key] = WeldSum{ 0.0, 0.0, 0.0 };
+    }
+
+    unsigned usedTriangles = 0;
+    const auto addTriangle = [&](unsigned a, unsigned b, unsigned c)
+    {
+        if (a >= allocated || b >= allocated || c >= allocated ||
+            a == b || b == c || a == c ||
+            !keyValid[a] || !keyValid[b] || !keyValid[c])
+            return;
+
+        const float* pa =
+            (const float*)((const unsigned char*)coord + a * stride);
+        const float* pb =
+            (const float*)((const unsigned char*)coord + b * stride);
+        const float* pc =
+            (const float*)((const unsigned char*)coord + c * stride);
+
+        const double abx = static_cast<double>(pb[0]) - pa[0];
+        const double aby = static_cast<double>(pb[1]) - pa[1];
+        const double abz = static_cast<double>(pb[2]) - pa[2];
+        const double acx = static_cast<double>(pc[0]) - pa[0];
+        const double acy = static_cast<double>(pc[1]) - pa[1];
+        const double acz = static_cast<double>(pc[2]) - pa[2];
+
+        double nx = aby * acz - abz * acy;
+        double ny = abz * acx - abx * acz;
+        double nz = abx * acy - aby * acx;
+        if (nx * nx + ny * ny + nz * nz <= 1.0e-18)
+            return; // Degenerate triangle-strip joins contribute nothing.
+
+        // Respect the authored face orientation if the strip's winding differs.
+        const float* na =
+            (const float*)((const unsigned char*)normal + a * stride);
+        const float* nb =
+            (const float*)((const unsigned char*)normal + b * stride);
+        const float* nc =
+            (const float*)((const unsigned char*)normal + c * stride);
+        const bool authoredNormalsFinite =
+            isfinite(na[0]) && isfinite(na[1]) && isfinite(na[2]) &&
+            isfinite(nb[0]) && isfinite(nb[1]) && isfinite(nb[2]) &&
+            isfinite(nc[0]) && isfinite(nc[1]) && isfinite(nc[2]);
+        if (authoredNormalsFinite)
+        {
+            const double authoredX =
+                static_cast<double>(na[0]) + nb[0] + nc[0];
+            const double authoredY =
+                static_cast<double>(na[1]) + nb[1] + nc[1];
+            const double authoredZ =
+                static_cast<double>(na[2]) + nb[2] + nc[2];
+            if (nx * authoredX + ny * authoredY + nz * authoredZ < 0.0)
+            {
+                nx = -nx;
+                ny = -ny;
+                nz = -nz;
+            }
+        }
+
+        // The cross product magnitude is twice the triangle area.
+        const unsigned vertices[3] = { a, b, c };
+        for (int vertex = 0; vertex < 3; ++vertex)
+        {
+            WeldSum& sum = sums[keys[vertices[vertex]]];
+            sum.x += nx;
+            sum.y += ny;
+            sum.z += nz;
+        }
+        ++usedTriangles;
+    };
+
+    if (primType == PDDI_PRIM_TRIANGLES)
+    {
+        for (int i = 0; i + 2 < elementCount; i += 3)
+            addTriangle(useIndices ? indices[i] : static_cast<unsigned>(i),
+                        useIndices ? indices[i + 1] : static_cast<unsigned>(i + 1),
+                        useIndices ? indices[i + 2] : static_cast<unsigned>(i + 2));
+    }
+    else
+    {
+        // Triangle-strip winding alternates for each element position, including
+        // across degenerate joins, matching GenerateEnvironmentNormals().
+        for (int i = 0; i + 2 < elementCount; ++i)
+        {
+            unsigned a = useIndices ? indices[i] : static_cast<unsigned>(i);
+            unsigned b = useIndices ? indices[i + 1] : static_cast<unsigned>(i + 1);
+            const unsigned c =
+                useIndices ? indices[i + 2] : static_cast<unsigned>(i + 2);
+            if (i & 1)
+            {
+                const unsigned swap = a;
+                a = b;
+                b = swap;
+            }
+            addTriangle(a, b, c);
+        }
+    }
+
+    if (usedTriangles == 0)
+        return false;
+
+    float* outlineData = new float[static_cast<size_t>(allocated) * 3];
+    if (outlineData == NULL)
+        return false;
+
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        const float* authored =
+            (const float*)((const unsigned char*)normal + i * stride);
+        float x = authored[0], y = authored[1], z = authored[2];
+
+        if (keyValid[i])
+        {
+            const WeldSum& sum = sums[keys[i]];
+            const double lengthSquared =
+                sum.x * sum.x + sum.y * sum.y + sum.z * sum.z;
+            if (lengthSquared > 1.0e-18)
+            {
+                const double inverseLength = 1.0 / sqrt(lengthSquared);
+                x = static_cast<float>(sum.x * inverseLength);
+                y = static_cast<float>(sum.y * inverseLength);
+                z = static_cast<float>(sum.z * inverseLength);
+            }
+        }
+
+        // Keep unused or fully degenerate vertices safe for the shader too.
+        const float authoredLengthSquared = x * x + y * y + z * z;
+        if (!isfinite(x) || !isfinite(y) || !isfinite(z) ||
+            authoredLengthSquared <= 1.0e-12f)
+        {
+            x = 0.0f;
+            y = 0.0f;
+            z = 1.0f;
+        }
+        else
+        {
+            const float inverseLength = 1.0f / sqrtf(authoredLengthSquared);
+            x *= inverseLength;
+            y *= inverseLength;
+            z *= inverseLength;
+        }
+
+        outlineData[i * 3] = x;
+        outlineData[i * 3 + 1] = y;
+        outlineData[i * 3 + 2] = z;
+    }
+
+    environmentOutlineNormals = outlineData;
+    environmentOutlineNormalsAvailable = true;
+    environmentOutlineNormalsUploaded = false;
+    return true;
+}
+
 #endif
 
 void pglPrimBuffer::Display(void)
@@ -3220,17 +3725,46 @@ void pglPrimBuffer::Display(void)
     MICROPROFILE_SCOPEI("PDDI", "pglPrimBuffer::Display", MP_RED);
 
 #ifdef RAD_ANDROID
-    bool useCreaseAwareEnvironmentOutlineNormals = false;
+    bool useEnvironmentOutlineNormalStream = false;
+    const unsigned long long outlineDrawableUID = GetSHARCurrentDrawableUID();
+    const bool gagOutlineNormalTarget =
+        gSHARGagCharacterCelPassActive &&
+        IsSHARGagOutlineNormalTarget(outlineDrawableUID);
+    const bool gagOutlineGeometryPass =
+        gagOutlineNormalTarget && gCelShadingEnabled &&
+        gCelShadingObjectEnabled && gCelShadingOutlinePass;
     const bool environmentOutlineGeometryPass =
         gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible &&
         gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass;
+    const bool pianoWeldedOutlineTarget =
+        environmentOutlineGeometryPass &&
+        IsSHARFrontendPianoOutlineTarget(outlineDrawableUID);
+    const bool hasAuthoredNormals = (vertexType & PDDI_V_NORMAL) != 0;
+    const bool buildEnvironmentOutlineNormals =
+        environmentOutlineGeometryPass &&
+        (!hasAuthoredNormals || pianoWeldedOutlineTarget);
+    const bool generateNormalsForOutline =
+        buildEnvironmentOutlineNormals ||
+        (gagOutlineGeometryPass && !hasAuthoredNormals);
 
-    if (environmentOutlineGeometryPass &&
-        !(vertexType & PDDI_V_NORMAL) && !GenerateEnvironmentNormals())
-        return;
+    if (generateNormalsForOutline)
+    {
+        // The piano uses its authored normals only as input to the separate
+        // welded outline stream. Other meshes without normals retain the
+        // existing generated-normal fallback; gag meshes remain unchanged.
+        const bool normalsAvailable =
+            hasAuthoredNormals || GenerateEnvironmentNormals();
 
-    if (environmentOutlineGeometryPass && !(vertexType & PDDI_V_NORMAL))
-        useCreaseAwareEnvironmentOutlineNormals = GenerateEnvironmentOutlineNormals();
+        if (normalsAvailable && buildEnvironmentOutlineNormals)
+        {
+            useEnvironmentOutlineNormalStream = pianoWeldedOutlineTarget
+                ? GenerateWeldedOutlineNormalsFromAuthoredNormals()
+                : GenerateEnvironmentOutlineNormals();
+        }
+
+        if (!normalsAvailable)
+            return;
+    }
 #endif
 
     if(!valid)
@@ -3263,7 +3797,10 @@ void pglPrimBuffer::Display(void)
         offset += 12;
 
 #ifdef RAD_ANDROID
-        if ((vertexType & PDDI_V_NORMAL) || environmentNormalsAvailable)
+        const bool useGeneratedNormalsForThisDraw =
+            environmentNormalsAvailable &&
+            !(gagOutlineNormalTarget && !gagOutlineGeometryPass);
+        if ((vertexType & PDDI_V_NORMAL) || useGeneratedNormalsForThisDraw)
         {
             glEnableVertexAttribArray(1);
             glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,stride,(void*)offset);
@@ -3318,6 +3855,26 @@ void pglPrimBuffer::Display(void)
         glBindVertexArrayOES(vertexArray);
     }
 
+#ifdef RAD_ANDROID
+    // VAO attribute enable/pointer state persists between the outline and base
+    // draw. Explicitly rebind generated normals for the gag shell, then restore
+    // the original zero-normal base-pass behaviour for these meshes only.
+    if (gagOutlineNormalTarget && !(vertexType & PDDI_V_NORMAL))
+    {
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+        if (gagOutlineGeometryPass && environmentNormalsAvailable)
+        {
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)12);
+        }
+        else if (!gagOutlineGeometryPass)
+        {
+            glDisableVertexAttribArray(1);
+            glVertexAttrib3f(1, 0.0f, 0.0f, 0.0f);
+        }
+    }
+#endif
+
     // Keep index uploads independent from vertex-buffer refreshes. SetIndices()
     // invalidates this cache; ordinary vertex Unlock() calls do not.
     if (indexCount && indices && !indexDataValid)
@@ -3331,36 +3888,40 @@ void pglPrimBuffer::Display(void)
     }
 
 #ifdef RAD_ANDROID
-    // The outline-only normal stream is a separate attribute/VBO. During all
-    // ordinary draws attribute 4 aliases the original interleaved normal slot.
-    // This prevents crease-aware smoothing from altering the source normals.
-    if (useCreaseAwareEnvironmentOutlineNormals)
+    // Attribute 4 is read only by the environment outline shader. Leave its
+    // VAO state untouched for ordinary draws to avoid repeated GL state calls.
+    if (environmentOutlineGeometryPass)
     {
-        if (!environmentOutlineNormalBuffer)
-            glGenBuffers(1, &environmentOutlineNormalBuffer);
-        glBindBuffer(GL_ARRAY_BUFFER, environmentOutlineNormalBuffer);
-        if (!environmentOutlineNormalsUploaded)
+        // The outline-only normal stream is a separate attribute/VBO. It keeps
+        // crease-aware smoothing from altering the original source normals.
+        if (useEnvironmentOutlineNormalStream)
         {
-            glBufferData(GL_ARRAY_BUFFER,
-                         allocated * 3 * sizeof(float),
-                         environmentOutlineNormals, GL_STATIC_DRAW);
-            environmentOutlineNormalsUploaded = true;
+            if (!environmentOutlineNormalBuffer)
+                glGenBuffers(1, &environmentOutlineNormalBuffer);
+            glBindBuffer(GL_ARRAY_BUFFER, environmentOutlineNormalBuffer);
+            if (!environmentOutlineNormalsUploaded)
+            {
+                glBufferData(GL_ARRAY_BUFFER,
+                             allocated * 3 * sizeof(float),
+                             environmentOutlineNormals, GL_STATIC_DRAW);
+                environmentOutlineNormalsUploaded = true;
+            }
+            glEnableVertexAttribArray(4);
+            glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE,
+                                  3 * sizeof(float), (void*)0);
         }
-        glEnableVertexAttribArray(4);
-        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE,
-                              3 * sizeof(float), (void*)0);
-    }
-    else if ((vertexType & PDDI_V_NORMAL) || environmentNormalsAvailable)
-    {
-        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-        glEnableVertexAttribArray(4);
-        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride, (void*)12);
-    }
-    else
-    {
-        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-        glDisableVertexAttribArray(4);
-        glVertexAttrib3f(4, 0.0f, 0.0f, 1.0f);
+        else if ((vertexType & PDDI_V_NORMAL) || environmentNormalsAvailable)
+        {
+            glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+            glEnableVertexAttribArray(4);
+            glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, stride, (void*)12);
+        }
+        else
+        {
+            glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+            glDisableVertexAttribArray(4);
+            glVertexAttrib3f(4, 0.0f, 0.0f, 1.0f);
+        }
     }
 #endif
 
@@ -3441,7 +4002,13 @@ void pglContext::SetCullMode(pddiCullMode mode)
     else
     {
         SetGLCullEnabled(true);
-        SetGLCullFace(cullModeTable[mode]);
+
+        // Reflection reverses triangle winding. Apply the opposite face for
+        // normal material rendering as well as for the separate outline pass.
+        GLenum cullFace = cullModeTable[mode];
+        if (gSHARMirrorPassActive)
+            cullFace = (cullFace == GL_BACK) ? GL_FRONT : GL_BACK;
+        SetGLCullFace(cullFace);
     }
 }
 
@@ -3626,16 +4193,21 @@ float pglContext::EndTiming(void)
 
 void pglContext::SetShaderProgram(pglProgram* program)
 {
-#ifdef RAD_ANDROID
-#endif
     if(program == currentProgram)
     {
 #ifdef RAD_ANDROID
         if (currentProgram)
             currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
+            gCelShadingEnabled && gSHARLevelOneOutsideVertexGrayscaleActive,
+            gSHARFrontendPictureSurfaceOutlineActive &&
+                gSHARFrontendMenuCelPassActive && gSHAREnvironmentCelPassActive &&
+                gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass &&
+                GetSHARCurrentDrawableUID() == 0x1887D98DC6BDAE69ULL,
+            IsSHARFrontendPictureDepthOffsetActive(),
             gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHARFrontendMenuLightingActive,
+            GetSHARCurrentEnvironmentOutlineWidth(), gSHARFrontendMenuLightingActive,
+            gSHARWorldSceneSaturationActive,
             gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
 #endif
         return;
@@ -3652,8 +4224,15 @@ void pglContext::SetShaderProgram(pglProgram* program)
 #ifdef RAD_ANDROID
     currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
+            gCelShadingEnabled && gSHARLevelOneOutsideVertexGrayscaleActive,
+            gSHARFrontendPictureSurfaceOutlineActive &&
+                gSHARFrontendMenuCelPassActive && gSHAREnvironmentCelPassActive &&
+                gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass &&
+                GetSHARCurrentDrawableUID() == 0x1887D98DC6BDAE69ULL,
+            IsSHARFrontendPictureDepthOffsetActive(),
             gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHARFrontendMenuLightingActive,
+            GetSHARCurrentEnvironmentOutlineWidth(), gSHARFrontendMenuLightingActive,
+            gSHARWorldSceneSaturationActive,
             gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
 #endif
     currentProgram->SetProjectionMatrix(&projection);
@@ -3673,8 +4252,15 @@ void pglContext::ApplyCelShadingState()
     if (currentProgram)
         currentProgram->SetCelShadingState(gCelShadingEnabled, gCelShadingObjectEnabled, gCelShadingOutlinePass, gSHARObjectBrightness, gSHARObjectSaturation, IsSHARRimLightingEnabled(),
             gSHAREnvironmentCelPassActive && gSHAREnvironmentCelMaterialEligible,
+            gCelShadingEnabled && gSHARLevelOneOutsideVertexGrayscaleActive,
+            gSHARFrontendPictureSurfaceOutlineActive &&
+                gSHARFrontendMenuCelPassActive && gSHAREnvironmentCelPassActive &&
+                gCelShadingEnabled && gCelShadingObjectEnabled && gCelShadingOutlinePass &&
+                GetSHARCurrentDrawableUID() == 0x1887D98DC6BDAE69ULL,
+            IsSHARFrontendPictureDepthOffsetActive(),
             gSHARCelOutlineViewportWidth, gSHARCelOutlineViewportHeight,
-            gSHARFrontendMenuLightingActive,
+            GetSHARCurrentEnvironmentOutlineWidth(), gSHARFrontendMenuLightingActive,
+            gSHARWorldSceneSaturationActive,
             gSHARMoodTintRed, gSHARMoodTintGreen, gSHARMoodTintBlue);
 }
 #endif

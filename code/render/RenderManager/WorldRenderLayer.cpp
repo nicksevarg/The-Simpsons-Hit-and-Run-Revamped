@@ -61,6 +61,23 @@
 #include <render/Loaders/BillboardWrappedLoader.h>
 #include <worldsim/avatarmanager.h>
 
+#ifdef RAD_ANDROID
+#include <mission/gameplaymanager.h>
+#include <interiors/interiormanager.h>
+void SetSHARMirrorPassActive(bool enabled);
+void SetSHARWorldSceneSaturationActive(bool enabled);
+
+static bool IsSHARLevelOneOutside()
+{
+    GameplayManager* gameplayManager = GetGameplayManager();
+    InteriorManager* interiorManager = GetInteriorManager();
+    return gameplayManager != NULL &&
+           gameplayManager->GetCurrentLevelIndex() == RenderEnums::L1 &&
+           interiorManager != NULL &&
+           !interiorManager->IsInside();
+}
+#endif
+
 //NUEVOS INCLUDES
 #include <presentation/presentation.h>
 #include <presentation/fmvplayer/fmvplayer.h>
@@ -243,6 +260,11 @@ void WorldRenderLayer::Render()
 
         for(int mirrorPass = mMirror ? 1 : 0; mirrorPass >= 0; mirrorPass--)
         {
+#ifdef RAD_ANDROID
+            // The reflected camera reverses triangle winding for every drawable.
+            // Scope the culling override to the mirrored world pass only.
+            SetSHARMirrorPassActive(mMirror && mirrorPass == 1);
+#endif
             rmt::Matrix originalCamera;
             if(mirrorPass == 1)
             {
@@ -267,7 +289,10 @@ void WorldRenderLayer::Render()
             END_PROFILE( "View Begin Render" );
 
             int i;
-            
+#ifdef RAD_ANDROID
+            SetSHARWorldSceneSaturationActive(IsSHARLevelOneOutside());
+#endif
+
             if(!mMirror)
             {
                 BEGIN_PROFILE( "Render World Spheres" );
@@ -293,6 +318,9 @@ void WorldRenderLayer::Render()
             //p3d::inventory->SelectSection("Default");
 
             mpWorldScene->RenderOpaque();
+#ifdef RAD_ANDROID
+            SetSHARWorldSceneSaturationActive(false);
+#endif
 
             BEGIN_PROFILE( "Render coins" );
             GetCoinManager()->Render();
@@ -320,6 +348,9 @@ void WorldRenderLayer::Render()
             //mpWorldScene->RenderShadowCasters();
             END_PROFILE( "Render Shadow Casters" );
 
+#ifdef RAD_ANDROID
+            SetSHARWorldSceneSaturationActive(IsSHARLevelOneOutside());
+#endif
             BEGIN_PROFILE( "RenderTranslucent" );
             mpWorldScene->RenderTranslucent();
             END_PROFILE( "RenderTranslucent" );
@@ -329,6 +360,9 @@ void WorldRenderLayer::Render()
             GetBillboardQuadManager()->DisplayAll();
             END_PROFILE( "BBQ Display All" );
             BillboardQuadManager::Disable();
+#ifdef RAD_ANDROID
+            SetSHARWorldSceneSaturationActive(false);
+#endif
 
             BEGIN_PROFILE( "RenderSparkles" );
             // Render the procedural particle effects:
@@ -368,6 +402,9 @@ void WorldRenderLayer::Render()
                 tCamera * camera = mpView[ view ]->GetCamera();
                 camera->SetCameraMatrix(&originalCamera);
             }
+#ifdef RAD_ANDROID
+            SetSHARMirrorPassActive(false);
+#endif
             if(GetCheatInputSystem()->IsCheatEnabled(CHEAT_ID_SHOW_TREE))
             {
                 rmt::Vector posn, pTriPts[3], intPosn, intNorm;

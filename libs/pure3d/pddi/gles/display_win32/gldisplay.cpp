@@ -35,6 +35,7 @@ bool IsMotionBlurEnabled();
 void SetSHARCharacterMaskWorldEnabled(bool enabled);
 void SetSHARCharacterMaskModelPass(bool enabled);
 void SetSHARTrackedColorWriteMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha);
+void GetSHARTrackedColorWriteMask(GLboolean mask[4]);
 void InvalidateSHARTrackedColorWriteMaskCache();
 bool GetSHARMotionBlurCameraData(float* output);
 bool IsSHARWorldCloudShadowLevelAllowed();
@@ -405,6 +406,82 @@ struct SHARMotionBlurSubjectBounds
     bool valid;
 };
 
+struct SHARMotionBlurProjectedSubject
+{
+    float uv[2];
+    float radius[2];
+    float depth;
+    float depthExtent;
+    bool valid;
+};
+
+static SHARMotionBlurProjectedSubject ProjectSHARMotionBlurSubject(
+    const SHARMotionBlurSubjectBounds& subject,
+    const SHARMotionBlurCameraState& camera,
+    int width,
+    int height,
+    float sizeScaleX,
+    float sizeScaleY)
+{
+    SHARMotionBlurProjectedSubject projected = {};
+    if (!subject.valid || !camera.valid || width <= 0 || height <= 0 ||
+        camera.tanHalfFovX <= 0.0f || camera.tanHalfFovY <= 0.0f)
+        return projected;
+
+    const float fromCameraX = subject.position[0] - camera.position[0];
+    const float fromCameraY = subject.position[1] - camera.position[1];
+    const float fromCameraZ = subject.position[2] - camera.position[2];
+    const float subjectZ =
+        fromCameraX * camera.forward[0] +
+        fromCameraY * camera.forward[1] +
+        fromCameraZ * camera.forward[2];
+    if (subjectZ <= camera.nearPlane)
+        return projected;
+
+    const float cameraRight = 
+        fromCameraX * camera.right[0] +
+        fromCameraY * camera.right[1] +
+        fromCameraZ * camera.right[2];
+    const float cameraUp =
+        fromCameraX * camera.up[0] +
+        fromCameraY * camera.up[1] +
+        fromCameraZ * camera.up[2];
+
+    const float halfWidth = subject.halfWidth * sizeScaleX;
+    const float halfHeight = subject.halfHeight * sizeScaleY;
+    const float halfWidthInCameraRight = sqrt(
+        halfWidth * halfWidth *
+            (camera.right[0] * camera.right[0] + camera.right[2] * camera.right[2]) +
+        halfHeight * halfHeight * camera.right[1] * camera.right[1]);
+    const float halfHeightInCameraUp = sqrt(
+        halfWidth * halfWidth *
+            (camera.up[0] * camera.up[0] + camera.up[2] * camera.up[2]) +
+        halfHeight * halfHeight * camera.up[1] * camera.up[1]);
+
+    const float texelX = 1.0f / (float)width;
+    const float texelY = 1.0f / (float)height;
+    float radiusX = halfWidthInCameraRight /
+        (subjectZ * camera.tanHalfFovX) * 0.5f;
+    float radiusY = halfHeightInCameraUp /
+        (subjectZ * camera.tanHalfFovY) * 0.5f;
+    if (radiusX < texelX * 3.0f) radiusX = texelX * 3.0f;
+    if (radiusY < texelY * 3.0f) radiusY = texelY * 3.0f;
+    radiusX += texelX * 5.0f;
+    radiusY += texelY * 5.0f;
+
+    projected.uv[0] = (cameraRight / (subjectZ * camera.tanHalfFovX)) * 0.5f + 0.5f;
+    projected.uv[1] = (cameraUp / (subjectZ * camera.tanHalfFovY)) * 0.5f + 0.5f;
+    projected.radius[0] = radiusX;
+    projected.radius[1] = radiusY;
+    projected.depth = subjectZ;
+    projected.depthExtent =
+        halfWidth * sqrt(camera.forward[0] * camera.forward[0] +
+                         camera.forward[2] * camera.forward[2]) +
+        halfHeight * (float)fabs(camera.forward[1]);
+    projected.valid = true;
+    return projected;
+}
+
 static SHARMotionBlurSubjectBounds gSHARMotionBlurCharacterSubject = {};
 static SHARMotionBlurSubjectBounds gSHARMotionBlurVehicleSubject = {};
 
@@ -608,11 +685,13 @@ GLint gCelPostCurrentNearPlaneLocation = -1;
 GLint gCelPostCurrentFarPlaneLocation = -1;
 GLint gCelPostPreviousNearPlaneLocation = -1;
 GLint gCelPostCharacterMaskEnabledLocation = -1;
-GLint gCelPostCharacterMaskPositionLocation = -1;
-GLint gCelPostCharacterMaskSizeLocation = -1;
+GLint gCelPostCharacterMaskUvLocation = -1;
+GLint gCelPostCharacterMaskRadiusLocation = -1;
 GLint gCelPostVehicleMaskEnabledLocation = -1;
-GLint gCelPostVehicleMaskPositionLocation = -1;
-GLint gCelPostVehicleMaskSizeLocation = -1;
+GLint gCelPostVehicleMaskUvLocation = -1;
+GLint gCelPostVehicleMaskRadiusLocation = -1;
+GLint gCelPostVehicleSubjectDepthLocation = -1;
+GLint gCelPostVehicleSubjectDepthExtentLocation = -1;
 GLint gCelPostVehicleMotionIntensityLocation = -1;
 GLuint gCelBloomExtractProgram = 0;
 GLuint gCelBloomBlurProgram = 0;
@@ -661,6 +740,15 @@ int gCelPostWidth = 0;
 int gCelPostHeight = 0;
 int gCelPostFailedWidth = 0;
 int gCelPostFailedHeight = 0;
+GLuint gCelFinalCompositeFbo = 0;
+GLuint gCelFinalCompositeTexture = 0;
+GLuint gCelFinalCompositeUpscaleProgram = 0;
+GLint gCelFinalCompositeUpscaleTextureLocation = -1;
+int gCelFinalCompositeWidth = 0;
+int gCelFinalCompositeHeight = 0;
+int gCelFinalCompositeFailedWidth = 0;
+int gCelFinalCompositeFailedHeight = 0;
+bool gCelFinalCompositeReady = false;
 int gCelRenderbufferWidth = 0;
 int gCelRenderbufferHeight = 0;
 int gCelRenderbufferFailedWidth = 0;
@@ -1096,7 +1184,7 @@ static bool CheckSHARRenderTargetSize(
         }
 
         const size_t pixels = pixelWidth * pixelHeight;
-        if (pixels > ((size_t)-1) / 14)
+        if (pixels > ((size_t)-1) / 18)
         {
             LogSHARRenderTargetRejectedOnce(
                 width, height, reasonCode,
@@ -1125,7 +1213,7 @@ static bool CheckSHARRenderTargetSize(
         if (reasonCode == 5 && sharpeningEnabled)
             estimatedBytes += pixels * 4;
 
-        if (reasonCode == 5 || reasonCode == 6)
+        if (reasonCode == 5 || reasonCode == 6 || reasonCode == 7)
             estimatedBytes += pixels * 4;
 
         if (estimatedBytes > SHAR_POSTPROCESS_BUDGET_BYTES)
@@ -1719,11 +1807,13 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "uniform float currentFarPlane;\n"
             "uniform float previousNearPlane;\n"
             "uniform float characterMaskEnabled;\n"
-            "uniform vec3 characterMaskPosition;\n"
-            "uniform vec2 characterMaskSize;\n"
+            "uniform vec2 characterMaskUv;\n"
+            "uniform vec2 characterMaskRadius;\n"
             "uniform float vehicleMaskEnabled;\n"
-            "uniform vec3 vehicleMaskPosition;\n"
-            "uniform vec2 vehicleMaskSize;\n"
+            "uniform vec2 vehicleMaskUv;\n"
+            "uniform vec2 vehicleMaskRadius;\n"
+            "uniform float vehicleSubjectDepth;\n"
+            "uniform float vehicleSubjectDepthExtent;\n"
             "uniform float vehicleMotionIntensity;\n"
             "varying vec2 texcoord;\n"
             "\n"
@@ -1782,101 +1872,71 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "        // resources cannot be created on this device or at this resolution.\n"
             "        if (currentNearPlane <= 0.0 || currentFarPlane <= currentNearPlane) return baseColour;\n"
             "        float depthNdc = depthValue * 2.0 - 1.0;\n"
-            "        float depthDenominator = currentFarPlane + currentNearPlane - depthNdc * (currentFarPlane - currentNearPlane);\n"
-            "        float viewZ = (2.0 * currentNearPlane * currentFarPlane) / max(depthDenominator, 0.0001);\n"
+            "        float depthDenominator = currentFarPlane - depthNdc * (currentFarPlane - currentNearPlane);\n"
+            "        float viewZ = (currentNearPlane * currentFarPlane) / max(depthDenominator, 0.0001);\n"
             "        vec2 ndc = uv * 2.0 - 1.0;\n"
             "        vec3 viewPosition = vec3(ndc.x * viewZ * currentTanHalfFovX, ndc.y * viewZ * currentTanHalfFovY, viewZ);\n"
             "        vec3 worldPosition = currentCameraPosition + currentCameraRight * viewPosition.x + currentCameraUp * viewPosition.y + currentCameraForward * viewPosition.z;\n"
-            "        vec2 cloudCoordinates = worldPosition.xz * 0.012 + cloudShadowTime * vec2(0.0750, -0.0555);\n"
+            "        vec2 cloudCoordinates = worldPosition.xz * 0.024 + cloudShadowTime * vec2(0.0750, -0.0555);\n"
             "        shadowCoverage = smoothstep(SHAR_CLOUD_SHADOW_EDGE_MIN, SHAR_CLOUD_SHADOW_EDGE_MAX, cloudNoise(cloudCoordinates));\n"
             "    }\n"
             "    return baseColour * (1.0 - shadowCoverage * 0.28 * cloudShadowStrengthMultiplier);\n"
             "}\n"
             "\n"
-            "float protectMotionBlurSubject(vec2 uv, float sceneViewZ, vec3 subjectPosition, vec2 halfSize, float enabled) {\n"
+            "float protectMotionBlurSubject(vec2 uv, float sceneViewZ, vec2 subjectUv, vec2 subjectRadius, float subjectZ, float depthExtent, float enabled) {\n"
             "    if (enabled < 0.5) return 0.0;\n"
-            "    vec3 fromCamera = subjectPosition - currentCameraPosition;\n"
-            "    float subjectZ = dot(fromCamera, currentCameraForward);\n"
             "    if (subjectZ <= currentNearPlane) return 0.0;\n"
-            "    // Bound depth protection to the registered subject's projected world-space extent.\n"
-            "    // This prevents foreground road/scenery inside the vehicle ellipse from being kept sharp.\n"
-            "    float depthExtent = halfSize.x * sqrt(currentCameraForward.x * currentCameraForward.x + currentCameraForward.z * currentCameraForward.z) + halfSize.y * abs(currentCameraForward.y);\n"
             "    float nearDepthLimit = subjectZ - depthExtent - 0.45;\n"
             "    float farDepthLimit = subjectZ + depthExtent + 0.55;\n"
             "    float depthFadeIn = smoothstep(nearDepthLimit - 0.35, nearDepthLimit + 0.35, sceneViewZ);\n"
             "    float depthFadeOut = 1.0 - smoothstep(farDepthLimit - 0.35, farDepthLimit + 0.35, sceneViewZ);\n"
             "    float depthProtection = depthFadeIn * depthFadeOut;\n"
-            "    vec2 subjectNdc = vec2(dot(fromCamera, currentCameraRight) / (subjectZ * currentTanHalfFovX), dot(fromCamera, currentCameraUp) / (subjectZ * currentTanHalfFovY));\n"
-            "    vec2 subjectUv = subjectNdc * 0.5 + 0.5;\n"
-            "    float halfWidthInCameraRight = sqrt(halfSize.x * halfSize.x * (currentCameraRight.x * currentCameraRight.x + currentCameraRight.z * currentCameraRight.z) + halfSize.y * halfSize.y * currentCameraRight.y * currentCameraRight.y);\n"
-            "    float halfHeightInCameraUp = sqrt(halfSize.x * halfSize.x * (currentCameraUp.x * currentCameraUp.x + currentCameraUp.z * currentCameraUp.z) + halfSize.y * halfSize.y * currentCameraUp.y * currentCameraUp.y);\n"
-            "    vec2 subjectRadius = vec2(halfWidthInCameraRight / (subjectZ * currentTanHalfFovX), halfHeightInCameraUp / (subjectZ * currentTanHalfFovY)) * 0.5;\n"
-            "    subjectRadius = max(subjectRadius, texelSize * 3.0);\n"
-            "    // Pad the projected bounds slightly so the outline and extremities stay sharp too.\n"
-            "    subjectRadius += texelSize * 5.0;\n"
             "    float ellipseDistance = length((uv - subjectUv) / subjectRadius);\n"
             "    float projectedMask = 1.0 - smoothstep(0.90, 1.30, ellipseDistance);\n"
             "    return projectedMask * depthProtection;\n"
             "}\n"
             "\n"
-            "float rawMotionBlurSubjectMask(vec2 uv, vec3 subjectPosition, vec2 halfSize, float enabled) {\n"
+            "float rawMotionBlurSubjectMask(vec2 uv, vec2 subjectUv, vec2 subjectRadius, float enabled) {\n"
             "    if (enabled < 0.5) return 0.0;\n"
-            "    vec3 fromCamera = subjectPosition - currentCameraPosition;\n"
-            "    float subjectZ = dot(fromCamera, currentCameraForward);\n"
-            "    if (subjectZ <= currentNearPlane) return 0.0;\n"
-            "    vec2 subjectNdc = vec2(dot(fromCamera, currentCameraRight) / (subjectZ * currentTanHalfFovX), dot(fromCamera, currentCameraUp) / (subjectZ * currentTanHalfFovY));\n"
-            "    vec2 subjectUv = subjectNdc * 0.5 + 0.5;\n"
-            "    float halfWidthInCameraRight = sqrt(halfSize.x * halfSize.x * (currentCameraRight.x * currentCameraRight.x + currentCameraRight.z * currentCameraRight.z) + halfSize.y * halfSize.y * currentCameraRight.y * currentCameraRight.y);\n"
-            "    float halfHeightInCameraUp = sqrt(halfSize.x * halfSize.x * (currentCameraUp.x * currentCameraUp.x + currentCameraUp.z * currentCameraUp.z) + halfSize.y * halfSize.y * currentCameraUp.y * currentCameraUp.y);\n"
-            "    vec2 subjectRadius = vec2(halfWidthInCameraRight / (subjectZ * currentTanHalfFovX), halfHeightInCameraUp / (subjectZ * currentTanHalfFovY)) * 0.5;\n"
-            "    subjectRadius = max(subjectRadius, texelSize * 3.0);\n"
-            "    subjectRadius += texelSize * 5.0;\n"
             "    float ellipseDistance = length((uv - subjectUv) / subjectRadius);\n"
             "    return 1.0 - smoothstep(0.90, 1.30, ellipseDistance);\n"
             "}\n"
+            "\n"
             "float vehicleRoadTrailMask(vec2 uv) {\n"
             "    if (vehicleMaskEnabled < 0.5 || vehicleMotionIntensity < 0.01) return 0.0;\n"
-            "    vec2 vehicleSize = vehicleMaskSize * vec2(1.20, 1.15);\n"
-            "    vec3 fromCamera = vehicleMaskPosition - currentCameraPosition;\n"
-            "    float vehicleZ = dot(fromCamera, currentCameraForward);\n"
-            "    if (vehicleZ <= currentNearPlane) return 0.0;\n"
-            "    vec2 vehicleNdc = vec2(dot(fromCamera, currentCameraRight) / (vehicleZ * currentTanHalfFovX), dot(fromCamera, currentCameraUp) / (vehicleZ * currentTanHalfFovY));\n"
-            "    vec2 vehicleUv = vehicleNdc * 0.5 + 0.5;\n"
-            "    float halfWidthInCameraRight = sqrt(vehicleSize.x * vehicleSize.x * (currentCameraRight.x * currentCameraRight.x + currentCameraRight.z * currentCameraRight.z) + vehicleSize.y * vehicleSize.y * currentCameraRight.y * currentCameraRight.y);\n"
-            "    float halfHeightInCameraUp = sqrt(vehicleSize.x * vehicleSize.x * (currentCameraUp.x * currentCameraUp.x + currentCameraUp.z * currentCameraUp.z) + vehicleSize.y * vehicleSize.y * currentCameraUp.y * currentCameraUp.y);\n"
-            "    vec2 vehicleRadius = vec2(halfWidthInCameraRight / (vehicleZ * currentTanHalfFovX), halfHeightInCameraUp / (vehicleZ * currentTanHalfFovY)) * 0.5;\n"
-            "    vehicleRadius = max(vehicleRadius, texelSize * 3.0) + texelSize * 5.0;\n"
-            "    // Trail starts at the rear of the car, widens toward both lower screen edges,\n"
-            "    // and softly loses strength across the fan instead of using a flat-edged band.\n"
+            "    vec2 vehicleUv = vehicleMaskUv;\n"
+            "    vec2 vehicleRadius = vehicleMaskRadius;\n"
             "    float distanceBelowCar = vehicleUv.y - uv.y;\n"
             "    float trailStart = vehicleRadius.y * 2.25;\n"
+            "    if (distanceBelowCar <= trailStart - texelSize.y * 5.0) return 0.0;\n"
+            "    float baseSideWidth = max(vehicleRadius.x * 0.72, texelSize.x * 6.0);\n"
+            "    float maximumSideWidth = uv.x < vehicleUv.x\n"
+            "        ? max(baseSideWidth, max(vehicleUv.x, texelSize.x * 4.0))\n"
+            "        : max(baseSideWidth, max(1.0 - vehicleUv.x, texelSize.x * 4.0));\n"
+            "    if (abs(uv.x - vehicleUv.x) >= maximumSideWidth * 1.65) return 0.0;\n"
             "    float trailLength = max(vehicleUv.y - trailStart, texelSize.y * 12.0);\n"
             "    float trailProgress = clamp((distanceBelowCar - trailStart) / trailLength, 0.0, 1.0);\n"
             "    float verticalFade = smoothstep(trailStart - texelSize.y * 5.0, trailStart + texelSize.y * 5.0, distanceBelowCar);\n"
             "    float curvedProgress = smoothstep(0.0, 0.95, trailProgress);\n"
-            "    float baseSideWidth = max(vehicleRadius.x * 0.72, texelSize.x * 6.0);\n"
             "    float leftWidth = mix(baseSideWidth, max(vehicleUv.x, texelSize.x * 4.0), curvedProgress);\n"
             "    float rightWidth = mix(baseSideWidth, max(1.0 - vehicleUv.x, texelSize.x * 4.0), curvedProgress);\n"
             "    float sideDistance = uv.x < vehicleUv.x ? (vehicleUv.x - uv.x) / leftWidth : (uv.x - vehicleUv.x) / rightWidth;\n"
             "    float sideFalloff = 1.0 - smoothstep(0.0, 1.65, sideDistance);\n"
             "    float lowerScreenFade = 1.0 - 0.12 * smoothstep(0.0, 1.0, trailProgress);\n"
             "    float trailShape = verticalFade * sideFalloff * lowerScreenFade;\n"
-            "    float vehicleBodyMask = rawMotionBlurSubjectMask(uv, vehicleMaskPosition, vehicleSize, vehicleMaskEnabled);\n"
+            "    float vehicleBodyMask = rawMotionBlurSubjectMask(uv, vehicleMaskUv, vehicleMaskRadius, vehicleMaskEnabled);\n"
             "    return trailShape * (1.0 - vehicleBodyMask);\n"
             "}\n"
-            "\n"            "vec3 applyVehicleRoadTrail(vec2 uv, vec3 baseColour) {\n"
+            "\n"
+            "vec3 applyVehicleRoadTrail(vec2 uv, vec3 baseColour) {\n"
             "    if (vehicleMaskEnabled < 0.5 || vehicleMotionIntensity < 0.01) return baseColour;\n"
-            "    vec3 fromCamera = vehicleMaskPosition - currentCameraPosition;\n"
-            "    float vehicleZ = dot(fromCamera, currentCameraForward);\n"
-            "    if (vehicleZ <= currentNearPlane) return baseColour;\n"
-            "    vec2 vehicleNdc = vec2(dot(fromCamera, currentCameraRight) / (vehicleZ * currentTanHalfFovX), dot(fromCamera, currentCameraUp) / (vehicleZ * currentTanHalfFovY));\n"
-            "    vec2 vehicleUv = vehicleNdc * 0.5 + 0.5;\n"
-            "    vec2 towardVehiclePixels = (vehicleUv - uv) / texelSize;\n"
-            "    float towardVehicleLength = max(length(towardVehiclePixels), 1.0);\n"
-            "    vec2 trailStep = (towardVehiclePixels / towardVehicleLength) * texelSize * mix(10.0, 34.0, vehicleMotionIntensity);\n"
+            "    vec2 vehicleUv = vehicleMaskUv;\n"
             "    float celAwareTrailStrength = 0.90;\n"
             "    float roadTrailWeight = vehicleRoadTrailMask(uv) * vehicleMotionIntensity * celAwareTrailStrength;\n"
             "    if (roadTrailWeight <= 0.001) return baseColour;\n"
+            "    vec2 towardVehiclePixels = (vehicleUv - uv) / texelSize;\n"
+            "    float towardVehicleLength = max(length(towardVehiclePixels), 1.0);\n"
+            "    vec2 trailStep = (towardVehiclePixels / towardVehicleLength) * texelSize * mix(10.0, 34.0, vehicleMotionIntensity);\n"
             "    // Sample back toward the car along the fan, creating a visible directional road streak.\n"
             "    vec3 roadTrailColour = baseColour * 0.28;\n"
             "    roadTrailColour += texture2D(sceneTex, uv + trailStep * 0.25).rgb * 0.20;\n"
@@ -1885,8 +1945,7 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    roadTrailColour += texture2D(sceneTex, uv + trailStep).rgb * 0.14;\n"
             "    return mix(baseColour, roadTrailColour, roadTrailWeight);\n"
             "}\n"
-            "\n"
-            "vec3 applyCameraMotionBlur(vec2 uv, vec3 centreColour) {\n"
+            "\n"            "vec3 applyCameraMotionBlur(vec2 uv, vec3 centreColour) {\n"
             "    if (motionBlurEnabled < 0.5 || depthTextureAvailable < 0.5) return centreColour;\n"
             "    // The vehicle subject is only registered while the player is driving.\n"
             "    if (vehicleMaskEnabled < 0.5) return centreColour;\n"
@@ -1894,8 +1953,8 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    if (depthValue >= 0.9995) return centreColour;\n"
             "    if (motionBlurCameraValid < 0.5) return applyVehicleRoadTrail(uv, centreColour);\n"
             "    float depthNdc = depthValue * 2.0 - 1.0;\n"
-            "    float depthDenominator = currentFarPlane + currentNearPlane - depthNdc * (currentFarPlane - currentNearPlane);\n"
-            "    float viewZ = (2.0 * currentNearPlane * currentFarPlane) / max(depthDenominator, 0.0001);\n"
+            "    float depthDenominator = currentFarPlane - depthNdc * (currentFarPlane - currentNearPlane);\n"
+            "    float viewZ = (currentNearPlane * currentFarPlane) / max(depthDenominator, 0.0001);\n"
             "    vec2 ndc = uv * 2.0 - 1.0;\n"
             "    vec3 currentViewPosition = vec3(ndc.x * viewZ * currentTanHalfFovX, ndc.y * viewZ * currentTanHalfFovY, viewZ);\n"
             "    vec3 worldPosition = currentCameraPosition + currentCameraRight * currentViewPosition.x + currentCameraUp * currentViewPosition.y + currentCameraForward * currentViewPosition.z;\n"
@@ -1911,19 +1970,17 @@ static bool EnsureCelPostProcessResources(int width, int height)
             "    float edgeProximity = 1.0 - smoothstep(0.05, 0.30, edgeDistance);\n"
             "    float edgeBlurBoost = 1.0 + 0.80 * edgeProximity;\n"
             "    float motionAmount = smoothstep(0.10, 0.90, motionPixels);\n"
-            "    if (motionAmount <= 0.001 && vehicleMotionIntensity <= 0.01) return centreColour;\n"
+            "    if (motionAmount <= 0.001) return applyVehicleRoadTrail(uv, centreColour);\n"
             "    vec2 maxOffset = texelSize * mix(12.0, 20.0, edgeProximity);\n"
             "    vec2 blurOffset = clamp(motion * motionBlurTimeScale * edgeBlurBoost, -maxOffset, maxOffset);\n"
             "    vec3 blurred = centreColour * 0.40;\n"
             "    // Bias the same blur weight toward the previous screen position so passing scenery gets a visible directional trail.\n"
-            "    blurred += texture2D(sceneTex, clamp(uv - blurOffset * 0.25, texelSize * 0.5, vec2(1.0) - texelSize * 0.5)).rgb * 0.20;\n"
-            "    blurred += texture2D(sceneTex, clamp(uv - blurOffset * 0.50, texelSize * 0.5, vec2(1.0) - texelSize * 0.5)).rgb * 0.20;\n"
-            "    blurred += texture2D(sceneTex, clamp(uv - blurOffset * 0.75, texelSize * 0.5, vec2(1.0) - texelSize * 0.5)).rgb * 0.10;\n"
-            "    blurred += texture2D(sceneTex, clamp(uv - blurOffset, texelSize * 0.5, vec2(1.0) - texelSize * 0.5)).rgb * 0.10;\n"
+            "    blurred += texture2D(sceneTex, clamp(uv - blurOffset * 0.375, texelSize * 0.5, vec2(1.0) - texelSize * 0.5)).rgb * 0.40;\n"
+            "    blurred += texture2D(sceneTex, clamp(uv - blurOffset * 0.875, texelSize * 0.5, vec2(1.0) - texelSize * 0.5)).rgb * 0.20;\n"
             "    // Character materials do not consistently contribute depth, so use the projected player bounds directly.\n"
-            "    float characterProtection = rawMotionBlurSubjectMask(uv, characterMaskPosition, characterMaskSize, characterMaskEnabled);\n"
+            "    float characterProtection = rawMotionBlurSubjectMask(uv, characterMaskUv, characterMaskRadius, characterMaskEnabled);\n"
             "    // Add a small horizontal allowance so the tail stays mostly protected without greatly widening the mask.\n"
-            "    float vehicleProtection = protectMotionBlurSubject(uv, viewZ, vehicleMaskPosition, vehicleMaskSize * vec2(1.20, 1.15), vehicleMaskEnabled);\n"
+            "    float vehicleProtection = protectMotionBlurSubject(uv, viewZ, vehicleMaskUv, vehicleMaskRadius, vehicleSubjectDepth, vehicleSubjectDepthExtent, vehicleMaskEnabled);\n"
             "    float subjectProtection = max(characterProtection, vehicleProtection);\n"
             "    // Fade camera-panning blur out before the screen midpoint; the road-trail fan is separate.\n"
             "    float lowerScreenMotionBlur = 1.0 - smoothstep(0.36, 0.50, uv.y);\n"
@@ -2020,11 +2077,13 @@ static bool EnsureCelPostProcessResources(int width, int height)
         gCelPostCurrentFarPlaneLocation = glGetUniformLocation(gCelPostProgram, "currentFarPlane");
         gCelPostPreviousNearPlaneLocation = glGetUniformLocation(gCelPostProgram, "previousNearPlane");
         gCelPostCharacterMaskEnabledLocation = glGetUniformLocation(gCelPostProgram, "characterMaskEnabled");
-        gCelPostCharacterMaskPositionLocation = glGetUniformLocation(gCelPostProgram, "characterMaskPosition");
-        gCelPostCharacterMaskSizeLocation = glGetUniformLocation(gCelPostProgram, "characterMaskSize");
+        gCelPostCharacterMaskUvLocation = glGetUniformLocation(gCelPostProgram, "characterMaskUv");
+        gCelPostCharacterMaskRadiusLocation = glGetUniformLocation(gCelPostProgram, "characterMaskRadius");
         gCelPostVehicleMaskEnabledLocation = glGetUniformLocation(gCelPostProgram, "vehicleMaskEnabled");
-        gCelPostVehicleMaskPositionLocation = glGetUniformLocation(gCelPostProgram, "vehicleMaskPosition");
-        gCelPostVehicleMaskSizeLocation = glGetUniformLocation(gCelPostProgram, "vehicleMaskSize");
+        gCelPostVehicleMaskUvLocation = glGetUniformLocation(gCelPostProgram, "vehicleMaskUv");
+        gCelPostVehicleMaskRadiusLocation = glGetUniformLocation(gCelPostProgram, "vehicleMaskRadius");
+        gCelPostVehicleSubjectDepthLocation = glGetUniformLocation(gCelPostProgram, "vehicleSubjectDepth");
+        gCelPostVehicleSubjectDepthExtentLocation = glGetUniformLocation(gCelPostProgram, "vehicleSubjectDepthExtent");
         gCelPostVehicleMotionIntensityLocation = glGetUniformLocation(gCelPostProgram, "vehicleMotionIntensity");
 
 
@@ -2119,6 +2178,128 @@ static bool EnsureCelPostProcessResources(int width, int height)
     return gCelPostProgram != 0 && gCelPostTexture != 0;
 }
 
+
+static bool EnsureCelFinalCompositeResources(int width, int height)
+{
+    if (width <= 0 || height <= 0)
+        return false;
+
+    if (gCelFinalCompositeReady &&
+        gCelFinalCompositeWidth == width &&
+        gCelFinalCompositeHeight == height &&
+        gCelFinalCompositeFbo != 0 &&
+        gCelFinalCompositeTexture != 0 &&
+        gCelFinalCompositeUpscaleProgram != 0)
+        return true;
+
+    if (gCelFinalCompositeFailedWidth == width &&
+        gCelFinalCompositeFailedHeight == height)
+        return false;
+
+    if (!CheckSHARRenderTargetSize(
+            width, height, "internal-resolution composite texture", 7, false, true))
+        return false;
+
+    if (gCelFinalCompositeUpscaleProgram == 0)
+    {
+        static const char* vertexSource =
+            "attribute vec2 position;\n"
+            "varying vec2 texcoord;\n"
+            "void main() { texcoord = position * 0.5 + 0.5; gl_Position = vec4(position, 0.0, 1.0); }\n";
+        static const char* fragmentSource =
+            "precision mediump float;\n"
+            "uniform sampler2D sceneTex;\n"
+            "varying vec2 texcoord;\n"
+            "void main() { gl_FragColor = texture2D(sceneTex, texcoord); }\n";
+        gCelFinalCompositeUpscaleProgram = CreateCelPostProgram(
+            vertexSource, fragmentSource, "Internal-resolution composite upscale");
+        if (gCelFinalCompositeUpscaleProgram != 0)
+        {
+            gCelFinalCompositeUpscaleTextureLocation =
+                glGetUniformLocation(gCelFinalCompositeUpscaleProgram, "sceneTex");
+        }
+    }
+
+    if (gCelFinalCompositeUpscaleProgram == 0)
+    {
+        gCelFinalCompositeFailedWidth = width;
+        gCelFinalCompositeFailedHeight = height;
+        return false;
+    }
+
+    if (gCelFinalCompositeFbo == 0)
+        glGenFramebuffers(1, &gCelFinalCompositeFbo);
+    if (gCelFinalCompositeTexture == 0)
+        glGenTextures(1, &gCelFinalCompositeTexture);
+    if (gCelFinalCompositeFbo == 0 || gCelFinalCompositeTexture == 0)
+    {
+        gCelFinalCompositeFailedWidth = width;
+        gCelFinalCompositeFailedHeight = height;
+        return false;
+    }
+
+    GLint previousFramebuffer = 0;
+    GLint previousActiveTexture = GL_TEXTURE0;
+    GLint previousTexture = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+
+    glBindTexture(GL_TEXTURE_2D, gCelFinalCompositeTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    bool textureReady = true;
+    if (gCelFinalCompositeWidth != width ||
+        gCelFinalCompositeHeight != height)
+    {
+        glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+            GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        textureReady = CheckSHARAllocationError(
+            "internal-resolution composite texture", width, height);
+    }
+
+    bool framebufferReady = false;
+    if (textureReady)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, gCelFinalCompositeFbo);
+        glFramebufferTexture2D(
+            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+            gCelFinalCompositeTexture, 0);
+        const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        framebufferReady = status == GL_FRAMEBUFFER_COMPLETE;
+        if (!framebufferReady)
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_RENDER,
+                "SHAR internal-resolution composite FBO incomplete (0x%04x); using direct output composite",
+                (unsigned)status);
+        }
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)previousFramebuffer);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)previousTexture);
+    glActiveTexture((GLenum)previousActiveTexture);
+
+    if (!textureReady || !framebufferReady)
+    {
+        gCelFinalCompositeFailedWidth = width;
+        gCelFinalCompositeFailedHeight = height;
+        gCelFinalCompositeReady = false;
+        return false;
+    }
+
+    gCelFinalCompositeWidth = width;
+    gCelFinalCompositeHeight = height;
+    gCelFinalCompositeFailedWidth = 0;
+    gCelFinalCompositeFailedHeight = 0;
+    gCelFinalCompositeReady = true;
+    return true;
+}
+
 static bool EnsureCelCloudShadowResources(int width, int height)
 {
     if (width <= 0 || height <= 0)
@@ -2127,6 +2308,14 @@ static bool EnsureCelCloudShadowResources(int width, int height)
     // Half width/height requires one quarter of the full-resolution mask work.
     const int maskWidth = width > 1 ? (width + 1) / 2 : 1;
     const int maskHeight = height > 1 ? (height + 1) / 2 : 1;
+    if (gCelCloudShadowReady &&
+        gCelCloudShadowWidth == maskWidth &&
+        gCelCloudShadowHeight == maskHeight &&
+        gCelCloudShadowFbo != 0 &&
+        gCelCloudShadowTexture != 0 &&
+        gCelCloudShadowProgram != 0)
+        return true;
+
     if (gCelCloudShadowFailedWidth == maskWidth &&
         gCelCloudShadowFailedHeight == maskHeight)
         return false;
@@ -2187,12 +2376,12 @@ static bool EnsureCelCloudShadowResources(int width, int height)
             "        return;\n"
             "    }\n"
             "    float depthNdc = depthValue * 2.0 - 1.0;\n"
-            "    float depthDenominator = currentFarPlane + currentNearPlane - depthNdc * (currentFarPlane - currentNearPlane);\n"
-            "    float viewZ = (2.0 * currentNearPlane * currentFarPlane) / max(depthDenominator, 0.0001);\n"
+            "    float depthDenominator = currentFarPlane - depthNdc * (currentFarPlane - currentNearPlane);\n"
+            "    float viewZ = (currentNearPlane * currentFarPlane) / max(depthDenominator, 0.0001);\n"
             "    vec2 ndc = texcoord * 2.0 - 1.0;\n"
             "    vec3 viewPosition = vec3(ndc.x * viewZ * currentTanHalfFovX, ndc.y * viewZ * currentTanHalfFovY, viewZ);\n"
             "    vec3 worldPosition = currentCameraPosition + currentCameraRight * viewPosition.x + currentCameraUp * viewPosition.y + currentCameraForward * viewPosition.z;\n"
-            "    vec2 cloudCoordinates = worldPosition.xz * 0.012 + cloudShadowTime * vec2(0.0750, -0.0555);\n"
+            "    vec2 cloudCoordinates = worldPosition.xz * 0.024 + cloudShadowTime * vec2(0.0750, -0.0555);\n"
             "    float shadowCoverage = smoothstep(SHAR_CLOUD_SHADOW_EDGE_MIN, SHAR_CLOUD_SHADOW_EDGE_MAX, cloudNoise(cloudCoordinates));\n"
             "    // Base-255 byte packing keeps all intermediates in mediump range.\n"
             "    float depthScaled = clamp(depthValue, 0.0, 1.0) * 255.0;\n"
@@ -2662,6 +2851,11 @@ static void ResetAndroidPostProcess()
         glBindFramebuffer(GL_FRAMEBUFFER, gCelCloudShadowFbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     }
+    if (gCelFinalCompositeFbo != 0)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, gCelFinalCompositeFbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     glActiveTexture(GL_TEXTURE0);
@@ -2670,6 +2864,7 @@ static void ResetAndroidPostProcess()
     RecreateSHARTexture(gCelBloomTexture);
     RecreateSHARTexture(gCelBloomScratchTexture);
     RecreateSHARTexture(gCelCloudShadowTexture);
+    RecreateSHARTexture(gCelFinalCompositeTexture);
     RecreateSHARTexture(gFrameSharpenTexture);
 
     if (gCelRenderDepth != 0)
@@ -2683,6 +2878,9 @@ static void ResetAndroidPostProcess()
     gCelDepthTextureActive = false;
     gCelDepthTextureFailed = false;
     gCelPostWidth = gCelPostHeight = 0;
+    gCelFinalCompositeWidth = gCelFinalCompositeHeight = 0;
+    gCelFinalCompositeFailedWidth = gCelFinalCompositeFailedHeight = 0;
+    gCelFinalCompositeReady = false;
     gCelRenderbufferWidth = gCelRenderbufferHeight = 0;
     gCelBloomWidth = gCelBloomHeight = 0;
     gCelCloudShadowWidth = gCelCloudShadowHeight = 0;
@@ -2775,6 +2973,18 @@ static void ApplyCelPostProcess(int width, int height)
     const bool motionBlurCameraValid =
         motionBlurRequested && gCelDepthTextureActive && haveCurrentMotionBlurCamera &&
         IsSHARMotionBlurHistoryUsable(currentMotionBlurCamera, width, height);
+    const SHARMotionBlurProjectedSubject characterProjection =
+        haveCurrentMotionBlurCamera
+            ? ProjectSHARMotionBlurSubject(
+                gSHARMotionBlurCharacterSubject, currentMotionBlurCamera,
+                width, height, 1.0f, 1.0f)
+            : SHARMotionBlurProjectedSubject{};
+    const SHARMotionBlurProjectedSubject vehicleProjection =
+        haveCurrentMotionBlurCamera
+            ? ProjectSHARMotionBlurSubject(
+                gSHARMotionBlurVehicleSubject, currentMotionBlurCamera,
+                width, height, 1.20f, 1.15f)
+            : SHARMotionBlurProjectedSubject{};
 
     // Resolve the scene directly when no independent post effect is requested.
     if (!bloomRequested && !cloudShadowsActive && !motionBlurRequested)
@@ -2943,17 +3153,32 @@ static void ApplyCelPostProcess(int width, int height)
     const GLint postCurrentFarPlaneLocation = gCelPostCurrentFarPlaneLocation;
     const GLint postPreviousNearPlaneLocation = gCelPostPreviousNearPlaneLocation;
     const GLint postCharacterMaskEnabledLocation = gCelPostCharacterMaskEnabledLocation;
-    const GLint postCharacterMaskPositionLocation = gCelPostCharacterMaskPositionLocation;
-    const GLint postCharacterMaskSizeLocation = gCelPostCharacterMaskSizeLocation;
+    const GLint postCharacterMaskUvLocation = gCelPostCharacterMaskUvLocation;
+    const GLint postCharacterMaskRadiusLocation = gCelPostCharacterMaskRadiusLocation;
     const GLint postVehicleMaskEnabledLocation = gCelPostVehicleMaskEnabledLocation;
-    const GLint postVehicleMaskPositionLocation = gCelPostVehicleMaskPositionLocation;
-    const GLint postVehicleMaskSizeLocation = gCelPostVehicleMaskSizeLocation;
+    const GLint postVehicleMaskUvLocation = gCelPostVehicleMaskUvLocation;
+    const GLint postVehicleMaskRadiusLocation = gCelPostVehicleMaskRadiusLocation;
+    const GLint postVehicleSubjectDepthLocation = gCelPostVehicleSubjectDepthLocation;
+    const GLint postVehicleSubjectDepthExtentLocation = gCelPostVehicleSubjectDepthExtentLocation;
     const GLint postVehicleMotionIntensityLocation = gCelPostVehicleMotionIntensityLocation;
     const bool useBloomOnlyComposite =
         bloomRequested && !cloudShadowsActive && !motionBlurRequested &&
         gCelBloomOnlyPostProgram != 0;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, outputWidth, outputHeight);
+    const bool compositeResolutionsMatch =
+        width == outputWidth && height == outputHeight;
+    const bool compositeAtInternalResolution =
+        !compositeResolutionsMatch &&
+        EnsureCelFinalCompositeResources(width, height);
+    if (compositeAtInternalResolution)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, gCelFinalCompositeFbo);
+        glViewport(0, 0, width, height);
+    }
+    else
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, outputWidth, outputHeight);
+    }
     if (useBloomOnlyComposite)
     {
         glUseProgram(gCelBloomOnlyPostProgram);
@@ -3037,17 +3262,25 @@ static void ApplyCelPostProcess(int width, int height)
     }
 
     if (postCharacterMaskEnabledLocation >= 0)
-        glUniform1f(postCharacterMaskEnabledLocation, gSHARMotionBlurCharacterSubject.valid ? 1.0f : 0.0f);
-    if (postCharacterMaskPositionLocation >= 0 && gSHARMotionBlurCharacterSubject.valid)
-        glUniform3f(postCharacterMaskPositionLocation, gSHARMotionBlurCharacterSubject.position[0], gSHARMotionBlurCharacterSubject.position[1], gSHARMotionBlurCharacterSubject.position[2]);
-    if (postCharacterMaskSizeLocation >= 0 && gSHARMotionBlurCharacterSubject.valid)
-        glUniform2f(postCharacterMaskSizeLocation, gSHARMotionBlurCharacterSubject.halfWidth, gSHARMotionBlurCharacterSubject.halfHeight);
+        glUniform1f(postCharacterMaskEnabledLocation, characterProjection.valid ? 1.0f : 0.0f);
+    if (postCharacterMaskUvLocation >= 0)
+        glUniform2f(postCharacterMaskUvLocation,
+            characterProjection.uv[0], characterProjection.uv[1]);
+    if (postCharacterMaskRadiusLocation >= 0)
+        glUniform2f(postCharacterMaskRadiusLocation,
+            characterProjection.radius[0], characterProjection.radius[1]);
     if (postVehicleMaskEnabledLocation >= 0)
-        glUniform1f(postVehicleMaskEnabledLocation, gSHARMotionBlurVehicleSubject.valid ? 1.0f : 0.0f);
-    if (postVehicleMaskPositionLocation >= 0 && gSHARMotionBlurVehicleSubject.valid)
-        glUniform3f(postVehicleMaskPositionLocation, gSHARMotionBlurVehicleSubject.position[0], gSHARMotionBlurVehicleSubject.position[1], gSHARMotionBlurVehicleSubject.position[2]);
-    if (postVehicleMaskSizeLocation >= 0 && gSHARMotionBlurVehicleSubject.valid)
-        glUniform2f(postVehicleMaskSizeLocation, gSHARMotionBlurVehicleSubject.halfWidth, gSHARMotionBlurVehicleSubject.halfHeight);
+        glUniform1f(postVehicleMaskEnabledLocation, vehicleProjection.valid ? 1.0f : 0.0f);
+    if (postVehicleMaskUvLocation >= 0)
+        glUniform2f(postVehicleMaskUvLocation,
+            vehicleProjection.uv[0], vehicleProjection.uv[1]);
+    if (postVehicleMaskRadiusLocation >= 0)
+        glUniform2f(postVehicleMaskRadiusLocation,
+            vehicleProjection.radius[0], vehicleProjection.radius[1]);
+    if (postVehicleSubjectDepthLocation >= 0)
+        glUniform1f(postVehicleSubjectDepthLocation, vehicleProjection.depth);
+    if (postVehicleSubjectDepthExtentLocation >= 0)
+        glUniform1f(postVehicleSubjectDepthExtentLocation, vehicleProjection.depthExtent);
     if (postVehicleMotionIntensityLocation >= 0)
         glUniform1f(postVehicleMotionIntensityLocation,
             gSHARMotionBlurVehicleSubject.valid ? gSHARMotionBlurVehicleSubject.motionIntensity : 0.0f);
@@ -3075,6 +3308,17 @@ static void ApplyCelPostProcess(int width, int height)
     glActiveTexture(GL_TEXTURE0);
     DrawCelPostFullscreenQuad();
 
+    if (compositeAtInternalResolution)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, outputWidth, outputHeight);
+        glUseProgram(gCelFinalCompositeUpscaleProgram);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, gCelFinalCompositeTexture);
+        if (gCelFinalCompositeUpscaleTextureLocation >= 0)
+            glUniform1i(gCelFinalCompositeUpscaleTextureLocation, 0);
+        DrawCelPostFullscreenQuad();
+    }
 
     if (previousAttrib0Enabled)
         glEnableVertexAttribArray(0);
@@ -3300,11 +3544,15 @@ bool BeginCelPostProcessFrame(int width, int height)
     GLboolean previousColourMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
     GLboolean previousScissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
     GLfloat previousClearColour[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+#ifdef RAD_ANDROID
+    // Use the tracked value; the helper queries GL only after cache invalidation.
+    GetSHARTrackedColorWriteMask(previousColourMask);
+#else
     glGetBooleanv(GL_COLOR_WRITEMASK, previousColourMask);
-    // Synchronize tracking with the queried state before the temporary clear.
     SetSHARTrackedColorWriteMask(
         previousColourMask[0], previousColourMask[1],
         previousColourMask[2], previousColourMask[3]);
+#endif
     glGetFloatv(GL_COLOR_CLEAR_VALUE, previousClearColour);
     glDisable(GL_SCISSOR_TEST);
     SetSHARTrackedColorWriteMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
@@ -4152,6 +4400,22 @@ pglDisplay ::~pglDisplay()
     {
         glDeleteFramebuffers(1, &gCelCloudShadowFbo);
         gCelCloudShadowFbo = 0;
+    }
+    if (gCelFinalCompositeFbo)
+    {
+        glDeleteFramebuffers(1, &gCelFinalCompositeFbo);
+        gCelFinalCompositeFbo = 0;
+    }
+    if (gCelFinalCompositeTexture)
+    {
+        glDeleteTextures(1, &gCelFinalCompositeTexture);
+        gCelFinalCompositeTexture = 0;
+    }
+    if (gCelFinalCompositeUpscaleProgram)
+    {
+        glDeleteProgram(gCelFinalCompositeUpscaleProgram);
+        gCelFinalCompositeUpscaleProgram = 0;
+        gCelFinalCompositeUpscaleTextureLocation = -1;
     }
     if (gCelCloudShadowTexture)
     {

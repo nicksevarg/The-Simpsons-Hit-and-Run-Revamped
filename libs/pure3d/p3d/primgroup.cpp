@@ -5,7 +5,9 @@
 
 #include <p3d/primgroup.hpp>
 #include <p3d/utility.hpp>
+#include <p3d/sharrendercontext.hpp>
 #include <p3d/shader.hpp>
+#include <p3d/entity.hpp>
 #include <p3d/vertexlist.hpp>
 #include <constants/chunks.h>
 #include <constants/chunkids.hpp>
@@ -21,10 +23,14 @@
 
 #include <string.h>
 #include <vector>
+#ifdef RAD_ANDROID
+#include <math.h>
+#endif
 
 #ifdef RAD_ANDROID
 bool IsSHAREnvironmentFoliageMeshPassActive();
 bool IsCelShadingOutlinePass();
+void SetSHARFrontendPictureSurfaceOutlineActive(bool enabled);
 
 namespace
 {
@@ -259,16 +265,6 @@ void tPrimGroupOptimised::Display()
          (!mShader->mEnvironmentCelEligible &&
           !foliageAlphaTestEligible && !foliageCutoutEligible &&
           !foliageBlendedCutoutEligible));
-    if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
-        mShader != NULL)
-    {    }
-    if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
-        mShader != NULL)
-    {        if (!mShader->mEnvironmentCelEligible &&
-            !mShader->mEnvironmentCelAlphaTestEligible &&
-            !foliageBlendedCutoutEligible)
-        {        }
-    }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
     if (environmentMaterialIneligible)
@@ -308,7 +304,24 @@ void tPrimGroupOptimised::Display()
         p3d::pddi->DrawPrimBuffer( shader, mBuffer );
     }
 #else
+#ifdef RAD_ANDROID
+    // FE_Pic3_m is the four-vertex picture surface within FE_pCubeShape23.
+    // Give only this material group a radial expansion around the quad centre;
+    // FE_Pic_F_m remains on the standard normal-based frame-outline path.
+    const bool usePictureSurfaceRadialOutline =
+        IsSHAREnvironmentCelPassActive() &&
+        IsCelShadingOutlinePass() &&
+        GetSHARCurrentDrawableUID() == 0x1887D98DC6BDAE69ULL &&
+        mShader != NULL &&
+        static_cast<unsigned long long>(mShader->GetUID()) == 0x970C73299C1E8F41ULL;
+    if (usePictureSurfaceRadialOutline)
+        SetSHARFrontendPictureSurfaceOutlineActive(true);
+#endif
     p3d::pddi->DrawPrimBuffer( shader, mBuffer );
+#ifdef RAD_ANDROID
+    if (usePictureSurfaceRadialOutline)
+        SetSHARFrontendPictureSurfaceOutlineActive(false);
+#endif
 #endif
 #ifdef RAD_ANDROID
     SetSHAREnvironmentFoliageCardOutlineNormalMode(
@@ -436,16 +449,6 @@ void tPrimGroupStreamed::Display()
          (!mShader->mEnvironmentCelEligible &&
           !foliageAlphaTestEligible && !foliageCutoutEligible &&
           !foliageBlendedCutoutEligible));
-    if (IsCelShadingOutlinePass() && IsSHAREnvironmentCelPassActive() &&
-        mShader != NULL)
-    {    }
-    if (IsCelShadingOutlinePass() && IsSHAREnvironmentFoliageMeshPassActive() &&
-        mShader != NULL)
-    {        if (!mShader->mEnvironmentCelEligible &&
-            !mShader->mEnvironmentCelAlphaTestEligible &&
-            !foliageBlendedCutoutEligible)
-        {        }
-    }
     if (environmentMaterialIneligible && IsCelShadingOutlinePass())
         return;
     if (environmentMaterialIneligible)
@@ -462,7 +465,9 @@ void tPrimGroupStreamed::Display()
     // cache generated normals. Don't draw an unexpanded inverted hull.
     if (IsSHAREnvironmentCelPassActive() && IsCelShadingOutlinePass() &&
         !(vertexFormat & PDDI_V_NORMAL))
+    {
         return;
+    }
 #endif
 
 #ifdef RAD_XBOX
@@ -1350,8 +1355,6 @@ bool tPrimGroupLoader::ParseHeader(tChunkFile *f, tEntityStore *store)
         mShader = new tShader("error");
         mShader->AddRef();
     }
-
-
     mPrimType     = (pddiPrimType) f->GetLong();
     mVertexFormat = (unsigned int) f->GetLong() & mVertexFormatMask;
     mVertexCount  = (unsigned int) f->GetLong();
@@ -1359,7 +1362,6 @@ bool tPrimGroupLoader::ParseHeader(tChunkFile *f, tEntityStore *store)
     mMatrixCount  = (unsigned int) f->GetLong();
 
     mVertexFormat |= PDDI_V_POSITION; // position didn't used to exist, so all old prim groups will be missing it
-
     return true;
 }
 
@@ -1840,7 +1842,6 @@ tPrimGroup* tPrimGroupLoader::LoadStreamed(tChunkFile* f, tEntityStore* store, r
     int count, channel, a;
 
     tVertexList *vl = primGroup->GetVertexList();
-
     while (f->ChunksRemaining())
     {
         f->BeginChunk();
@@ -1918,16 +1919,18 @@ tPrimGroup* tPrimGroupLoader::LoadStreamed(tChunkFile* f, tEntityStore* store, r
                 break;
 
             case Pure3D::Mesh::UVLIST:
+            {
                 count   = f->GetLong();
                 channel = f->GetLong();
                 if(channel >= nUVChannel) break;
                 P3DASSERT(count == mVertexCount);
                 P3DASSERT(channel < tVertexList::MAX_NUM_UV_SETS);
-                for (a = 0; a < count; a++) 
+                for (a = 0; a < count; a++)
                 {
                     f->GetData(&vl->GetUVs(channel)[a], 2, tFile::DWORD);
                 }
                 break;
+            }
 
             case Pure3D::Mesh::INDEXLIST:
                 count = f->GetLong();
@@ -2049,7 +2052,7 @@ tPrimGroup*  tPrimGroupLoader::Load(tChunkFile *f, tEntityStore *store, rmt::Mat
     }
 	else if( !optimise )
     {
-		return LoadStreamed(f, store, bones);
+        return LoadStreamed(f, store, bones);
     }
 
 #ifdef RAD_PS2

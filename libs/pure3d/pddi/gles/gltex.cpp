@@ -586,6 +586,7 @@ bool pglTexture::Create(int x, int y, int bpp, int alphaDepth, int nMip, pddiTex
     nMipMap = nMip;
     type = textureType;
     sourceAlphaDepth = alphaDepth;
+    sourceAlphaIsOpaque = (textureType == PDDI_TEXTYPE_RGB && alphaDepth == 0);
 
     log2X = fastlog2(xSize);
     log2Y = fastlog2(ySize);
@@ -669,6 +670,7 @@ pglTexture::pglTexture(pglContext* c)
     context = c;
     contextID = c->contextID;
     sourceAlphaDepth = -1;
+    sourceAlphaIsOpaque = false;
     bits = NULL;
     gltexture = 0;
     priority = 15;
@@ -754,6 +756,34 @@ pddiLockInfo* pglTexture::Lock(int mipMap, pddiRect* rect)
 
 void pglTexture::Unlock(int mipLevel)
 {
+#ifdef RAD_ANDROID
+    // The ATM and lamp gag use 32-bit uploads of small, nominally opaque
+    // sources. Inspect actual alpha values because some P3D conversions retain
+    // an alpha byte even though every source texel is opaque.
+    const bool knownOpaqueGagTextureSize =
+        (xSize == 64 && ySize == 64) ||
+        (xSize == 128 && ySize == 64);
+    if (mipLevel == 0 && !sourceAlphaIsOpaque &&
+        knownOpaqueGagTextureSize &&
+        lock.depth == 32 &&
+        (lock.format == PDDI_PIXEL_ARGB8888 ||
+         lock.format == PDDI_PIXEL_RGB888))
+    {
+        const unsigned int* pixels = reinterpret_cast<const unsigned int*>(bits[0]);
+        const unsigned int alphaMask = lock.rgbaMask[3];
+        const unsigned int pixelCount =
+            static_cast<unsigned int>(xSize * ySize);
+        sourceAlphaIsOpaque = alphaMask != 0;
+        for (unsigned int pixel = 0; pixel < pixelCount; ++pixel)
+        {
+            if ((pixels[pixel] & alphaMask) != alphaMask)
+            {
+                sourceAlphaIsOpaque = false;
+                break;
+            }
+        }
+    }
+#endif
     valid = false;
 }
 

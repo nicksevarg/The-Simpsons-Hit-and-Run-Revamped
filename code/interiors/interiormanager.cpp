@@ -2226,7 +2226,7 @@ void InteriorManager::SwitchToInterior()
     SetupLightsAndAnims();
 
     mIn = true;
- 
+
     GetEventManager()->TriggerEvent(EVENT_INTERIOR_SWITCH, (void*)1);
 }
 

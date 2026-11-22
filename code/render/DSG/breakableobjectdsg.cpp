@@ -18,6 +18,7 @@
 #include <p3d/matrixstack.hpp>
 #include <p3d/utility.hpp>
 #include <p3d/anim/compositedrawable.hpp>
+#include <render/DSG/SHAREnvironmentCel.h>
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
@@ -195,11 +196,15 @@ void BreakableObjectDSG::Display()
 #ifdef RAD_ANDROID
     const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
     tDrawable* sourceDrawable = mpObject ? mpObject->GetBaseObject() : NULL;
-    
-    if (IsCelShadingEnabled() &&
-        (!IsSHARCelShadingLite() || IsSHARGagCharacterCelPassActive()))
+    rmt::Sphere outlineBounds;
+    GetBoundingSphere(&outlineBounds);
+    float outlineWidth = 1.33f;
+
+    if (SHARShouldDrawEnvironmentCelOutline(
+            foliageMesh, outlineBounds.centre, outlineBounds.radius, &outlineWidth))
     {
         SetSHAREnvironmentCelPassActive(true);
+        SetSHAREnvironmentOutlineWidth(outlineWidth);
         SetCelShadingObjectEnabled(true);
         if (foliageMesh)
             SetSHAREnvironmentFoliageMeshPassActive(true);
@@ -210,6 +215,7 @@ void BreakableObjectDSG::Display()
         // the animation wrapper is not evaluated a second time.
         mpObject->Display();
         SetCelShadingOutlinePass(false);
+        SetSHAREnvironmentOutlineWidth(1.33f);
         if (foliageMesh)
             SetSHAREnvironmentFoliageMeshPassActive(false);
         if (sourceDrawable != NULL)

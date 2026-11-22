@@ -7,12 +7,20 @@
 #include <pddi/gles/gltex.hpp>
 #include <pddi/gles/glcon.hpp>
 #include <pddi/gles/glprog.hpp>
+#ifdef RAD_ANDROID
+#include <p3d/sharrendercontext.hpp>
+#endif
 
 #include <vector>
 #include <microprofile.h>
+#include <stdio.h>
 #ifdef RAD_ANDROID
+bool IsSHARGagCharacterCelPassActive();
+bool IsSHARVerifiedOpaqueGagDrawActive();
 bool IsSHAREnvironmentFoliageMeshPassActive();
 bool IsSHAREnvironmentFoliageCardOutlineNormalModeActive();
+bool IsSHAREnvironmentCelPassActive();
+bool IsSHARFrontendMenuCelPassActive();
 #endif
 
 pddiShadeColourTable pglMat::colourTable[] = 
@@ -270,11 +278,6 @@ void pglMat::SetDevPass(unsigned pass)
 
     int i = 0;
 
-#ifdef RAD_ANDROID
-    // Record one runtime alpha/blend signature per source asset instead of
-    // retaining thousands of transient material pointers.
-    #endif
-
     context->SetTextureEnvironment(&texEnv[i]);
 
     if(texEnv[i].texture)
@@ -288,7 +291,31 @@ void pglMat::SetDevPass(unsigned pass)
             uvTable[texEnv[i].uvMode]);
     }
 
-    if(texEnv[i].alphaBlendMode == PDDI_BLEND_NONE)
+#ifdef RAD_ANDROID
+    // ATM, Bart's lamp and the observatory monkey use materials tagged
+    // alpha-blended despite having opaque source images. The monkey's BMPs
+    // are palettized with source alphaDepth=0, which IsOpaqueSourceTexture()
+    // does not classify as opaque. This fallback is safe only inside the
+    // verified gag-prop scope; monkey_cheeks.tga has alphaDepth=8 and therefore
+    // remains blended as a genuine transparent overlay.
+    const bool verifiedGagTextureHasNoSourceAlpha =
+        texEnv[i].texture != NULL &&
+        (texEnv[i].texture->IsOpaqueSourceTexture() ||
+         texEnv[i].texture->GetSourceAlphaDepth() == 0);
+    const bool opaqueVerifiedGagTextureBlend =
+        IsSHARVerifiedOpaqueGagDrawActive() &&
+        texEnv[i].alphaBlendMode == PDDI_BLEND_ALPHA &&
+        verifiedGagTextureHasNoSourceAlpha &&
+        texEnv[i].diffuse.Alpha() == 255 &&
+        texEnv[i].ambient.Alpha() == 255 &&
+        texEnv[i].emissive.Alpha() == 255 &&
+        texEnv[i].specular.Alpha() == 255;
+
+#else
+    const bool opaqueVerifiedGagTextureBlend = false;
+#endif
+
+    if(texEnv[i].alphaBlendMode == PDDI_BLEND_NONE || opaqueVerifiedGagTextureBlend)
     {
         context->SetGLBlendEnabled(false);
     }
@@ -316,6 +343,7 @@ void pglMat::SetDevPass(unsigned pass)
     else if (IsCelShadingEnabled() &&
              (!IsCelShadingObjectEnabled() || IsSHAREnvironmentCelPassActive()) &&
              texEnv[i].alphaBlendMode != PDDI_BLEND_NONE && !texEnv[i].alphaTest &&
+             !opaqueVerifiedGagTextureBlend &&
              !IsSHARExteriorTransparencyDepthWriteFixActive())
     {
         // Only suppress depth writes for genuinely blended materials.
@@ -346,20 +374,42 @@ void pglMat::SetDevPass(unsigned pass)
     if (IsCelShadingEnabled() && IsCelShadingObjectEnabled() &&
         IsCelShadingOutlinePass())
     {
-        if (IsSHAREnvironmentBillboardFoliagePassActive() ||
+        // The frontend piano is an open, mostly single-surface mesh. A closed-mesh
+        // inverted hull would cull its only visible side, so draw this outline
+        // shell two-sided without changing the piano's ordinary material pass.
+        const bool frontendPianoOutline =
+            IsSHARFrontendMenuCelPassActive() &&
+            IsSHAREnvironmentCelPassActive() &&
+            GetSHARCurrentDrawableUID() == 0xF525F3485B73D054ULL;
+        // Two-sided environment materials may contain open or single-surface
+        // geometry. Let both sides of the expanded shell draw so its outline
+        // is not lost to forced back-face culling. The original material pass
+        // still covers the source surface; one-sided materials keep the
+        // normal inverted-hull culling path.
+        if (frontendPianoOutline ||
+            IsSHAREnvironmentBillboardFoliagePassActive() ||
+            ((IsSHAREnvironmentFoliageMeshPassActive() ||
+              IsSHAREnvironmentCelPassActive()) &&
+             texEnv[i].twoSided) ||
             (IsSHAREnvironmentFoliageMeshPassActive() &&
-             (texEnv[i].twoSided ||
-              IsSHAREnvironmentFoliageCardOutlineNormalModeActive())))
+             IsSHAREnvironmentFoliageCardOutlineNormalModeActive()))
         {
-            // Honour two-sided foliage materials. The explicitly identified
-            // flat leaf cards also draw without culling in the outline pass.
+            // Two-sided environment materials may contain open or single-surface
+            // geometry. Let both sides of the expanded shell draw so its outline
+            // is not lost to forced back-face culling. The original material pass
+            // still covers the source surface; one-sided materials keep the
+            // normal inverted-hull culling path.
             context->SetGLCullEnabled(false);
         }
         else
         {
             context->SetGLCullEnabled(true);
-            context->SetGLCullFace(GL_BACK);
+            // Keep the established inverted-hull culling except for reflected
+            // character draws, whose winding is reversed by the mirror camera.
+            context->SetGLCullFace(
+                IsSHARMirrorPassActive() ? GL_FRONT : GL_BACK);
         }
     }
 #endif
+
 }

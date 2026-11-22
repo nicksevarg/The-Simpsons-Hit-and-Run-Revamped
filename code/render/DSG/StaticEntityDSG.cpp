@@ -19,6 +19,13 @@
 #include <memory/srrmemory.h>
 #include <p3d/utility.hpp>
 #include <p3d/texture.hpp>
+#include <render/DSG/SHAREnvironmentCel.h>
+#include <p3d/sharrendercontext.hpp>
+#include <mission/gameplaymanager.h>
+#include <interiors/interiormanager.h>
+#ifdef RAD_ANDROID
+#include <pddi/gles/shartransparencydepthwrite.hpp>
+#endif
 
 #ifdef RAD_ANDROID
 
@@ -28,24 +35,66 @@ bool IsSHARGagCharacterCelPassActive();
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
+void SetSHARLevelOneOutsideVertexGrayscaleActive(bool enabled);
+
+static bool IsSHARLevelOneOutside()
+{
+    GameplayManager* gameplayManager = GetGameplayManager();
+    InteriorManager* interiorManager = GetInteriorManager();
+    return gameplayManager != NULL &&
+           gameplayManager->GetCurrentLevelIndex() == RenderEnums::L1 &&
+           interiorManager != NULL &&
+           !interiorManager->IsInside();
+}
 void SetSHAREnvironmentBillboardFoliagePassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
 
-
-
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable,
-                                                bool foliageBillboard = false,
-                                                bool foliageMesh = false)
+static void DisplaySHARGagCelDrawable(tDrawable* drawable)
 {
     if (drawable == NULL)
         return;
-    if (!IsCelShadingEnabled() ||
-        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+
+    if (!IsCelShadingEnabled())
     {
         drawable->Display();
         return;
     }
+
+    SetCelShadingObjectEnabled(true);
+    SetCelShadingOutlinePass(true);
+    drawable->Display();
+    SetCelShadingOutlinePass(false);
+    drawable->Display();
+    SetCelShadingObjectEnabled(false);
+}
+
+static void DisplaySHAREnvironmentCelDrawable(
+    tDrawable* drawable,
+    const rmt::Vector& worldCentre,
+    float boundingRadius,
+    bool foliageBillboard = false,
+    bool foliageMesh = false)
+{
+    if (drawable == NULL)
+        return;
+
+    // Scope vertex-colour chroma removal to Level 1 exterior environment
+    // draws. Keep it active for the base draw even when Lite mode skips outlines.
+    const bool grayscaleLevelOneOutside =
+        IsCelShadingEnabled() && IsSHARLevelOneOutside();
+    SetSHARLevelOneOutsideVertexGrayscaleActive(grayscaleLevelOneOutside);
+
+    float outlineWidth = 1.33f;
+    if (!SHARShouldDrawEnvironmentCelOutline(
+            foliageBillboard || foliageMesh, worldCentre, boundingRadius, &outlineWidth))
+    {
+        drawable->Display();
+        SetSHARLevelOneOutsideVertexGrayscaleActive(false);
+        return;
+    }
+
     SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentOutlineWidth(outlineWidth);
     SetCelShadingObjectEnabled(true);
     if (foliageBillboard)
         SetSHAREnvironmentBillboardFoliagePassActive(true);
@@ -54,6 +103,7 @@ static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable,
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentOutlineWidth(1.33f);
     if (foliageMesh)
         SetSHAREnvironmentFoliageMeshPassActive(false);
     if (foliageBillboard)
@@ -61,6 +111,7 @@ static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable,
     drawable->Display();
     SetCelShadingObjectEnabled(false);
     SetSHAREnvironmentCelPassActive(false);
+    SetSHARLevelOneOutsideVertexGrayscaleActive(false);
 }
 #endif
 
@@ -273,6 +324,48 @@ void StaticEntityDSG::Display()
     if(IS_DRAW_LONG) return;
 #ifdef RAD_ANDROID
     UpdateSelectedShadowAlphaForCelState();
+    unsigned long long drawableUID = 0;
+    if (mpDrawstuff != NULL)
+    {
+        drawableUID = static_cast<unsigned long long>(mpDrawstuff->GetUID());
+        SetSHARCurrentDrawableUID(drawableUID);
+    }
+
+    // Moe's Tavern mirror is a blended surface that must not write depth
+    // while cel shading is OFF. Apply this around the complete drawable draw,
+    // rather than in pglMat::SetDevPass(), which may be skipped by the
+    // single-pass material cache.
+    const bool disableMoeMirrorDepthWrites =
+        mpDrawstuff != NULL &&
+        !IsCelShadingEnabled() &&
+        drawableUID == 0x7CE29D71CD240C0AULL;
+    const bool previousZWrite =
+        disableMoeMirrorDepthWrites ? p3d::pddi->GetZWrite() : false;
+    if (disableMoeMirrorDepthWrites)
+    {
+        p3d::pddi->SetZWrite(false);
+    }
+
+    // Moe's Tavern cash register keeps its genuine alpha blending, but its
+    // translucent material must still write depth while cel shading is ON.
+    // Scope the existing suppression bypass and the actual PDDI depth mask
+    // around this drawable because SetDevPass() may be skipped by the
+    // single-pass material cache. The same asset UID is used in L2 and L5.
+    const bool enableMoeRegisterDepthWrites =
+        mpDrawstuff != NULL &&
+        IsCelShadingEnabled() &&
+        drawableUID == 0x7CE29D71CD240C09ULL;
+    const bool previousMoeRegisterDepthWritePolicy =
+        enableMoeRegisterDepthWrites
+            ? IsSHARExteriorTransparencyDepthWriteFixActive()
+            : false;
+    const bool previousMoeRegisterZWrite =
+        enableMoeRegisterDepthWrites ? p3d::pddi->GetZWrite() : false;
+    if (enableMoeRegisterDepthWrites)
+    {
+        SetSHARExteriorTransparencyDepthWriteFixActive(true);
+        p3d::pddi->SetZWrite(true);
+    }
 #endif
     DSG_BEGIN_PROFILE(profileName)
 
@@ -293,18 +386,34 @@ void StaticEntityDSG::Display()
                 !isGeometry && !mTranslucent && foliageName;
             const bool foliageMesh =
                 isGeometry && IsSHAREnvironmentFoliageMesh();
-            if (isGeometry)
-                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, false, foliageMesh);
+            rmt::Sphere outlineBounds;
+            mpDrawstuff->GetBoundingSphere(&outlineBounds);
+            if (IsSHARGagCharacterCelPassActive() && !mTranslucent)
+                DisplaySHARGagCelDrawable(mpDrawstuff);
+            else if (isGeometry)
+                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, mPosn, outlineBounds.radius, false, foliageMesh);
             else if (foliageBillboard)
-                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, true);
+                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, mPosn, outlineBounds.radius, true, false);
             else
                 mpDrawstuff->Display();
-
-                    }
+        }
 #else
         mpDrawstuff->Display();
 #endif
     }
+#ifdef RAD_ANDROID
+    if (enableMoeRegisterDepthWrites)
+    {
+        SetSHARExteriorTransparencyDepthWriteFixActive(
+            previousMoeRegisterDepthWritePolicy);
+        p3d::pddi->SetZWrite(previousMoeRegisterZWrite);
+    }
+    if (disableMoeMirrorDepthWrites)
+    {
+        p3d::pddi->SetZWrite(previousZWrite);
+    }
+    ClearSHARCurrentDrawableUID();
+#endif
     DSG_END_PROFILE(profileName)
 }
 

@@ -13,58 +13,228 @@
 #include <p3d/matrixstack.hpp>
 #include <p3d/camera.hpp>
 #include <p3d/light.hpp>
+#include <p3d/SHARFrontendMenuCel.h>
+#include <p3d/sharrendercontext.hpp>
 
 #include <string.h>
 
 #ifdef RAD_ANDROID
-// These renderer controls are implemented in the global namespace by the
-// Android GLES backend. Declare them before entering Scenegraph so calls from
-// this namespace resolve to the global symbols at link time.
+// These renderer controls are implemented in the Android GLES backend.
 bool IsCelShadingEnabled();
+int GetSHARCelShadingMode();
 bool IsSHARFrontendMenuCelPassActive();
+bool IsSHARGagCharacterCelPassActive();
+void SetSHARCharacterMaskModelPass(bool enabled);
 void SetCelShadingObjectEnabled(bool enabled);
 void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
-#endif
 
-namespace Scenegraph 
-{
-static rmt::Matrix identity(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
-static rmt::Matrix tmp;
-
-#ifdef RAD_ANDROID
-static bool IsSHARFrontendMenuDrawable(tDrawable* drawable)
-{
-    if (drawable == NULL || !IsSHARFrontendMenuCelPassActive())
-        return false;
-
-    const char* name = drawable->GetName();
-    if (name == NULL)
-        return false;
-
-    // All seasonal camsets share the FE_ namespace; the Christmas version
-    // additionally uses three unprefixed tree drawables.
-    return strncmp(name, "FE_", 3) == 0 ||
-           strcmp(name, "tree1Shape") == 0 ||
-           strcmp(name, "tree2Shape") == 0 ||
-           strcmp(name, "tree3Shape") == 0;
-}
-
-static bool IsSHARFrontendMenuFoliageDrawable(tDrawable* drawable)
+static bool SHARFrontendMenuUIDInList(
+    tDrawable* drawable,
+    const unsigned long long* uids,
+    unsigned int count)
 {
     if (drawable == NULL)
         return false;
 
-    const char* name = drawable->GetName();
-    if (name == NULL)
+    const unsigned long long drawableUID =
+        static_cast<unsigned long long>(drawable->GetUID());
+    for (unsigned int i = 0; i < count; ++i)
+    {
+        if (drawableUID == uids[i])
+            return true;
+    }
+    return false;
+}
+
+// Base camset solid FE_ meshes, the two explicitly approved translucent
+// exceptions, and the requested solid non-FE assets.
+bool IsSHARFrontendMenuOutlineDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL || !IsSHARFrontendMenuCelPassActive())
         return false;
 
-    static const char plantPrefix[] = "FE_plantShape";
-    return strncmp(name, plantPrefix, sizeof(plantPrefix) - 1) == 0 ||
-           strcmp(name, "tree1Shape") == 0 ||
-           strcmp(name, "tree2Shape") == 0 ||
-           strcmp(name, "tree3Shape") == 0;
+    static const unsigned long long outlineUIDs[] =
+    {
+    0x232AC4D8CCDB63D8ULL,
+    0x232AC4D8CCDB63D9ULL,
+    0x232AC4D8CCDB63D5ULL,
+    0x232AC4D8CCDE6499ULL,
+    0x232AC4D8CCDE6498ULL,
+    0x232AC4D8CCDD645AULL,
+    0x232AC4D8CCDD645BULL,
+    0x232AC4D8CCDD6458ULL,
+    0x232AC4D8CCDD6459ULL,
+    0x232AC4D8CCDD645EULL,
+    0x232AC4D8CCDD645FULL,
+    0x232AC4D8CCD8631DULL,
+    0x232AC4D8CCD8631CULL,
+    0x692E38261FA13B55ULL,
+    0x8DAD8B78E565AB9FULL,
+    0x8DAD8B78E565AB9EULL,
+    0x8DAD8B78E565AB99ULL,
+    0x8DAD8B78E565AB98ULL,
+    0x8DAD8B78E565AB9BULL,
+    0x8DAD8B78E565AB9AULL,
+    0xE1F232902DF9B311ULL,
+    0x2B6EBC07DA8360A6ULL,
+    0x2B6EBC07DA8360A5ULL,
+    0x2B6EBC07DA8360A3ULL,
+    0x2B6EBC07DA8360A2ULL,
+    0x2B6EBC07DA8360A1ULL,
+    0x2B6EBC07DA8360A0ULL,
+    0x2B6EBC07DA8360AFULL,
+    0x2B6EBC07DA8360AEULL,
+    0xC40AECBE792809ACULL,
+    0xC40AECBE792809ADULL,
+    0xC40AECBE792809AEULL,
+    0x082B6CEE1A0FAD4AULL,
+    0xD32023EB4BC504A7ULL,
+    0x0A0416875202227FULL,
+    0x3CEA6C496681F4A6ULL,
+    0x211B469AAE9705E4ULL,
+    0x211B469AAE9705E7ULL,
+    0x69FA0C922EA134E8ULL,
+    0x69FA0C922EA134E9ULL,
+    0x69FA0C922EA134EEULL,
+    0x69FA0C922EA134EFULL,
+    0x69FA0C922EA134ECULL,
+    0x69FA0C922EA134EDULL,
+    0x69FA0C922EA134E2ULL,
+    0x24A6FD48A6F42E04ULL,
+    0x0151735656F5D451ULL,
+    0xD809AE997F45B985ULL,
+    0x56AAF926C24826D9ULL,
+    0x2F5BBE0AF204A770ULL,
+    0x2F5BBE0AF204A771ULL,
+    0xA740069A1E1D88C3ULL,
+    0xA740069A1E1D88C2ULL,
+    0xA740069A1E1D88C5ULL,
+    0xA740069A1E1D88C4ULL,
+    0xA740069A1E1D88C7ULL,
+    0xA740069A1E1D88C6ULL,
+    0xA740069A1E1D88C9ULL,
+    0xA740069A1E1D88C8ULL,
+    0x5E8A6B0C619F7B39ULL,
+    0x5E8A6B0C619F7B3AULL,
+    0x5E8A6B0C619F7B3BULL,
+    0x5E8A6B0C619F7B3CULL,
+    0x5E8A6B0C619F7B3DULL,
+    0x5E8A6B0C619F7B3EULL,
+    0x5E8A6B0C619F7B3FULL,
+    0x5E8A6B0C619F7B30ULL,
+    0xE3AD130E6E7274FAULL,
+    0xE3AD130E6E7274FBULL,
+    0xE3AD130E6E7274FCULL,
+    0xF4A2AFA3D9BBD93BULL,
+    0xF4A2AFA3D9BBD93CULL,
+    0xF4A2AFA3D9BBD93FULL,
+    0xF4A2AFA3D9BBD93EULL,
+    0xF4A2AFA3D9BBD931ULL,
+    0xF4A2AFA3D9BBD930ULL,
+    0x029A151C23E128E6ULL,
+    0xB90755CDFD4F10AAULL,
+    0xB90755CDFD4F10ABULL,
+    0xB90755CDFD4F10A8ULL,
+    0xB90755CDFD4F10A9ULL,
+    0xB90755CDFD4F10AEULL,
+    0xB90755CDFD4F10AFULL,
+    0xB90755CDFD4F10ACULL,
+    0x029A151C23E128E5ULL,
+    0x029A151C23E128E4ULL,
+    0x029A151C23E128E3ULL,
+    0x029A151C23E128E2ULL,
+    0x029A151C23E128E0ULL,
+    0x029A151C23E128EFULL,
+    0x029A151C23E128EEULL,
+    0x645EDC24769A499FULL,
+    0x1887D98DC6BCAE23ULL,
+    0x1887D98DC6BDAE69ULL,
+    0x58A2EA033B78B810ULL,
+    0xBA1AD2445AC54BC1ULL,
+    0xBA1AD2445AC54BC5ULL,
+    0xBA1AD2445AC54BC6ULL,
+    0x58A2EA033B78B813ULL,
+    0x4EB6605080A405C5ULL,
+    0xBF323473AE226B4AULL,
+    0xA0F0AA1539C3022DULL,
+    0x454F14FC392A8923ULL,
+    0x454F14FC392A8922ULL,
+    0x454F14FC392A8921ULL,
+    0x454F14FC392A8920ULL,
+    0x454F14FC392A8927ULL,
+    0x454F14FC392A8926ULL,
+    0x454F14FC392A8925ULL,
+    0xA0F0AA1539C3022EULL,
+    0xA0F0AA1539C3022FULL,
+    0xA0F0AA1539C30228ULL,
+    0xA0F0AA1539C30229ULL,
+    0xA0F0AA1539C3022AULL,
+    0xA0F0AA1539C3022BULL,
+    0xA0F0AA1539C30224ULL,
+    0xA0F0AA1539C30225ULL,
+    0xA17BC4218D9E3526ULL,
+    0xA17BC4218D9E3529ULL,
+    0xA17BC4218D9833A7ULL,
+    0xA17BC4218D9833A3ULL,
+    0xA17BC4218D9833A2ULL,
+    0x04CC74FA029DFB73ULL,
+    0xC852195A3FA6ABE2ULL,
+    0x84700E839B52DA46ULL,
+    0x1141303E4693D998ULL,
+    0xF525F3485B73D054ULL,
+    0x56019487D391F74EULL,
+    // Additional verified camset assets that were previously missing.
+    0x95F914936F1B7374ULL, // tree1Shape (also classified as foliage)
+    0xB1609118CB7D2F25ULL, // tree2Shape (also classified as foliage)
+    0xD05AEC4B35673406ULL, // tree3Shape (also classified as foliage)
+    0x4030F081FCE16156ULL, // pumpkinShape01
+    0x56019487D391F74AULL, // pPlaneShape14 (curtain)
+    0x56019487D391F74FULL, // pPlaneShape11 (curtain)
+    0x3F67E8787EB4C083ULL, // polySurfaceShape1 (racetrack)
+    0xF3FE519E30A7A345ULL, // polySurfaceShape137 (Thanksgiving prop)
+    0xF3FE519E30A7A34AULL, // polySurfaceShape138 (Thanksgiving prop)
+    0xF3C9017B6F8FD76BULL, // hornofplentyShape
+    0x4203CA6FE7946F26ULL, // pCubeShape17 (newspaper)
+    0x3CD091202B8032AFULL
+    };
+    return SHARFrontendMenuUIDInList(
+        drawable, outlineUIDs,
+        sizeof(outlineUIDs) / sizeof(outlineUIDs[0]));
+}
+
+bool IsSHARFrontendMenuFoliageDrawable(tDrawable* drawable)
+{
+    if (drawable == NULL)
+        return false;
+
+    // Preserve the FE plant-card treatment and the existing seasonal tree IDs.
+    static const unsigned long long foliageUIDs[] =
+    {
+    0xA0F0AA1539C3022DULL,
+    0x454F14FC392A8923ULL,
+    0x454F14FC392A8922ULL,
+    0x454F14FC392A8921ULL,
+    0x454F14FC392A8920ULL,
+    0x454F14FC392A8927ULL,
+    0x454F14FC392A8926ULL,
+    0x454F14FC392A8925ULL,
+    0xA0F0AA1539C3022EULL,
+    0xA0F0AA1539C3022FULL,
+    0xA0F0AA1539C30228ULL,
+    0xA0F0AA1539C30229ULL,
+    0xA0F0AA1539C3022AULL,
+    0xA0F0AA1539C3022BULL,
+    0xA0F0AA1539C30224ULL,
+    0xA0F0AA1539C30225ULL,
+    0x95F914936F1B7374ULL,
+    0xB1609118CB7D2F25ULL,
+    0xD05AEC4B35673406ULL
+    };
+    return SHARFrontendMenuUIDInList(
+        drawable, foliageUIDs,
+        sizeof(foliageUIDs) / sizeof(foliageUIDs[0]));
 }
 
 static void DisplaySHARFrontendMenuDrawable(tDrawable* drawable)
@@ -94,6 +264,11 @@ static void DisplaySHARFrontendMenuDrawable(tDrawable* drawable)
     SetSHAREnvironmentCelPassActive(false);
 }
 #endif
+
+namespace Scenegraph
+{
+static rmt::Matrix identity(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);
+static rmt::Matrix tmp;
 
 // Scenegraph  -----------------------------------------------
 Scenegraph::Scenegraph() : root(NULL)
@@ -653,18 +828,18 @@ void Transform::UpdateTransform(const rmt::Matrix& parent)
 
 
 // Drawable  -----------------------------------------------
-Drawable::Drawable() : draw(NULL), isTranslucent(false), sortOrder(0.5f)
+Drawable::Drawable() : draw(NULL), alternateDraw(NULL), hasAlternateTransform(false), isTranslucent(false), sortOrder(0.5f)
 {
     // ...
 }
 
-Drawable::Drawable(char* name) : draw(NULL) 
+Drawable::Drawable(char* name) : draw(NULL), alternateDraw(NULL), hasAlternateTransform(false), isTranslucent(false), sortOrder(0.5f) 
 {
     tDrawable* d = p3d::find<tDrawable>(name);
     tRefCounted::Assign(draw, d);
 }
 
-Drawable::Drawable(tDrawable* d) : draw(NULL) 
+Drawable::Drawable(tDrawable* d) : draw(NULL), alternateDraw(NULL), hasAlternateTransform(false), isTranslucent(false), sortOrder(0.5f) 
 {
     tRefCounted::Assign(draw, d);
 }
@@ -674,29 +849,84 @@ void Drawable::SetDrawable(tDrawable* d)
         tRefCounted::Assign(draw, d);
 }
 
+void Drawable::SetAlternateDrawable(tDrawable* d)
+{
+    tRefCounted::Assign(alternateDraw, d);
+}
+
+void Drawable::SetAlternateDrawableTransform(const rmt::Matrix& transform)
+{
+    alternateTransform = transform;
+    hasAlternateTransform = true;
+}
+
 Drawable::~Drawable() 
 {
     tRefCounted::Release(draw);
+    tRefCounted::Release(alternateDraw);
 }
 
-void Drawable::Display(const rmt::Matrix&, DisplayList& list) 
+void Drawable::Display(const rmt::Matrix&, DisplayList& list)
 {
-    if(draw)
+    if (draw)
     {
-        if(isTranslucent)
+#ifdef RAD_ANDROID
+        const int celMode = GetSHARCelShadingMode();
+        const bool usingAlternateDrawable =
+            alternateDraw != NULL && celMode != 0;
+        tDrawable* drawableToDisplay =
+            usingAlternateDrawable ? alternateDraw : draw;
+        const bool applyAlternateTransform =
+            usingAlternateDrawable && hasAlternateTransform;
+        if (applyAlternateTransform)
+            p3d::stack->PushMultiply(alternateTransform);
+
+        const unsigned long long drawableUID =
+            static_cast<unsigned long long>(drawableToDisplay->GetUID());
+        const bool gagOutlinePass =
+            IsSHARGagCharacterCelPassActive() &&
+            IsCelShadingEnabled() && !isTranslucent;
+        if (!isTranslucent)
         {
-            // Register this object to be drawn last
+            SetSHARCurrentDrawableUID(drawableUID);
+        }
+#endif
+        if (isTranslucent)
+        {
+            // The alternate's local alignment is already on the matrix stack.
+#ifdef RAD_ANDROID
+            list.Add(drawableToDisplay, NULL, sortOrder);
+#else
             list.Add(draw, NULL, sortOrder);
+#endif
         }
         else
         {
 #ifdef RAD_ANDROID
-            if (IsSHARFrontendMenuDrawable(draw))
-                DisplaySHARFrontendMenuDrawable(draw);
+            if (gagOutlinePass)
+            {
+                SetSHARCharacterMaskModelPass(true);
+                SetCelShadingObjectEnabled(true);
+                SetCelShadingOutlinePass(true);
+                drawableToDisplay->Display();
+                SetCelShadingOutlinePass(false);
+                drawableToDisplay->Display();
+                SetCelShadingObjectEnabled(false);
+                SetSHARCharacterMaskModelPass(false);
+            }
+            else if (IsSHARFrontendMenuOutlineDrawable(drawableToDisplay))
+                DisplaySHARFrontendMenuDrawable(drawableToDisplay);
             else
+                drawableToDisplay->Display();
+            ClearSHARCurrentDrawableUID();
+#else
+            draw->Display();
 #endif
-                draw->Display();
         }
+#ifdef RAD_ANDROID
+        if (applyAlternateTransform)
+            p3d::stack->Pop();
+#endif
     }
 }
 
@@ -934,6 +1164,14 @@ tEntity* SceneGraphGenericLoader::LoadObject(tChunkFile* f, tEntityStore* store)
 
     Scenegraph* scene = new Scenegraph;
     scene->SetName(buf);
+#ifdef RAD_ANDROID
+    // Only remap the standard living-room picture on the base camset.
+    const bool isFrontendCamset =
+        static_cast<unsigned long long>(tEntity::MakeUID(buf)) ==
+        0xB44F7CB2EB3385D0ULL;
+#else
+    const bool isFrontendCamset = false;
+#endif
 
     //
     // Clear bounding box for loader
@@ -951,7 +1189,7 @@ tEntity* SceneGraphGenericLoader::LoadObject(tChunkFile* f, tEntityStore* store)
             case Pure3D::SceneGraph::ROOT:
                 {
                     f->BeginChunk();
-                    scene->SetRoot(LoadNode(f,store, &root));
+                    scene->SetRoot(LoadNode(f,store, &root, isFrontendCamset));
                     f->EndChunk();
                 }
                 break;
@@ -965,6 +1203,37 @@ tEntity* SceneGraphGenericLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     //
     // Scene Graph drawList setup
     //
+#ifdef RAD_ANDROID
+    // Keep the authored picture node in place. Only the alternate replacement
+    // receives the alignment transform, when Lite or Full selects that resource.
+    if (isFrontendCamset)
+    {
+        Drawable* pictureFrame = dynamic_cast<Drawable*>(
+            scene->Find("FE_picture_frameShape1"));
+        Drawable* replacementPicture = dynamic_cast<Drawable*>(
+            scene->Find("FE_pCubeShape23"));
+
+        if (pictureFrame != NULL &&
+            replacementPicture != NULL &&
+            replacementPicture->GetDrawable() != NULL)
+        {
+            const rmt::Matrix pictureFrameAlignment(
+                1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                0.22134346f, -0.12115437f, 5.20387244f, 1.0f);
+
+            pictureFrame->SetAlternateDrawable(
+                replacementPicture->GetDrawable());
+            pictureFrame->SetAlternateDrawableTransform(
+                pictureFrameAlignment);
+        }
+        else
+        {
+        }
+    }
+#endif
+
     TranslucentDrawableCounter translucentDrawableCount;
     SceneGraphTraversal::Traverse(scene->GetRoot(), translucentDrawableCount);
     scene->translucentDrawables.SetSize(translucentDrawableCount.GetCount());
@@ -977,7 +1246,7 @@ tEntity* SceneGraphGenericLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     return scene;
 }
 
-Node* SceneGraphGenericLoader::LoadNode(tChunkFile* f, tEntityStore* store, rmt::Matrix* Root)
+Node* SceneGraphGenericLoader::LoadNode(tChunkFile* f, tEntityStore* store, rmt::Matrix* Root, bool isFrontendCamset)
 {
     tDrawablePose* drawablePose;
     tDrawable* loadedDrawable;
@@ -995,7 +1264,7 @@ Node* SceneGraphGenericLoader::LoadNode(tChunkFile* f, tEntityStore* store, rmt:
             for(unsigned i = 0; i < n; i++)
             {
                 f->BeginChunk();
-                branch->AddChild(LoadNode(f,store, Root));
+                branch->AddChild(LoadNode(f,store, Root, isFrontendCamset));
                 f->EndChunk();
             }
 
@@ -1021,7 +1290,7 @@ Node* SceneGraphGenericLoader::LoadNode(tChunkFile* f, tEntityStore* store, rmt:
             for(unsigned i = 0; i < n; i++)
             {
                 f->BeginChunk();
-                branch->AddChild(LoadNode(f,store, &newRoot));
+                branch->AddChild(LoadNode(f,store, &newRoot, isFrontendCamset));
                 f->EndChunk();
             }
 
@@ -1066,7 +1335,7 @@ Node* SceneGraphGenericLoader::LoadNode(tChunkFile* f, tEntityStore* store, rmt:
                 int joint = f->GetLong();
 
                 f->BeginChunk();
-                graft->SetAttachment(joint,LoadNode(f,store, Root));
+                graft->SetAttachment(joint,LoadNode(f,store, Root, isFrontendCamset));
                 f->EndChunk();
                 f->EndChunk();
             }
@@ -1085,7 +1354,7 @@ Node* SceneGraphGenericLoader::LoadNode(tChunkFile* f, tEntityStore* store, rmt:
             for(unsigned i = 0; i < n; i++)
             {
                 f->BeginChunk();
-                branch->AddChild(LoadNode(f,store, Root));
+                branch->AddChild(LoadNode(f,store, Root, isFrontendCamset));
                 f->EndChunk();
             }
 
@@ -1098,11 +1367,13 @@ Node* SceneGraphGenericLoader::LoadNode(tChunkFile* f, tEntityStore* store, rmt:
             f->GetPString(buf2);
             bool isTranslucent = (f->GetLong()==1)?true:false;
             
+            // Resolve the authored drawable resource normally. The frontend
+            // picture-frame replacement is assigned after the complete
+            // scenegraph has loaded, using the original node's actual resource.
             loadedDrawable = p3d::find<tDrawable>(store, buf2);
             Drawable* drawable = new Drawable(loadedDrawable);
             drawable->SetName(buf);
             drawable->SetTranslucent(isTranslucent);
-
             //
             // Modify bounding box to enclose box for drawable
             //

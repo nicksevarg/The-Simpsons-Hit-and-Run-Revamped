@@ -168,6 +168,8 @@ public:
     Drawable(tDrawable*);
     
     void       SetDrawable(tDrawable* d);
+    void       SetAlternateDrawable(tDrawable* d);
+    void       SetAlternateDrawableTransform(const rmt::Matrix& transform);
     // DisplayListDrawable interfaces
     tDrawable* GetDrawable(void) { return draw;}
     const rmt::Matrix* GetWorldMatrix(){return(&(GetWorldTransform()));}
@@ -186,6 +188,9 @@ protected:
     ~Drawable();
 
     tDrawable* draw;
+    tDrawable* alternateDraw;
+    rmt::Matrix alternateTransform;
+    bool hasAlternateTransform;
     bool isTranslucent;
     float sortOrder;
 };
@@ -313,7 +318,7 @@ class SceneGraphGenericLoader
 {
  public:
     tEntity* LoadObject(tChunkFile*, tEntityStore* store);
-	Node*    LoadNode(tChunkFile*, tEntityStore* store, rmt::Matrix* Root = 0);
+	Node*    LoadNode(tChunkFile*, tEntityStore* store, rmt::Matrix* Root = 0, bool isFrontendCamset = false);
 
 private:
     rmt::Box3D boundingBox;

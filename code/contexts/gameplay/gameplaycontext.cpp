@@ -464,8 +464,10 @@ void GameplayContext::OnStart( ContextEnum previousContext )
 void GameplayContext::OnStop( ContextEnum nextContext )
 {
 #ifdef RAD_ANDROID
-    // Disable the exterior depth-write override when leaving gameplay.
-    SetSHARExteriorTransparencyDepthWriteFixActive(false);
+    // Preserve the exterior depth-write policy while transitioning into pause.
+    // GameplayContext::OnStart recalculates it when gameplay resumes.
+    if (nextContext != CONTEXT_PAUSE)
+        SetSHARExteriorTransparencyDepthWriteFixActive(false);
 #endif
     GetPresentationManager()->OnGameplayStop();
 

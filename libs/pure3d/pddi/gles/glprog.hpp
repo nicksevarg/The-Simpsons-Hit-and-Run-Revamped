@@ -9,6 +9,10 @@
 #include <pddi/pddi.hpp>
 #include <pddi/base/basecontext.hpp>
 #include <pddi/gles/gl.hpp>
+#ifdef RAD_ANDROID
+#include <cstddef>
+#include <vector>
+#endif
 struct pglTextureEnv;
 
 #ifdef RAD_CG
@@ -47,18 +51,24 @@ public:
         bool outlinePass;
         bool rimLightingEnabled;
         bool environmentPass;
+        bool grayscaleLevelOneOutsideVertexRGB;
+        bool frontendPictureRadialFallback;
+        bool frontendPictureDepthOffset;
         bool frontendMenuLighting;
+        bool worldSceneSaturation;
         float objectBrightness;
         float objectSaturation;
         float viewportWidth;
         float viewportHeight;
+        float outlineWidth;
         float moodTintRed;
         float moodTintGreen;
         float moodTintBlue;
     } celShadingStateCache;
 
-    void SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, float viewportWidth, float viewportHeight, bool frontendMenuLighting, float moodTintRed, float moodTintGreen, float moodTintBlue);
+    void SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, bool grayscaleLevelOneOutsideVertexRGB, bool frontendPictureRadialFallback, bool frontendPictureDepthOffset, float viewportWidth, float viewportHeight, float environmentOutlineWidth, bool frontendMenuLighting, bool worldSceneSaturation, float moodTintRed, float moodTintGreen, float moodTintBlue);
     void SetOpaqueOutlineTexture(bool opaque);
+    bool ShouldUploadSHARUniform(GLint location, GLenum type, const void* data, std::size_t size) const;
 #endif
 
     inline bool SupportsLighting() { return acs >= 0; }
@@ -100,11 +110,15 @@ protected:
     GLint toonOutlinePass;
     GLint toonOutlineOpaque;
     GLint toonEnvironmentPass;
+    GLint toonGrayscaleLevelOneOutsideVertexRGB;
+    GLint toonFrontendPictureRadialFallback;
+    GLint toonFrontendPictureDepthOffset;
     GLint toonOutlineWidth;
     GLint toonViewportSize;
     GLint nightObjectBrightness;
     GLint nightObjectSaturation;
     GLint toonFrontendMenuLighting;
+    GLint toonWorldSceneSaturation;
     GLint toonMoodTint;
     #endif
 #endif
@@ -114,6 +128,18 @@ protected:
     pddiMatrix normalMatrixModelViewCache;
     pddiMatrix normalMatrixValueCache;
     bool normalMatrixCacheValid;
+#ifdef RAD_ANDROID
+    struct SHARUniformCacheEntry
+    {
+        GLenum type;
+        std::size_t size;
+        unsigned char bytes[64];
+        bool valid;
+    };
+    // Per-program, location-indexed uniform snapshots avoid a global hash lookup.
+    mutable std::vector<SHARUniformCacheEntry> sharUniformValueCache;
+    mutable unsigned int sharUniformValueCacheGeneration;
+#endif
 };
 
 #ifdef RAD_ANDROID

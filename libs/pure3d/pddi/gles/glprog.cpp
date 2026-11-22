@@ -37,73 +37,73 @@ CGprofile pglProgram::vertexProfile, pglProgram::fragmentProfile;
 
 #if !defined(RAD_CG)
 #ifdef RAD_ANDROID
-#include <unordered_map>
-#include <cstring>
-#include <cstdint>
-#include <functional>
 namespace
 {
-struct SHARUniformCacheKey
-{
-    const pglProgram* owner; GLint location;
-    bool operator==(const SHARUniformCacheKey& other) const { return owner == other.owner && location == other.location; }
-};
-struct SHARUniformCacheKeyHash
-{
-    size_t operator()(const SHARUniformCacheKey& key) const
-    {
-        const size_t a=std::hash<const void*>()(key.owner), b=std::hash<int>()((int)key.location);
-        return a ^ (b+(a<<6)+(a>>2));
-    }
-};
-struct SHARUniformCacheValue { GLenum type; size_t size; unsigned char bytes[64]; bool valid; };
-static std::unordered_map<SHARUniformCacheKey,SHARUniformCacheValue,SHARUniformCacheKeyHash> gSHARUniformCache;
 static unsigned int gSHARUniformCacheGeneration = 1;
-static bool SHARShouldUploadUniform(const pglProgram* owner,GLint location,GLenum type,const void* data,size_t size)
-{
-    if(location<0) return false;
-    if(size>64) return true;
-    SHARUniformCacheKey key={owner,location};
-    SHARUniformCacheValue& cached=gSHARUniformCache[key];
-    if(cached.valid&&cached.type==type&&cached.size==size&&memcmp(cached.bytes,data,size)==0) return false;
-    cached.type=type; cached.size=size; memcpy(cached.bytes,data,size); cached.valid=true;
-    return true;
 }
-static void SHARClearUniformCacheForProgram(const pglProgram* owner)
-{
-    for(auto it=gSHARUniformCache.begin();it!=gSHARUniformCache.end();)
-        if(it->first.owner==owner) it=gSHARUniformCache.erase(it); else ++it;
-}
-}
+
 void InvalidateSHARUniformCaches()
 {
-    gSHARUniformCache.clear();
+    // Programs lazily discard their own snapshots on the next uniform update.
     ++gSHARUniformCacheGeneration;
     if (gSHARUniformCacheGeneration == 0)
         ++gSHARUniformCacheGeneration;
 }
-static inline void SHARUniform1i(const pglProgram* o,GLint l,GLint v)
-{ if(!SHARShouldUploadUniform(o,l,GL_INT,&v,sizeof(v)))return; glUniform1i(l,v); }
-static inline void SHARUniform1f(const pglProgram* o,GLint l,GLfloat v)
-{ if(!SHARShouldUploadUniform(o,l,GL_FLOAT,&v,sizeof(v)))return; glUniform1f(l,v); }
-static inline void SHARUniform2f(const pglProgram* o,GLint l,GLfloat x,GLfloat y)
-{ const GLfloat v[2]={x,y}; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC2,v,sizeof(v)))return; glUniform2f(l,x,y); }
-static inline void SHARUniform3f(const pglProgram* o,GLint l,GLfloat x,GLfloat y,GLfloat z)
-{ const GLfloat v[3]={x,y,z}; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC3,v,sizeof(v)))return; glUniform3f(l,x,y,z); }
-static inline void SHARUniform4f(const pglProgram* o,GLint l,GLfloat x,GLfloat y,GLfloat z,GLfloat w)
-{ const GLfloat v[4]={x,y,z,w}; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC4,v,sizeof(v)))return; glUniform4f(l,x,y,z,w); }
-static inline void SHARUniform4fv(const pglProgram* o,GLint l,GLsizei n,const GLfloat* v)
-{ const size_t sz=sizeof(GLfloat)*4*(size_t)n; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_VEC4,v,sz))return; glUniform4fv(l,n,v); }
-static inline void SHARUniformMatrix4fv(const pglProgram* o,GLint l,GLsizei n,GLboolean t,const GLfloat* v)
-{ const size_t sz=sizeof(GLfloat)*16*(size_t)n; if(!SHARShouldUploadUniform(o,l,GL_FLOAT_MAT4,v,sz))return; glUniformMatrix4fv(l,n,t,v); }
+
+bool pglProgram::ShouldUploadSHARUniform(
+    GLint location, GLenum type, const void* data, std::size_t size) const
+{
+    if (location < 0)
+        return false;
+    if (size > 64)
+        return true;
+
+    if (sharUniformValueCacheGeneration != gSHARUniformCacheGeneration)
+    {
+        sharUniformValueCache.clear();
+        sharUniformValueCacheGeneration = gSHARUniformCacheGeneration;
+    }
+
+    const std::size_t index = static_cast<std::size_t>(location);
+    if (index >= sharUniformValueCache.size())
+        sharUniformValueCache.resize(index + 1, SHARUniformCacheEntry{});
+
+    SHARUniformCacheEntry& cached = sharUniformValueCache[index];
+    if (cached.valid && cached.type == type && cached.size == size &&
+        std::memcmp(cached.bytes, data, size) == 0)
+    {
+        return false;
+    }
+
+    cached.type = type;
+    cached.size = size;
+    std::memcpy(cached.bytes, data, size);
+    cached.valid = true;
+    return true;
+}
+
+static inline void SHARUniform1i(const pglProgram* o, GLint l, GLint v)
+{ if (!o->ShouldUploadSHARUniform(l, GL_INT, &v, sizeof(v))) return; glUniform1i(l, v); }
+static inline void SHARUniform1f(const pglProgram* o, GLint l, GLfloat v)
+{ if (!o->ShouldUploadSHARUniform(l, GL_FLOAT, &v, sizeof(v))) return; glUniform1f(l, v); }
+static inline void SHARUniform2f(const pglProgram* o, GLint l, GLfloat x, GLfloat y)
+{ const GLfloat v[2] = { x, y }; if (!o->ShouldUploadSHARUniform(l, GL_FLOAT_VEC2, v, sizeof(v))) return; glUniform2f(l, x, y); }
+static inline void SHARUniform3f(const pglProgram* o, GLint l, GLfloat x, GLfloat y, GLfloat z)
+{ const GLfloat v[3] = { x, y, z }; if (!o->ShouldUploadSHARUniform(l, GL_FLOAT_VEC3, v, sizeof(v))) return; glUniform3f(l, x, y, z); }
+static inline void SHARUniform4f(const pglProgram* o, GLint l, GLfloat x, GLfloat y, GLfloat z, GLfloat w)
+{ const GLfloat v[4] = { x, y, z, w }; if (!o->ShouldUploadSHARUniform(l, GL_FLOAT_VEC4, v, sizeof(v))) return; glUniform4f(l, x, y, z, w); }
+static inline void SHARUniform4fv(const pglProgram* o, GLint l, GLsizei n, const GLfloat* v)
+{ const std::size_t sz = sizeof(GLfloat) * 4 * static_cast<std::size_t>(n); if (!o->ShouldUploadSHARUniform(l, GL_FLOAT_VEC4, v, sz)) return; glUniform4fv(l, n, v); }
+static inline void SHARUniformMatrix4fv(const pglProgram* o, GLint l, GLsizei n, GLboolean t, const GLfloat* v)
+{ const std::size_t sz = sizeof(GLfloat) * 16 * static_cast<std::size_t>(n); if (!o->ShouldUploadSHARUniform(l, GL_FLOAT_MAT4, v, sz)) return; glUniformMatrix4fv(l, n, t, v); }
 #else
-static inline void SHARUniform1i(const pglProgram*,GLint l,GLint v){glUniform1i(l,v);}
-static inline void SHARUniform1f(const pglProgram*,GLint l,GLfloat v){glUniform1f(l,v);}
-static inline void SHARUniform2f(const pglProgram*,GLint l,GLfloat x,GLfloat y){glUniform2f(l,x,y);}
-static inline void SHARUniform3f(const pglProgram*,GLint l,GLfloat x,GLfloat y,GLfloat z){glUniform3f(l,x,y,z);}
-static inline void SHARUniform4f(const pglProgram*,GLint l,GLfloat x,GLfloat y,GLfloat z,GLfloat w){glUniform4f(l,x,y,z,w);}
-static inline void SHARUniform4fv(const pglProgram*,GLint l,GLsizei n,const GLfloat* v){glUniform4fv(l,n,v);}
-static inline void SHARUniformMatrix4fv(const pglProgram*,GLint l,GLsizei n,GLboolean t,const GLfloat* v){glUniformMatrix4fv(l,n,t,v);}
+static inline void SHARUniform1i(const pglProgram*, GLint l, GLint v) { glUniform1i(l, v); }
+static inline void SHARUniform1f(const pglProgram*, GLint l, GLfloat v) { glUniform1f(l, v); }
+static inline void SHARUniform2f(const pglProgram*, GLint l, GLfloat x, GLfloat y) { glUniform2f(l, x, y); }
+static inline void SHARUniform3f(const pglProgram*, GLint l, GLfloat x, GLfloat y, GLfloat z) { glUniform3f(l, x, y, z); }
+static inline void SHARUniform4f(const pglProgram*, GLint l, GLfloat x, GLfloat y, GLfloat z, GLfloat w) { glUniform4f(l, x, y, z, w); }
+static inline void SHARUniform4fv(const pglProgram*, GLint l, GLsizei n, const GLfloat* v) { glUniform4fv(l, n, v); }
+static inline void SHARUniformMatrix4fv(const pglProgram*, GLint l, GLsizei n, GLboolean t, const GLfloat* v) { glUniformMatrix4fv(l, n, t, v); }
 #endif
 #endif
 
@@ -126,7 +126,8 @@ pglProgram::pglProgram()
 #ifdef RAD_ANDROID
     celShadingStateCache.valid = false;
     celShadingStateCache.generation = 0;
-    SHARClearUniformCacheForProgram(this);
+    sharUniformValueCache.clear();
+    sharUniformValueCacheGeneration = 0;
 #endif
 #ifdef RAD_CG
     program = nullptr;
@@ -143,11 +144,15 @@ pglProgram::pglProgram()
     toonOutlinePass = -1;
     toonOutlineOpaque = -1;
     toonEnvironmentPass = -1;
+    toonGrayscaleLevelOneOutsideVertexRGB = -1;
+    toonFrontendPictureRadialFallback = -1;
+    toonFrontendPictureDepthOffset = -1;
     toonOutlineWidth = -1;
     toonViewportSize = -1;
     nightObjectBrightness = -1;
     nightObjectSaturation = -1;
     toonFrontendMenuLighting = -1;
+    toonWorldSceneSaturation = -1;
     toonMoodTint = -1;
     #endif
 
@@ -156,9 +161,6 @@ pglProgram::pglProgram()
 
 pglProgram::~pglProgram()
 {
-#ifdef RAD_ANDROID
-    SHARClearUniformCacheForProgram(this);
-#endif
 #ifdef RAD_CG
     if (program)
         cgDestroyProgram(program);
@@ -345,7 +347,7 @@ void pglProgram::SetCelShadingEnabled(bool enabled)
 }
 
 #ifdef RAD_ANDROID
-void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, float viewportWidth, float viewportHeight, bool frontendMenuLighting, float moodTintRed, float moodTintGreen, float moodTintBlue)
+void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outlinePass, float objectBrightness, float objectSaturation, bool rimLightingEnabled, bool environmentPass, bool grayscaleLevelOneOutsideVertexRGB, bool frontendPictureRadialFallback, bool frontendPictureDepthOffset, float viewportWidth, float viewportHeight, float environmentOutlineWidth, bool frontendMenuLighting, bool worldSceneSaturation, float moodTintRed, float moodTintGreen, float moodTintBlue)
 {
     SHARCelShadingStateCache& cached = celShadingStateCache;
     const bool cacheValid =
@@ -364,10 +366,20 @@ void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outli
         SHARUniform1i(this, toonOutlinePass, outlinePass ? 1 : 0);
     if (toonEnvironmentPass >= 0 && (!cacheValid || cached.environmentPass != environmentPass))
         SHARUniform1i(this, toonEnvironmentPass, environmentPass ? 1 : 0);
+    if (toonGrayscaleLevelOneOutsideVertexRGB >= 0 &&
+        (!cacheValid || cached.grayscaleLevelOneOutsideVertexRGB != grayscaleLevelOneOutsideVertexRGB))
+        SHARUniform1i(this, toonGrayscaleLevelOneOutsideVertexRGB, grayscaleLevelOneOutsideVertexRGB ? 1 : 0);
+    if (toonFrontendPictureRadialFallback >= 0 &&
+        (!cacheValid || cached.frontendPictureRadialFallback != frontendPictureRadialFallback))
+        SHARUniform1i(this, toonFrontendPictureRadialFallback, frontendPictureRadialFallback ? 1 : 0);
+    if (toonFrontendPictureDepthOffset >= 0 &&
+        (!cacheValid || cached.frontendPictureDepthOffset != frontendPictureDepthOffset))
+        SHARUniform1i(this, toonFrontendPictureDepthOffset, frontendPictureDepthOffset ? 1 : 0);
 
-    // Environment outlines use a constant pixel width in clip space.
-    if (toonOutlineWidth >= 0 && !cacheValid)
-        SHARUniform1f(this, toonOutlineWidth, 2.0f);
+    // Environment outline width is selected by the world-space Lite policy.
+    if (toonOutlineWidth >= 0 &&
+        (!cacheValid || cached.outlineWidth != environmentOutlineWidth))
+        SHARUniform1f(this, toonOutlineWidth, environmentOutlineWidth);
 
     const float safeViewportWidth = viewportWidth > 1.0f ? viewportWidth : 1.0f;
     const float safeViewportHeight = viewportHeight > 1.0f ? viewportHeight : 1.0f;
@@ -384,6 +396,9 @@ void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outli
     if (toonFrontendMenuLighting >= 0 &&
         (!cacheValid || cached.frontendMenuLighting != frontendMenuLighting))
         SHARUniform1i(this, toonFrontendMenuLighting, frontendMenuLighting ? 1 : 0);
+    if (toonWorldSceneSaturation >= 0 &&
+        (!cacheValid || cached.worldSceneSaturation != worldSceneSaturation))
+        SHARUniform1i(this, toonWorldSceneSaturation, worldSceneSaturation ? 1 : 0);
     if (toonMoodTint >= 0 &&
         (!cacheValid || cached.moodTintRed != moodTintRed ||
          cached.moodTintGreen != moodTintGreen || cached.moodTintBlue != moodTintBlue))
@@ -394,16 +409,22 @@ void pglProgram::SetCelShadingState(bool enabled, bool objectEnabled, bool outli
     cached.outlinePass = outlinePass;
     cached.rimLightingEnabled = rimLightingEnabled;
     cached.environmentPass = environmentPass;
+    cached.grayscaleLevelOneOutsideVertexRGB = grayscaleLevelOneOutsideVertexRGB;
+    cached.frontendPictureRadialFallback = frontendPictureRadialFallback;
+    cached.frontendPictureDepthOffset = frontendPictureDepthOffset;
     cached.frontendMenuLighting = frontendMenuLighting;
+    cached.worldSceneSaturation = worldSceneSaturation;
     cached.objectBrightness = objectBrightness;
     cached.objectSaturation = objectSaturation;
     cached.viewportWidth = safeViewportWidth;
     cached.viewportHeight = safeViewportHeight;
+    cached.outlineWidth = environmentOutlineWidth;
     cached.moodTintRed = moodTintRed;
     cached.moodTintGreen = moodTintGreen;
     cached.moodTintBlue = moodTintBlue;
     cached.generation = gSHARUniformCacheGeneration;
     cached.valid = true;
+
 }
 
 void pglProgram::SetOpaqueOutlineTexture(bool opaque)
@@ -460,9 +481,11 @@ bool pglProgram::LinkProgram(CGprogram vertexShader, CGprogram fragmentShader)
 bool pglProgram::LinkProgram(GLuint vertexShader, GLuint fragmentShader)
 {
 #ifdef RAD_ANDROID
-    // A relink invalidates every program-local uniform value snapshot.
+    // A relink invalidates all per-program uniform and cel-shading snapshots.
     celShadingStateCache.valid = false;
     celShadingStateCache.generation = 0;
+    sharUniformValueCache.clear();
+    sharUniformValueCacheGeneration = 0;
 #endif
     program = glCreateProgram();
 
@@ -524,11 +547,15 @@ bool pglProgram::LinkProgram(GLuint vertexShader, GLuint fragmentShader)
     toonOutlinePass = glGetUniformLocation(program, "toonOutlinePass");
     toonOutlineOpaque = glGetUniformLocation(program, "toonOutlineOpaque");
     toonEnvironmentPass = glGetUniformLocation(program, "toonEnvironmentPass");
+    toonGrayscaleLevelOneOutsideVertexRGB = glGetUniformLocation(program, "toonGrayscaleLevelOneOutsideVertexRGB");
+    toonFrontendPictureRadialFallback = glGetUniformLocation(program, "toonFrontendPictureRadialFallback");
+    toonFrontendPictureDepthOffset = glGetUniformLocation(program, "toonFrontendPictureDepthOffset");
     toonOutlineWidth = glGetUniformLocation(program, "toonOutlineWidth");
     toonViewportSize = glGetUniformLocation(program, "toonViewportSize");
     nightObjectBrightness = glGetUniformLocation(program, "nightObjectBrightness");
     nightObjectSaturation = glGetUniformLocation(program, "nightObjectSaturation");
     toonFrontendMenuLighting = glGetUniformLocation(program, "toonFrontendMenuLighting");
+    toonWorldSceneSaturation = glGetUniformLocation(program, "toonWorldSceneSaturation");
     toonMoodTint = glGetUniformLocation(program, "toonMoodTint");
     #endif
 

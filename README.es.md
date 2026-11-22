@@ -9,7 +9,7 @@
 
 [Notas de la versión e historial](https://github.com/nicksevarg/The-Simpsons-Hit-and-Run-Revamped/releases/tag/v1.02)
 
-![Project artwork](media/main.png)
+![Project artwork](media/main.jpg)
 
 ---
 Un port mejorado para Android de The Simpsons: Hit & Run que se enfoca en llevar el juego original a dispositivos Android con gráficos mejorados, personalización ampliada, soporte para pantalla táctil, soporte para dispositivos Android TV, así como varias correcciones de errores y mejoras de calidad de vida.

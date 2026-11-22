@@ -1,5 +1,5 @@
-name: Finalized Merge w/ Build [v1.02]
-run-name: "Finalized Merge w/ Build [v1.02]"
+name: Optimisation and Fixes [v1.03]
+run-name: "Optimisation and Fixes [v1.03]"
 
 on:
   push:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    name: Finalized Merge w/ Build APK
+    name: Optimisation and Fixes APK
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -143,6 +143,41 @@ jobs:
             "https://github.com/leleliu008/ndk-pkg-prefab-aar-maven-repo/releases/download/2023.08.14.00.12/2023.08.14.00.12-com-fpliu-ndk-pkg-prefab-android-21-ffmpeg-6.0.tar.xz"
           tar -xJf /tmp/ffmpeg-prefab.tar.xz --strip-components=1 -C "$HOME/.m2/repository"
 
+      - name: Install and configure ccache
+        run: |
+          set -euo pipefail
+          if ! command -v ccache >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ccache
+          fi
+          ccache --set-config=compiler_check=content
+          ccache --max-size=2G
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=2G" >> "$GITHUB_ENV"
+          ccache --show-config
+
+      - name: Cache native C/C++ compilation
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-ndk28.2-cmake4.1-${{ hashFiles('CMakeLists.txt', '**/CMakeLists.txt', 'android-project/app/build.gradle') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-ndk28.2-cmake4.1-${{ hashFiles('CMakeLists.txt', '**/CMakeLists.txt', 'android-project/app/build.gradle') }}-
+            ccache-${{ runner.os }}-ndk28.2-cmake4.1-
+
+      - name: Cache Gradle dependencies and transforms
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/caches/transforms-4
+          key: gradle-deps-${{ runner.os }}-jdk17-gradle8.12-${{ hashFiles('android-project/**/*.gradle*', 'android-project/gradle/wrapper/gradle-wrapper.properties') }}-${{ github.sha }}
+          restore-keys: |
+            gradle-deps-${{ runner.os }}-jdk17-gradle8.12-${{ hashFiles('android-project/**/*.gradle*', 'android-project/gradle/wrapper/gradle-wrapper.properties') }}-
+            gradle-deps-${{ runner.os }}-jdk17-gradle8.12-
+
       - name: Use checksum-verified Gradle distribution mirror
         run: |
           python3 - <<'PY'
@@ -207,7 +242,7 @@ jobs:
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: Simpsons-HR-Revamped-Finalized-Merge-APK
+          name: Simpsons-HR-Revamped-Optimisation-and-Fixes-APK
           path: android-project/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -215,7 +250,7 @@ jobs:
       - name: Upload adaptive icon previews
         uses: actions/upload-artifact@v4
         with:
-          name: Simpsons-HR-Revamped-Finalized-Merge-Icon-Previews
+          name: Simpsons-HR-Revamped-Optimisation-and-Fixes-Icon-Previews
           path: |
             adaptive-icon-preview.png
             adaptive-icon-preview-round.png

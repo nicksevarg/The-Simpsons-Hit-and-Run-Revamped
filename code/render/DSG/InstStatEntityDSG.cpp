@@ -23,6 +23,7 @@
 #include <p3d/view.hpp>
 #include <p3d/camera.hpp>
 #include <p3d/billboardobject.hpp>
+#include <render/DSG/SHAREnvironmentCel.h>
 
 #ifdef RAD_ANDROID
 bool IsCelShadingEnabled();
@@ -33,23 +34,26 @@ void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh)
+static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh, const rmt::Vector& worldCentre, float boundingRadius)
 {
     if (drawable == NULL)
         return;
-    if (!IsCelShadingEnabled() ||
-        (IsSHARCelShadingLite() && !IsSHARGagCharacterCelPassActive()))
+
+    float outlineWidth = 1.33f;
+    if (!SHARShouldDrawEnvironmentCelOutline(foliageMesh, worldCentre, boundingRadius, &outlineWidth))
     {
         drawable->Display();
         return;
     }
     SetSHAREnvironmentCelPassActive(true);
+    SetSHAREnvironmentOutlineWidth(outlineWidth);
     SetCelShadingObjectEnabled(true);
     if (foliageMesh)
         SetSHAREnvironmentFoliageMeshPassActive(true);
     SetCelShadingOutlinePass(true);
     drawable->Display();
     SetCelShadingOutlinePass(false);
+    SetSHAREnvironmentOutlineWidth(1.33f);
     if (foliageMesh)
         SetSHAREnvironmentFoliageMeshPassActive(false);
     drawable->Display();
@@ -148,7 +152,9 @@ void InstStatEntityDSG::Display()
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, mpMatrix);
 #ifdef RAD_ANDROID
     const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
-    DisplaySHAREnvironmentCelDrawable(mpDrawstuff, foliageMesh);
+    rmt::Sphere outlineBounds;
+    GetBoundingSphere(&outlineBounds);
+    DisplaySHAREnvironmentCelDrawable(mpDrawstuff, foliageMesh, outlineBounds.centre, outlineBounds.radius);
 #else
     mpDrawstuff->Display();
 #endif
