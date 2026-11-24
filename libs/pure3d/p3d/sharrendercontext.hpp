@@ -19,3 +19,17 @@ inline unsigned long long GetSHARCurrentDrawableUID()
 {
     return SHARCurrentDrawableUIDStorage();
 }
+
+inline bool IsSHARTomaccoPlantDrawableUID(unsigned long long uid)
+{
+    switch (uid)
+    {
+        case 0x59990BF1ADFF8064ULL:
+        case 0xE4F59E255A9E247EULL:
+        case 0xD381CAC9A3AF9521ULL:
+        case 0x356F2748A9996933ULL:
+            return true;
+        default:
+            return false;
+    }
+}

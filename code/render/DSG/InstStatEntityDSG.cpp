@@ -20,6 +20,7 @@
 #include <memory/srrmemory.h>
 #include <render/IntersectManager/IntersectManager.h>
 #include <p3d/matrixstack.hpp>
+#include <p3d/sharrendercontext.hpp>
 #include <p3d/view.hpp>
 #include <p3d/camera.hpp>
 #include <p3d/billboardobject.hpp>
@@ -34,13 +35,19 @@ void SetCelShadingOutlinePass(bool enabled);
 void SetSHAREnvironmentCelPassActive(bool enabled);
 void SetSHAREnvironmentFoliageMeshPassActive(bool enabled);
 
-static void DisplaySHAREnvironmentCelDrawable(tDrawable* drawable, bool foliageMesh, const rmt::Vector& worldCentre, float boundingRadius)
+static void DisplaySHAREnvironmentCelDrawable(
+    tDrawable* drawable,
+    bool foliageMesh,
+    const rmt::Vector& worldCentre,
+    float boundingRadius,
+    bool allowFoliageInLite = false)
 {
     if (drawable == NULL)
         return;
 
     float outlineWidth = 1.33f;
-    if (!SHARShouldDrawEnvironmentCelOutline(foliageMesh, worldCentre, boundingRadius, &outlineWidth))
+    if (!SHARShouldDrawEnvironmentCelOutline(
+            foliageMesh, worldCentre, boundingRadius, &outlineWidth, allowFoliageInLite))
     {
         drawable->Display();
         return;
@@ -151,10 +158,33 @@ void InstStatEntityDSG::Display()
     }
     p3d::pddi->PushMultMatrix(PDDI_MATRIX_MODELVIEW, mpMatrix);
 #ifdef RAD_ANDROID
+    const unsigned long long previousDrawableUID = GetSHARCurrentDrawableUID();
+    const unsigned long long drawableUID =
+        mpDrawstuff != NULL
+            ? static_cast<unsigned long long>(mpDrawstuff->GetUID())
+            : 0;
+    SetSHARCurrentDrawableUID(drawableUID);
     const bool foliageMesh = IsSHAREnvironmentFoliageMesh();
-    rmt::Sphere outlineBounds;
-    GetBoundingSphere(&outlineBounds);
-    DisplaySHAREnvironmentCelDrawable(mpDrawstuff, foliageMesh, outlineBounds.centre, outlineBounds.radius);
+    const bool tomaccoPlant = IsSHARTomaccoPlantDrawableUID(drawableUID);
+    const bool needsOutlineDistanceBounds =
+        IsCelShadingEnabled() &&
+        IsSHARCelShadingLite() &&
+        (!foliageMesh || tomaccoPlant);
+    rmt::Vector outlineCentre(0.0f, 0.0f, 0.0f);
+    float outlineRadius = 0.0f;
+    if (needsOutlineDistanceBounds)
+    {
+        rmt::Sphere outlineBounds;
+        GetBoundingSphere(&outlineBounds);
+        outlineCentre = outlineBounds.centre;
+        outlineRadius = outlineBounds.radius;
+    }
+    DisplaySHAREnvironmentCelDrawable(
+        mpDrawstuff, foliageMesh, outlineCentre, outlineRadius, tomaccoPlant);
+    if (previousDrawableUID != 0)
+        SetSHARCurrentDrawableUID(previousDrawableUID);
+    else
+        ClearSHARCurrentDrawableUID();
 #else
     mpDrawstuff->Display();
 #endif

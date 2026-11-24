@@ -170,6 +170,12 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
         sourceFilename != NULL &&
         strcmp(sourceFilename, "l7r2.p3d") == 0 &&
         strcmp(name, "krust_sign_m") == 0;
+
+    const bool isTomaccoPlantMaterial =
+        sourceFilename != NULL &&
+        (strcmp(sourceFilename, "l1r6.p3d") == 0 ||
+         strcmp(sourceFilename, "l4r6.p3d") == 0) &&
+        strcmp(name, "tomacco_plant_m") == 0;
 #endif
 
     while(f->ChunksRemaining())
@@ -238,6 +244,18 @@ tEntity* tShaderLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         param == PDDI_SP_ALPHATEST && val == 0)
                     {
                         val = 1;
+                    }
+
+                    if (isTomaccoPlantMaterial &&
+                        param == PDDI_SP_UVMODE && val == PDDI_UV_TILE)
+                    {
+                        val = PDDI_UV_CLAMP;
+                    }
+
+                    if (isTomaccoPlantMaterial &&
+                        param == PDDI_SP_BLENDMODE && val != PDDI_BLEND_NONE)
+                    {
+                        val = PDDI_BLEND_NONE;
                     }
 #endif
                     shader->SetInt(param, val);

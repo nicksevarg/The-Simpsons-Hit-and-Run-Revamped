@@ -1939,16 +1939,20 @@ pglContext::pglContext(pglDevice* dev, pglDisplay* disp) : pddiBaseContext((pddi
         "    if (toonFrontendMenuLighting != 0) {\n"
         "        // Keep the camset lighting level while averaging directional light over the surface.\n"
         "        // A fixed hemispherical contribution prevents normals from restoring 3D face shading.\n"
-        "        vec3 ambient = ecm.rgb + acm.rgb * acs.rgb;\n"
-        "        float illumination = dot(max(ambient, vec3(0.0)), vec3(0.299, 0.587, 0.114));\n"
+        "        vec3 illumination = max(ecm.rgb + acm.rgb * acs.rgb, vec3(0.0));\n"
         "        for (int i = 0; i < " PDDI_STRINGIZE(PDDI_MAX_LIGHTS) "; i++) {\n"
         "            if (lights[i].enabled == 0) continue;\n"
         "            vec3 k = lights[i].attenuation;\n"
         "            float d = distance(toonViewPos, lights[i].position.xyz);\n"
         "            float att = lights[i].position.w != 0.0 ? 1.0 / (k[0] + k[1] * d + k[2] * d * d) : 1.0;\n"
-        "            illumination += att * 0.5 * dot(max(lights[i].colour.rgb, vec3(0.0)), vec3(0.299, 0.587, 0.114));\n"
+        "            illumination += att * 0.5 * max(lights[i].colour.rgb, vec3(0.0));\n"
         "        }\n"
-        "        return dcm.rgb * clamp(illumination, 0.0, 1.0);\n"
+        "        float illuminationLuminance = dot(illumination, vec3(0.299, 0.587, 0.114));\n"
+        "        float illuminationBrightness = clamp(illuminationLuminance, 0.0, 1.0);\n"
+        "        vec3 balancedIllumination = illuminationLuminance > 0.00001\n"
+        "            ? illumination * (illuminationBrightness / illuminationLuminance)\n"
+        "            : vec3(0.0);\n"
+        "        return dcm.rgb * balancedIllumination;\n"
         "    }\n"
         "    if (toonRimEnabled == 0) return dcm.rgb * toonFlatLight;\n"
         // Guard the rim calculation against zero-length vectors and precision
@@ -2938,6 +2942,15 @@ bool pglPrimBuffer::GenerateEnvironmentNormals()
     if (validTriangles == 0 || !haveFallback)
         return false;
 
+    const bool repairFrontendLampStripJoins =
+        gSHARFrontendMenuCelPassActive &&
+        gSHAREnvironmentCelPassActive &&
+        gCelShadingOutlinePass &&
+        GetSHARCurrentDrawableUID() == 0x645EDC24769A499FULL;
+    std::vector<unsigned char> generatedNormalValid;
+    if (repairFrontendLampStripJoins)
+        generatedNormalValid.assign(allocated, 0);
+
     for (unsigned i = 0; i < allocated; ++i)
     {
         float* n = (float*)((unsigned char*)normal + i * stride);
@@ -2946,9 +2959,69 @@ bool pglPrimBuffer::GenerateEnvironmentNormals()
         {
             const float inverseLength = 1.0f / sqrtf(lengthSquared);
             n[0] *= inverseLength; n[1] *= inverseLength; n[2] *= inverseLength;
+            if (repairFrontendLampStripJoins)
+                generatedNormalValid[i] = 1;
         }
         else
         {
+            n[0] = n[1] = n[2] = 0.0f;
+        }
+    }
+
+    for (unsigned i = 0; i < allocated; ++i)
+    {
+        if (repairFrontendLampStripJoins && !generatedNormalValid[i])
+        {
+            const float* position =
+                (const float*)((const unsigned char*)coord + i * stride);
+            unsigned bestIndex = allocated;
+            unsigned bestDistance = allocated;
+            for (unsigned j = 0; j < allocated; ++j)
+            {
+                if (!generatedNormalValid[j])
+                    continue;
+                const float* peerPosition =
+                    (const float*)((const unsigned char*)coord + j * stride);
+                if (fabsf(position[0] - peerPosition[0]) > 1.0e-6f ||
+                    fabsf(position[1] - peerPosition[1]) > 1.0e-6f ||
+                    fabsf(position[2] - peerPosition[2]) > 1.0e-6f)
+                    continue;
+                const unsigned distance = i > j ? i - j : j - i;
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestIndex = j;
+                }
+            }
+
+            float* n = (float*)((unsigned char*)normal + i * stride);
+            if (bestIndex < allocated)
+            {
+                const float* peerNormal =
+                    (const float*)((const unsigned char*)normal + bestIndex * stride);
+                n[0] = peerNormal[0];
+                n[1] = peerNormal[1];
+                n[2] = peerNormal[2];
+            }
+            else
+            {
+                n[0] = fallbackX; n[1] = fallbackY; n[2] = fallbackZ;
+            }
+        }
+        else if (!repairFrontendLampStripJoins && !(
+            ((float*)((unsigned char*)normal + i * stride))[0] *
+            ((float*)((unsigned char*)normal + i * stride))[0] +
+            ((float*)((unsigned char*)normal + i * stride))[1] *
+            ((float*)((unsigned char*)normal + i * stride))[1] +
+            ((float*)((unsigned char*)normal + i * stride))[2] *
+            ((float*)((unsigned char*)normal + i * stride))[2] > 1.0e-12f))
+        {
+            float* n = (float*)((unsigned char*)normal + i * stride);
+            n[0] = fallbackX; n[1] = fallbackY; n[2] = fallbackZ;
+        }
+        else if (repairFrontendLampStripJoins && !generatedNormalValid[i])
+        {
+            float* n = (float*)((unsigned char*)normal + i * stride);
             n[0] = fallbackX; n[1] = fallbackY; n[2] = fallbackZ;
         }
     }

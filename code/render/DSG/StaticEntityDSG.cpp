@@ -73,7 +73,8 @@ static void DisplaySHAREnvironmentCelDrawable(
     const rmt::Vector& worldCentre,
     float boundingRadius,
     bool foliageBillboard = false,
-    bool foliageMesh = false)
+    bool foliageMesh = false,
+    bool allowFoliageInLite = false)
 {
     if (drawable == NULL)
         return;
@@ -86,7 +87,8 @@ static void DisplaySHAREnvironmentCelDrawable(
 
     float outlineWidth = 1.33f;
     if (!SHARShouldDrawEnvironmentCelOutline(
-            foliageBillboard || foliageMesh, worldCentre, boundingRadius, &outlineWidth))
+            foliageBillboard || foliageMesh, worldCentre, boundingRadius,
+            &outlineWidth, allowFoliageInLite))
     {
         drawable->Display();
         SetSHARLevelOneOutsideVertexGrayscaleActive(false);
@@ -386,14 +388,32 @@ void StaticEntityDSG::Display()
                 !isGeometry && !mTranslucent && foliageName;
             const bool foliageMesh =
                 isGeometry && IsSHAREnvironmentFoliageMesh();
-            rmt::Sphere outlineBounds;
-            mpDrawstuff->GetBoundingSphere(&outlineBounds);
-            if (IsSHARGagCharacterCelPassActive() && !mTranslucent)
+            const bool tomaccoPlant =
+                isGeometry && IsSHARTomaccoPlantDrawableUID(drawableUID);
+            const bool gagCharacterDrawable =
+                IsSHARGagCharacterCelPassActive() && !mTranslucent;
+            const bool needsOutlineDistanceBounds =
+                !gagCharacterDrawable &&
+                isGeometry &&
+                (!foliageMesh || tomaccoPlant) &&
+                IsCelShadingEnabled() &&
+                IsSHARCelShadingLite();
+            float outlineRadius = 0.0f;
+            if (needsOutlineDistanceBounds)
+            {
+                rmt::Sphere outlineBounds;
+                mpDrawstuff->GetBoundingSphere(&outlineBounds);
+                outlineRadius = outlineBounds.radius;
+            }
+
+            if (gagCharacterDrawable)
                 DisplaySHARGagCelDrawable(mpDrawstuff);
             else if (isGeometry)
-                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, mPosn, outlineBounds.radius, false, foliageMesh);
+                DisplaySHAREnvironmentCelDrawable(
+                    mpDrawstuff, mPosn, outlineRadius, false, foliageMesh,
+                    tomaccoPlant);
             else if (foliageBillboard)
-                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, mPosn, outlineBounds.radius, true, false);
+                DisplaySHAREnvironmentCelDrawable(mpDrawstuff, mPosn, 0.0f, true, false);
             else
                 mpDrawstuff->Display();
         }

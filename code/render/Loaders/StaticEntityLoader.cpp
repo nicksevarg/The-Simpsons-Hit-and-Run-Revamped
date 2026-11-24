@@ -15,6 +15,7 @@
 #include <p3d/utility.hpp>
 #include <p3d/geometry.hpp>
 #include <p3d/shader.hpp>
+#include <p3d/sharrendercontext.hpp>
 
 //========================================
 // Project Includes
@@ -130,7 +131,11 @@ tEntity* StaticEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                         break;
                     }
                 }
-                const bool foliageTag = foliageNameTag || houseLeafMaterialTag;
+                const bool tomaccoPlantTag =
+                    IsSHARTomaccoPlantDrawableUID(
+                        static_cast<unsigned long long>(pGeo->GetUID()));
+                const bool foliageTag =
+                    foliageNameTag || houseLeafMaterialTag || tomaccoPlantTag;
                 const bool roadTag = IsSHAREnvironmentRoadEntityName(name);
                 tUID sourceAssetUID = tName::MakeUID(name);
                 pStaticEntityDSG->SetSHAREnvironmentFoliageMesh(foliageTag);

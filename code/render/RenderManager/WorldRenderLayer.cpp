@@ -23,6 +23,7 @@
 #include <render/DSG/StaticPhysDSG.h>
 #include <render/DSG/IntersectDSG.h>
 #include <render/DSG/StaticEntityDSG.h>
+#include <render/DSG/SHAREnvironmentCel.h>
 #include <render/DSG/FenceEntityDSG.h>
 #include <render/DSG/animcollisionentitydsg.h>
 #include <render/DSG/animentitydsg.h>
@@ -60,6 +61,45 @@
 
 #include <render/Loaders/BillboardWrappedLoader.h>
 #include <worldsim/avatarmanager.h>
+
+namespace
+{
+    bool gSHAREnvironmentCelCameraPositionValid = false;
+    rmt::Vector gSHAREnvironmentCelCameraPosition;
+}
+
+void SetSHAREnvironmentCelCameraPosition(const rmt::Vector& position)
+{
+    gSHAREnvironmentCelCameraPosition = position;
+    gSHAREnvironmentCelCameraPositionValid = true;
+}
+
+void ClearSHAREnvironmentCelCameraPosition()
+{
+    gSHAREnvironmentCelCameraPositionValid = false;
+}
+
+bool GetSHAREnvironmentCelCameraPosition(rmt::Vector* position)
+{
+    if (position == NULL)
+        return false;
+
+    if (gSHAREnvironmentCelCameraPositionValid)
+    {
+        *position = gSHAREnvironmentCelCameraPosition;
+        return true;
+    }
+
+    if (p3d::context == NULL ||
+        p3d::context->GetView() == NULL ||
+        p3d::context->GetView()->GetCamera() == NULL)
+    {
+        return false;
+    }
+
+    p3d::context->GetView()->GetCamera()->GetWorldPosition(position);
+    return true;
+}
 
 #ifdef RAD_ANDROID
 #include <mission/gameplaymanager.h>
@@ -217,6 +257,9 @@ static bool simpleShadows = true;
 
 void WorldRenderLayer::Render()
 {
+#ifdef RAD_ANDROID
+    ClearSHAREnvironmentCelCameraPosition();
+#endif
     BEGIN_PROFILE( "WRL Render" );
 #ifdef DEBUGWATCH
     mDebugRenderTime = radTimeGetMicroseconds();
@@ -287,6 +330,14 @@ void WorldRenderLayer::Render()
             BEGIN_PROFILE( "View Begin Render" );
             mpView[ view ]->BeginRender();
             END_PROFILE( "View Begin Render" );
+#ifdef RAD_ANDROID
+            if (mpView[view]->GetCamera() != NULL)
+            {
+                rmt::Vector cameraPosition;
+                mpView[view]->GetCamera()->GetWorldPosition(&cameraPosition);
+                SetSHAREnvironmentCelCameraPosition(cameraPosition);
+            }
+#endif
 
             int i;
 #ifdef RAD_ANDROID
@@ -396,6 +447,9 @@ void WorldRenderLayer::Render()
             BEGIN_PROFILE( "View End Render" );
             mpView[ view ]->EndRender();
             END_PROFILE( "View End Render" );
+#ifdef RAD_ANDROID
+            ClearSHAREnvironmentCelCameraPosition();
+#endif
 
             if(mirrorPass == 1)
             {

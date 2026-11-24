@@ -49,7 +49,7 @@ static bool ShouldApplySHARGagDimming()
     }
 
     const RenderEnums::LevelEnum level = gameplay->GetCurrentRawLevelIndex();
-    return level >= RenderEnums::L3 && level <= RenderEnums::L7;
+    return level >= RenderEnums::L1 && level <= RenderEnums::L7;
 }
 
 static void SetSHARGagDimmingForCurrentLevel()
@@ -64,8 +64,16 @@ static void SetSHARGagDimmingForCurrentLevel()
     {
         switch (gameplay->GetCurrentRawLevelIndex())
         {
+            case RenderEnums::L1:
+                if (inside)
+                    brightness = 0.85f;
+                break;
+            case RenderEnums::L2:
+                if (inside)
+                    brightness = 0.80f;
+                break;
             case RenderEnums::L3:
-                brightness = 0.80f;
+                brightness = 0.75f;
                 saturation = 0.85f;
                 break;
             case RenderEnums::L4:

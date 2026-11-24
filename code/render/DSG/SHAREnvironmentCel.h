@@ -9,6 +9,10 @@ bool IsCelShadingEnabled();
 bool IsSHARCelShadingLite();
 void SetSHAREnvironmentOutlineWidth(float width);
 
+void SetSHAREnvironmentCelCameraPosition(const rmt::Vector& position);
+void ClearSHAREnvironmentCelCameraPosition();
+bool GetSHAREnvironmentCelCameraPosition(rmt::Vector* position);
+
 // Initial Lite environment policy, using world-space distance only:
 //   0-50 units:    1.33-pixel environment outline
 //   50-100 units:  1.0-pixel environment outline
@@ -22,7 +26,8 @@ static inline bool SHARShouldDrawEnvironmentCelOutline(
     bool foliage,
     const rmt::Vector& worldCentre,
     float boundingRadius,
-    float* outlineWidth)
+    float* outlineWidth,
+    bool allowFoliageInLite = false)
 {
     if (outlineWidth != NULL)
         *outlineWidth = 1.33f;
@@ -33,19 +38,15 @@ static inline bool SHARShouldDrawEnvironmentCelOutline(
     if (!IsSHARCelShadingLite())
         return true;
 
-    if (foliage)
+    if (foliage && !allowFoliageInLite)
         return false;
 
-    if (p3d::context == NULL ||
-        p3d::context->GetView() == NULL ||
-        p3d::context->GetView()->GetCamera() == NULL)
+    rmt::Vector cameraPosition;
+    if (!GetSHAREnvironmentCelCameraPosition(&cameraPosition))
     {
         // Preserve outlines if a camera cannot be resolved for this draw.
         return true;
     }
-
-    rmt::Vector cameraPosition;
-    p3d::context->GetView()->GetCamera()->GetWorldPosition(&cameraPosition);
 
     const float dx = worldCentre.x - cameraPosition.x;
     const float dy = worldCentre.y - cameraPosition.y;

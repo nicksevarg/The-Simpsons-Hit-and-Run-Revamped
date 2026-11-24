@@ -42,8 +42,16 @@ static void SetSHARCharacterNightDimming()
         const bool inside = interior->IsInside();
         switch (gameplay->GetCurrentRawLevelIndex())
         {
+            case RenderEnums::L1:
+                if (inside)
+                    brightness = 0.85f;
+                break;
+            case RenderEnums::L2:
+                if (inside)
+                    brightness = 0.80f;
+                break;
             case RenderEnums::L3:
-                brightness = inside ? 0.80f : 0.75f;
+                brightness = 0.75f;
                 saturation = 0.85f;
                 break;
             case RenderEnums::L4:

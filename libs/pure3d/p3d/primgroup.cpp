@@ -120,6 +120,9 @@ static bool IsSHARExperimentalFoliageCardOutlineTarget(const tShader* shader)
     if (shader == NULL || !shader->mEnvironmentCelHasAlphaTest)
         return false;
 
+    if (IsSHARTomaccoPlantDrawableUID(GetSHARCurrentDrawableUID()))
+        return true;
+
     // Keep the house leaf-card outline path keyed to the exact material UID.
     if (static_cast<unsigned long long>(shader->GetUID()) == 0x396C6BB87163F912ULL)
         return true;

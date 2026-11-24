@@ -12,6 +12,7 @@
 // System Includes
 //========================================
 #include <p3d/chunkfile.hpp>
+#include <p3d/sharrendercontext.hpp>
 #include <string.h>
 #ifdef RAD_ANDROID
 bool IsSHAREnvironmentFoliageEntityName(const char* ownerName, const char* drawableName);
@@ -91,6 +92,7 @@ tEntity* InstStatEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
     const bool sourceFoliageTag = IsSHAREnvironmentFoliageEntityName(sourceAssetName, NULL);
     const bool sourceRoadTag = IsSHAREnvironmentRoadEntityName(sourceAssetName);
     tUID sourceAssetUID = tName::MakeUID(sourceAssetName);
+    bool sourceTomaccoPlantTag = false;
 #endif
 
     int version = f->GetLong();
@@ -137,6 +139,7 @@ tEntity* InstStatEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
                     pCurStatEntity->SetName(name);
 #ifdef RAD_ANDROID
                     const bool foliageTag = sourceFoliageTag ||
+                        sourceTomaccoPlantTag ||
                         IsSHAREnvironmentFoliageEntityName(name, NULL);
                     const bool roadTag = sourceRoadTag ||
                         IsSHAREnvironmentRoadEntityName(name);
@@ -171,6 +174,11 @@ tEntity* InstStatEntityLoader::LoadObject(tChunkFile* f, tEntityStore* store)
             {
                 GeometryWrappedLoader* pGeoLoader = (GeometryWrappedLoader*)AllWrappers::GetInstance()->mpLoader(AllWrappers::msGeometry) ;
                 tRefCounted::Assign(pGeo,(tGeometry*)pGeoLoader->LoadObject(f, store));
+#ifdef RAD_ANDROID
+                sourceTomaccoPlantTag = pGeo != NULL &&
+                    IsSHARTomaccoPlantDrawableUID(
+                        static_cast<unsigned long long>(pGeo->GetUID()));
+#endif
                 break;
             }
 
